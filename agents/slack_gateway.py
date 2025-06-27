@@ -4,7 +4,7 @@ Acts as the interface between Slack and the internal agent system.
 """
 
 import logging
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List
 from slack_sdk import WebClient
 from slack_sdk.errors import SlackApiError
 
@@ -109,14 +109,25 @@ class SlackGateway:
                 logger.error("Missing channel_id or text in response data")
                 return False
             
+            # Prepare message payload
+            message_payload = {
+                "channel": channel_id,
+                "text": text,
+                "thread_ts": thread_ts,
+                "unfurl_links": False,
+                "unfurl_media": False
+            }
+            
+            # Add suggestions if they exist in response_data
+            suggestions = response_data.get("suggestions", [])
+            if suggestions and len(suggestions) > 0:
+                # Format suggestions as interactive blocks for Slack AI agent mode
+                suggestion_blocks = self._format_suggestions_as_blocks(suggestions)
+                if suggestion_blocks:
+                    message_payload["blocks"] = suggestion_blocks
+            
             # Send message to Slack
-            response = self.client.chat_postMessage(
-                channel=channel_id,
-                text=text,
-                thread_ts=thread_ts,
-                unfurl_links=False,
-                unfurl_media=False
-            )
+            response = self.client.chat_postMessage(**message_payload)
             
             if response["ok"]:
                 logger.info(f"Successfully sent response to channel {channel_id}")
@@ -131,6 +142,47 @@ class SlackGateway:
         except Exception as e:
             logger.error(f"Error sending Slack response: {e}")
             return False
+    
+    def _format_suggestions_as_blocks(self, suggestions: List[str]) -> List[Dict[str, Any]]:
+        """
+        Format suggestions as Slack block kit for AI agent mode.
+        
+        Args:
+            suggestions: List of suggestion strings
+            
+        Returns:
+            List of Slack block kit blocks
+        """
+        try:
+            if not suggestions:
+                return []
+            
+            # Create action buttons for suggestions
+            suggestion_elements = []
+            for i, suggestion in enumerate(suggestions[:5]):  # Limit to 5 suggestions
+                suggestion_elements.append({
+                    "type": "button",
+                    "text": {
+                        "type": "plain_text",
+                        "text": suggestion[:75],  # Slack button text limit
+                        "emoji": True
+                    },
+                    "action_id": f"suggestion_{i}",
+                    "value": suggestion
+                })
+            
+            # Return as action block
+            blocks = [{
+                "type": "actions",
+                "elements": suggestion_elements
+            }]
+            
+            logger.debug(f"Created {len(suggestion_elements)} suggestion buttons")
+            return blocks
+            
+        except Exception as e:
+            logger.error(f"Error formatting suggestions: {e}")
+            return []
     
     async def send_thinking_indicator(self, channel_id: str, thread_ts: Optional[str] = None) -> Optional[str]:
         """
