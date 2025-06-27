@@ -124,23 +124,9 @@ class OrchestratorAgent:
                 "conversation_history": conversation_history
             }
             
-            system_prompt = """You are the Orchestrator Agent for an AI assistant system called "Autopilot Expert".
-            
-Your role is to analyze user queries and create execution plans to gather relevant information.
-You have access to these tools:
-1. vector_search - Search knowledge base for relevant information
-2. graph_query - Query relationships and dependencies between projects/people
-3. Both tools can be called multiple times with different parameters
-
-Analyze the query and create a JSON execution plan with these fields:
-- analysis: Brief analysis of what the user is asking
-- tools_needed: List of tools to use ["vector_search", "graph_query"]  
-- vector_queries: List of search queries for vector tool (if needed)
-- graph_queries: List of relationship queries for graph tool (if needed)
-- context: Any additional context for response generation
-
-Focus on finding specific, actionable information. If asking about projects, include owner/dependency queries.
-"""
+            # Load prompt from centralized prompt loader
+            from utils.prompt_loader import get_orchestrator_prompt
+            system_prompt = get_orchestrator_prompt()
             
             user_prompt = f"""
 Context: {json.dumps(context, indent=2)}
