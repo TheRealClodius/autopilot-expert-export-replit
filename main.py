@@ -195,6 +195,26 @@ async def system_status():
         logger.error(f"Error checking system status: {e}")
         return {"error": str(e)}
 
+@app.get("/admin/prompts")
+async def get_prompt_info():
+    """Admin endpoint to get prompt information"""
+    from utils.prompt_loader import prompt_loader
+    return {
+        "prompt_info": prompt_loader.get_prompt_info(),
+        "prompts_loaded": len(prompt_loader.get_all_prompts()),
+        "yaml_available": hasattr(prompt_loader, '_prompts') and 'version' in prompt_loader._prompts
+    }
+
+@app.post("/admin/prompts/reload")
+async def reload_prompts():
+    """Admin endpoint to reload prompts from file"""
+    from utils.prompt_loader import reload_all_prompts
+    try:
+        reload_all_prompts()
+        return {"status": "success", "message": "Prompts reloaded successfully"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to reload prompts: {e}")
+
 if __name__ == "__main__":
     # Get port from environment for Cloud Run deployment
     port = int(os.environ.get("PORT", 5000))
