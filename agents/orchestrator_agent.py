@@ -196,19 +196,9 @@ Create an execution plan to answer this query effectively.
                         if results:
                             gathered_info["graph_results"].extend(results)
             
-            # If we found project information, do additional searches
-            if gathered_info["vector_results"] or gathered_info["graph_results"]:
-                additional_searches = await self._generate_additional_searches(gathered_info, message.text)
-                if additional_searches:
-                    logger.info(f"Executing {len(additional_searches)} additional searches")
-                    for search_query in additional_searches:
-                        results = await self.vector_tool.search(
-                            query=search_query,
-                            top_k=3,
-                            filters={}
-                        )
-                        if results:
-                            gathered_info["vector_results"].extend(results)
+            # Skip additional searches for faster response time
+            # TODO: Re-enable when vector search is properly configured
+            logger.info("Skipping additional searches for performance")
             
             logger.info(f"Gathered {len(gathered_info['vector_results'])} vector results and {len(gathered_info['graph_results'])} graph results")
             return gathered_info

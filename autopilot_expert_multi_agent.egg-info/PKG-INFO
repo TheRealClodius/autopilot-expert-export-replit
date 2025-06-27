@@ -11,6 +11,7 @@ Requires-Dist: networkx>=3.5
 Requires-Dist: pinecone-client>=6.0.0
 Requires-Dist: pydantic>=2.11.7
 Requires-Dist: pydantic-settings>=2.10.1
+Requires-Dist: pyyaml>=6.0
 Requires-Dist: redis>=6.2.0
 Requires-Dist: slack-sdk>=3.35.0
 Requires-Dist: uvicorn>=0.34.3
