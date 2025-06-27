@@ -42,9 +42,8 @@ async def lifespan(app: FastAPI):
     slack_gateway = SlackGateway()
     orchestrator_agent = OrchestratorAgent(memory_service)
     
-    # Start background tasks
-    logger.info("Starting daily knowledge update task...")
-    celery_app.send_task('workers.knowledge_update_worker.daily_ingestion')
+    # Note: Background tasks will be available once Celery workers are running
+    logger.info("Core system initialized - background workers available separately")
     
     logger.info("Multi-agent system initialized successfully")
     yield

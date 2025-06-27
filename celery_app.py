@@ -227,22 +227,22 @@ async def _perform_cleanup():
         return {'status': 'failed', 'error': str(e)}
 
 # Signal handlers for monitoring
-@celery_app.signals.worker_ready.connect
+@signals.worker_ready.connect
 def worker_ready(sender=None, **kwargs):
     """Signal handler for when worker is ready"""
     logger.info(f"Celery worker {sender} is ready")
 
-@celery_app.signals.worker_shutdown.connect
+@signals.worker_shutdown.connect
 def worker_shutdown(sender=None, **kwargs):
     """Signal handler for when worker shuts down"""
     logger.info(f"Celery worker {sender} is shutting down")
 
-@celery_app.signals.task_prerun.connect
+@signals.task_prerun.connect
 def task_prerun(sender=None, task_id=None, task=None, args=None, kwargs=None, **kwds):
     """Signal handler before task execution"""
     logger.debug(f"Task {task.name}[{task_id}] starting")
 
-@celery_app.signals.task_postrun.connect
+@signals.task_postrun.connect
 def task_postrun(sender=None, task_id=None, task=None, args=None, kwargs=None, retval=None, state=None, **kwds):
     """Signal handler after task execution"""
     logger.debug(f"Task {task.name}[{task_id}] finished with state: {state}")
