@@ -60,6 +60,11 @@ app = FastAPI(
     lifespan=lifespan
 )
 
+@app.get("/")
+async def root():
+    """Root endpoint"""
+    return {"service": "autopilot-expert", "status": "running", "version": "1.0.0"}
+
 @app.get("/health")
 async def health_check():
     """Health check endpoint"""
