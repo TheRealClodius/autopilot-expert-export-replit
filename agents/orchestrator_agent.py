@@ -42,6 +42,9 @@ class OrchestratorAgent:
         Returns:
             Response data for sending back to Slack
         """
+        import time
+        start_time = time.time()
+        
         try:
             logger.info(f"Orchestrator processing query: {message.text[:100]}...")
             
@@ -53,25 +56,35 @@ class OrchestratorAgent:
                 ttl=86400  # 24 hours
             )
             
+            plan_start = time.time()
             # Analyze query and create execution plan
             execution_plan = await self._analyze_query_and_plan(message)
+            logger.info(f"Query analysis took {time.time() - plan_start:.2f}s")
             
             if not execution_plan:
                 return await self._generate_fallback_response(message)
             
+            exec_start = time.time()
             # Execute the plan
             gathered_information = await self._execute_plan(execution_plan, message)
+            logger.info(f"Plan execution took {time.time() - exec_start:.2f}s")
             
+            response_start = time.time()
             # Generate final response through Client Agent
             response = await self.client_agent.generate_response(
                 message, 
                 gathered_information, 
                 execution_plan.get("context", {})
             )
+            logger.info(f"Response generation took {time.time() - response_start:.2f}s")
             
             if response:
-                # Trigger Observer Agent for learning (async)
-                await self._trigger_observation(message, response, gathered_information)
+                # Trigger Observer Agent for learning (fire and forget - don't wait)
+                import asyncio
+                asyncio.create_task(self._trigger_observation(message, response, gathered_information))
+                
+                total_time = time.time() - start_time
+                logger.info(f"Total processing time: {total_time:.2f}s")
                 
                 return {
                     "channel_id": message.channel_id,
