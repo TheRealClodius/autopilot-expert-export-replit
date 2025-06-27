@@ -5,7 +5,7 @@ Manages environment variables and system configuration.
 
 import os
 from typing import List, Optional
-from pydantic import BaseSettings
+from pydantic_settings import BaseSettings
 
 class Settings(BaseSettings):
     # Slack Configuration
@@ -63,11 +63,10 @@ settings = Settings()
 # Validate required configuration
 def validate_config():
     """Validate that all required configuration is present"""
+    # Core required variables for basic operation
     required_vars = [
         "SLACK_BOT_TOKEN",
         "GEMINI_API_KEY",
-        "PINECONE_API_KEY",
-        "PINECONE_ENVIRONMENT"
     ]
     
     missing_vars = []
