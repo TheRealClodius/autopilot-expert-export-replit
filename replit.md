@@ -119,6 +119,13 @@ The system uses environment variables for configuration management and supports 
 - Changed default structured response model to Flash with Pro override for Orchestrator
 - Improved response speed while maintaining planning quality
 
+✅ **June 27, 2025 - Fixed Channel Mention Response Issue**
+- Fixed bot not responding when tagged in channels (@botname)
+- Implemented automatic bot user ID retrieval from Slack API when environment variable missing
+- Slack Gateway now dynamically gets bot user ID (U092YQL6HTN) for mention detection
+- Bot can now properly detect and respond to channel mentions, DMs, and thread replies
+- Added `/admin/bot-config` endpoint to verify bot configuration and API connectivity
+
 ✅ **June 27, 2025 - Fixed Conversation Memory with 10-Message Short-Term Memory**
 - Implemented proper 10-message sliding window memory system using Redis/in-memory cache
 - Fixed conversation context loss issue where bot would lose understanding mid-conversation

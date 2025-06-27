@@ -23,6 +23,17 @@ class SlackGateway:
         self.client = WebClient(token=settings.SLACK_BOT_TOKEN)
         self.bot_user_id = settings.SLACK_BOT_USER_ID
         
+        # If bot user ID is not configured, try to get it from Slack API
+        if not self.bot_user_id and settings.SLACK_BOT_TOKEN:
+            try:
+                auth_response = self.client.auth_test()
+                if auth_response["ok"]:
+                    self.bot_user_id = auth_response["user_id"]
+                    logger.info(f"Retrieved bot user ID from Slack API: {self.bot_user_id}")
+            except Exception as e:
+                logger.error(f"Failed to get bot user ID from Slack API: {e}")
+                self.bot_user_id = ""
+        
     async def process_message(self, event_data: SlackEvent) -> Optional[ProcessedMessage]:
         """
         Process incoming Slack message and extract relevant information.
@@ -51,13 +62,8 @@ class SlackGateway:
             is_mention = f"<@{self.bot_user_id}>" in text if self.bot_user_id else False
             is_thread_reply = thread_ts is not None
             
-            # Debug logging for mention detection
-            logger.info(f"Message processing: is_dm={is_dm}, is_mention={is_mention}, is_thread_reply={is_thread_reply}")
-            logger.info(f"Bot user ID: {self.bot_user_id}, Message text: '{text[:100]}...'")
-            
             # Only process if it's a DM, mention, or thread reply to bot
             if not (is_dm or is_mention or (is_thread_reply and await self._is_bot_thread(channel_id, thread_ts))):
-                logger.info(f"Message ignored: not a DM, mention, or bot thread reply")
                 return None
             
             # Clean the message text (remove mentions)

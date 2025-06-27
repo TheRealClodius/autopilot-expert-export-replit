@@ -118,19 +118,6 @@ async def slack_events(request: Request, background_tasks: BackgroundTasks):
 async def process_slack_message(event_data: SlackEvent):
     """Process incoming Slack message through the agent pipeline"""
     try:
-        # Debug logging for channel mentions
-        event = event_data.event
-        text = event.get("text", "")
-        user_id = event.get("user")
-        channel_id = event.get("channel")
-        logger.info(f"Processing message: '{text[:100]}...' from user {user_id} in channel {channel_id}")
-        
-        # Check if this contains a mention
-        if f"<@{settings.SLACK_BOT_USER_ID}>" in text:
-            logger.info(f"Bot mention detected in channel message: {text[:50]}...")
-        else:
-            logger.info(f"No bot mention detected. Bot user ID: {settings.SLACK_BOT_USER_ID}")
-        
         logger.info(f"Processing message from user {event_data.event.get('user')} in channel {event_data.event.get('channel')}")
         
         # Check if services are initialized
@@ -295,10 +282,23 @@ async def trigger_manual_ingestion():
 @app.get("/admin/bot-config")
 async def bot_config():
     """Admin endpoint to check bot configuration"""
+    # Try to get bot user ID from Slack API if not configured
+    bot_user_id = settings.SLACK_BOT_USER_ID
+    if not bot_user_id and settings.SLACK_BOT_TOKEN:
+        try:
+            from slack_sdk import WebClient
+            client = WebClient(token=settings.SLACK_BOT_TOKEN)
+            auth_response = client.auth_test()
+            if auth_response["ok"]:
+                bot_user_id = auth_response["user_id"]
+        except Exception as e:
+            bot_user_id = f"API Error: {str(e)}"
+    
     return {
         "bot_token_configured": bool(settings.SLACK_BOT_TOKEN),
         "bot_token_length": len(settings.SLACK_BOT_TOKEN) if settings.SLACK_BOT_TOKEN else 0,
-        "bot_user_id": settings.SLACK_BOT_USER_ID,
+        "bot_user_id": bot_user_id,
+        "bot_user_id_from_api": bot_user_id != settings.SLACK_BOT_USER_ID,
         "signing_secret_configured": bool(settings.SLACK_SIGNING_SECRET),
         "channels_to_monitor": settings.get_monitored_channels()
     }
