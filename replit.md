@@ -11,7 +11,7 @@ The system follows a multi-agent architecture with specialized agents handling d
 - **Slack Gateway Agent**: Interfaces with Slack API for message processing
 - **Orchestrator Agent**: Coordinates other agents and creates execution plans using Gemini 2.5 Pro
 - **Client Agent**: Generates user-friendly responses using Gemini 2.5 Flash
-- **Observer Agent**: Learns from conversations to improve system knowledge
+- **Observer Agent**: Learns from conversations to improve system knowledge using Gemini 2.5 Flash
 
 The architecture supports both real-time message processing and background knowledge updates through Celery workers.
 
@@ -21,7 +21,7 @@ The architecture supports both real-time message processing and background knowl
 - `agents/slack_gateway.py` - Handles Slack message ingestion and response delivery
 - `agents/orchestrator_agent.py` - Main coordination agent using Gemini 2.5 Pro for query analysis
 - `agents/client_agent.py` - Response generation agent using Gemini 2.5 Flash
-- `agents/observer_agent.py` - Learning agent that updates knowledge based on conversations
+- `agents/observer_agent.py` - Learning agent that updates knowledge using Gemini 2.5 Flash
 
 ### Tools
 - `tools/vector_search.py` - Pinecone vector database search capabilities
@@ -111,6 +111,13 @@ The system uses environment variables for configuration management and supports 
 - Added admin endpoints (/admin/prompts, /admin/prompts/reload) for prompt management
 - All agents now load prompts from centralized configuration
 - System supports runtime prompt reloading without restart
+
+✅ **June 27, 2025 - Optimized Model Usage for Performance**
+- Updated all agents except Orchestrator to use Gemini 2.5 Flash for faster responses
+- Orchestrator Agent continues using Gemini 2.5 Pro for complex planning tasks
+- Client Agent already using Flash, Observer Agent now using Flash
+- Changed default structured response model to Flash with Pro override for Orchestrator
+- Improved response speed while maintaining planning quality
 
 **Deployment Status**: ✅ Successfully deployed and Slack-verified
 

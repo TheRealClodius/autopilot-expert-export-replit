@@ -88,14 +88,14 @@ class GeminiClient:
             system_prompt: System instruction for the model
             user_prompt: User's input prompt
             response_format: Expected response format
-            model: Model to use (defaults to pro)
+            model: Model to use (defaults to flash for speed)
             schema: Optional Pydantic schema for validation
             
         Returns:
             Generated structured response or None on failure
         """
         try:
-            model_name = model or self.pro_model
+            model_name = model or self.flash_model
             
             config = types.GenerateContentConfig(
                 system_instruction=system_prompt,

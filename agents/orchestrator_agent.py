@@ -137,7 +137,8 @@ Create an execution plan to answer this query effectively.
             response = await self.gemini_client.generate_structured_response(
                 system_prompt,
                 user_prompt,
-                response_format="json"
+                response_format="json",
+                model=self.gemini_client.pro_model  # Orchestrator uses Pro model for complex planning
             )
             
             if response:
