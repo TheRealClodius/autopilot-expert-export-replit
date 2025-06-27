@@ -6,6 +6,7 @@ Handles incoming Slack webhooks and orchestrates agent responses.
 import asyncio
 import logging
 from contextlib import asynccontextmanager
+from datetime import datetime
 from fastapi import FastAPI, HTTPException, Request, BackgroundTasks
 from fastapi.responses import JSONResponse, PlainTextResponse
 import uvicorn
@@ -239,6 +240,100 @@ async def reload_prompts():
         return {"status": "success", "message": "Prompts reloaded successfully"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to reload prompts: {e}")
+
+@app.get("/admin/conversation-memory-test")
+async def test_conversation_memory():
+    """Admin endpoint to test conversation memory similar to real Slack usage"""
+    if not memory_service:
+        raise HTTPException(status_code=503, detail="Memory service not available")
+    
+    test_results = {}
+    
+    try:
+        # Simulate a Slack conversation like the orchestrator does
+        channel_id = "C1234567890"
+        thread_ts = "1640995200.001500"
+        message_ts = "1640995200.001500"
+        
+        # Test conversation key format (same as orchestrator uses)
+        conversation_key = f"conv:{channel_id}:{thread_ts or message_ts}"
+        test_results["conversation_key"] = conversation_key
+        
+        # Simulate message data structure
+        message_data = {
+            "channel_id": channel_id,
+            "user_id": "U987654321",
+            "text": "What's the latest update on Project Alpha?",
+            "message_ts": message_ts,
+            "thread_ts": thread_ts,
+            "user_name": "john.doe",
+            "channel_name": "general"
+        }
+        
+        # Store conversation context (same way orchestrator does)
+        store_success = await memory_service.store_conversation_context(
+            conversation_key, 
+            message_data, 
+            ttl=86400  # 24 hours - same as orchestrator
+        )
+        test_results["store_conversation"] = store_success
+        
+        # Retrieve conversation context
+        retrieved_context = await memory_service.get_conversation_context(conversation_key)
+        test_results["retrieve_conversation"] = retrieved_context is not None
+        test_results["data_matches"] = retrieved_context == message_data if retrieved_context else False
+        
+        # Test multiple conversations in same channel
+        conversation_key_2 = f"conv:{channel_id}:{message_ts}_followup"
+        followup_data = {
+            "channel_id": channel_id,
+            "user_id": "U555666777", 
+            "text": "Thanks for the update! When is the next milestone?",
+            "message_ts": "1640995260.001600",
+            "thread_ts": thread_ts,
+            "user_name": "jane.smith",
+            "channel_name": "general"
+        }
+        
+        await memory_service.store_conversation_context(conversation_key_2, followup_data, ttl=86400)
+        retrieved_followup = await memory_service.get_conversation_context(conversation_key_2)
+        test_results["multi_conversation_support"] = retrieved_followup is not None
+        
+        # Test memory backend info
+        test_results["backend_type"] = "redis" if memory_service.redis_available else "in_memory"
+        test_results["health_check"] = await memory_service.health_check()
+        
+        # Cache status (if in-memory)
+        if not memory_service.redis_available:
+            test_results["total_cached_conversations"] = len(memory_service._memory_cache)
+            conversation_keys = [k for k in memory_service._memory_cache.keys() if k.startswith("conv:")]
+            test_results["conversation_keys_count"] = len(conversation_keys)
+        
+        overall_success = all([
+            test_results.get("store_conversation", False),
+            test_results.get("retrieve_conversation", False),
+            test_results.get("data_matches", False),
+            test_results.get("multi_conversation_support", False)
+        ])
+        
+        return {
+            "status": "success" if overall_success else "partial_failure",
+            "conversation_memory_working": overall_success,
+            "test_results": test_results,
+            "summary": {
+                "backend": test_results.get("backend_type", "unknown"),
+                "conversations_stored": test_results.get("conversation_keys_count", 0) if not memory_service.redis_available else "redis_backend",
+                "all_tests_passed": overall_success
+            }
+        }
+        
+    except Exception as e:
+        logger.error(f"Error testing conversation memory: {e}")
+        return {
+            "status": "error",
+            "error": str(e),
+            "test_results": test_results
+        }
 
 if __name__ == "__main__":
     # Get port from environment for Cloud Run deployment
