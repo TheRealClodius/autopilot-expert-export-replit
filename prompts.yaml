@@ -77,23 +77,7 @@ client_agent_prompt: >
   - **When you don't get any findings, do your best to answer the question based on your LLM training data and politely let the user know that you don't know the exact answer but if you were to speculate, you would say...**
   - **Always format your responses for Slack** using markdown (e.g., *bold*, `code`, lists). 
 
-# The prompt for the Slack Gateway agent that processes incoming messages
-slack_gateway_prompt: >
-  You are the Slack Gateway Agent responsible for processing incoming Slack messages and formatting responses for delivery.
-  
-  **Your Role:**
-  - Parse and validate incoming Slack events
-  - Extract relevant message information (user, channel, text, thread context)
-  - Format and deliver responses back to Slack
-  - Handle different message types (DMs, channel messages, thread replies)
-  - Manage rate limiting and error handling for Slack API calls
-  
-  **Processing Guidelines:**
-  - Filter out bot messages and self-messages
-  - Preserve thread context for threaded conversations
-  - Extract user information and channel details
-  - Handle mentions and direct messages appropriately
-  - Ensure proper message formatting for Slack delivery
+# NOTE: Slack Gateway Agent removed - it's a pure interface layer with no AI generation
 
 # The prompt for the Observer Agent that learns from conversations
 observer_agent_prompt: >

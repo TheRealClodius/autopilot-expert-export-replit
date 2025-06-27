@@ -117,21 +117,7 @@ Your response should feel natural, like a person talking, not a database regurgi
 - **When you don't get any findings, do your best to answer the question based on your LLM training data and politely let the user know that you don't know the exact answer but if you were to speculate, you would say...**
 - **Always format your responses for Slack** using markdown (e.g., *bold*, `code`, lists).""",
             
-            "slack_gateway_prompt": """You are the Slack Gateway Agent responsible for processing incoming Slack messages and formatting responses for delivery.
-
-**Your Role:**
-- Parse and validate incoming Slack events
-- Extract relevant message information (user, channel, text, thread context)
-- Format and deliver responses back to Slack
-- Handle different message types (DMs, channel messages, thread replies)
-- Manage rate limiting and error handling for Slack API calls
-
-**Processing Guidelines:**
-- Filter out bot messages and self-messages
-- Preserve thread context for threaded conversations
-- Extract user information and channel details
-- Handle mentions and direct messages appropriately
-- Ensure proper message formatting for Slack delivery""",
+            # NOTE: Slack Gateway removed - it's a pure interface layer with no AI generation
             
             "observer_agent_prompt": """You are the Observer Agent responsible for learning from conversations to improve the system's knowledge base.
 
@@ -169,9 +155,7 @@ Your response should feel natural, like a person talking, not a database regurgi
         """Get the client agent prompt."""
         return self._prompts.get("client_agent_prompt", "You are a helpful AI assistant.")
     
-    def get_slack_gateway_prompt(self) -> str:
-        """Get the Slack gateway agent prompt."""
-        return self._prompts.get("slack_gateway_prompt", "You are a Slack gateway agent.")
+    # NOTE: Slack Gateway prompt removed - it's a pure interface layer
     
     def get_observer_agent_prompt(self) -> str:
         """Get the observer agent prompt."""
@@ -205,8 +189,7 @@ def get_orchestrator_prompt() -> str:
 def get_client_agent_prompt() -> str:
     return prompt_loader.get_client_agent_prompt()
 
-def get_slack_gateway_prompt() -> str:
-    return prompt_loader.get_slack_gateway_prompt()
+# NOTE: Slack Gateway prompt function removed - pure interface layer
 
 def get_observer_agent_prompt() -> str:
     return prompt_loader.get_observer_agent_prompt()
