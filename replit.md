@@ -78,6 +78,12 @@ The system uses environment variables for configuration management and supports 
 
 ## Recent Changes
 
+✅ **June 27, 2025 - Deployment Package Configuration Fixed**
+- Fixed setuptools build backend error by adding package discovery configuration
+- Added proper package inclusion for multi-directory structure (agents, models, services, tools, utils, workers)
+- Excluded non-Python directories (attached_assets, __pycache__) from build process
+- Configuration now properly handles flat-layout multi-package structure
+
 ✅ **June 27, 2025 - Deployment Fixes Applied**
 - Fixed deployment health check failures by simplifying startup process
 - Removed async lifespan manager complexity for faster initialization

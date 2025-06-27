@@ -20,3 +20,11 @@ dependencies = [
 [build-system]
 requires = ["setuptools>=45", "wheel"]
 build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["agents*", "models*", "services*", "tools*", "utils*", "workers*"]
+exclude = ["attached_assets*", "__pycache__*", "*.pyc"]
+
+[tool.setuptools.package-data]
+"*" = ["*.py"]
