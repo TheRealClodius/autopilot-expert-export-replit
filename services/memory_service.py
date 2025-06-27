@@ -28,8 +28,13 @@ class MemoryService:
     def _initialize_redis(self):
         """Initialize Redis connection with fallback to in-memory cache"""
         try:
-            # Parse Redis URL and create connection
+            # Check if Redis URL is configured
             redis_url = settings.REDIS_URL
+            if not redis_url or redis_url.strip() == "":
+                logger.info("No Redis URL configured, using in-memory cache")
+                self.redis_available = False
+                self.redis_client = None
+                return
             
             # Add password if provided
             if settings.REDIS_PASSWORD:
