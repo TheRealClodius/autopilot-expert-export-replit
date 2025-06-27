@@ -1,0 +1,19 @@
+# Scenario 1: 
+  Slack user in a DM to the Autopilot-Expert: 
+  "I'm trying to find the latest updated on the unified autopilot trigger. Can you help me?"
+
+  Background:
+    The Slack message is received by the Slack Gateway and forwarded to the Orchestrator Agent.
+    The Orchestrator Agent will call the Gemini 2.5 Pro model to generate a response.
+    It analyses the query and decides to on a course of action by generating a 2 step plan. It first will be calling the vector_search tool to get information about the unified autopilot trigger. 
+    The vector_search tool when called, will follow its own system prompt and will generate a list of vector search queries with filters, to be executed in parallel. "What is the autopilot trigger?" / "Who is the owner of Autopilot project?". "Pros and cons of autopilot trigger".
+    The responses will be handed back to the Orchestrator Agent that will then observe and perform a graph query to get information about Andrei Clodius, the owner of the Autopilot project and potential other dependencies of the project with dates and other people involved. The graph tool will return a list of nodes with the information about the project and the people involved. Orchestrator will decide to call the vector tool again with additional filters and queries based on what it has learned from the graph query.
+    The Orchestrator Agent will receive the responses from the second vector search tool call and with all the information collated, it will call the Client Agent, forward the findings and the query to the Client Agent. 
+    The Client Agent will call Gemini 2.5 Flash model to generate a persona based formatted response.
+    The response is sent back to the Slack Gateway and forwarded to the user.
+
+  After n of X responses are sent to the user, the Observer Agent will be called to observe the conversation and draw one or more conclusions on the type of questions and answers in order to improve the memory of the system. 
+    It will call the graph_tag tool and update the graph with its conclusions if there are any new important relationships uncovered.
+    It will call the @knowledge_queue tool to add the new information to the knowledge queue for the Knowledge Update Worker to pick it up and process.
+
+  This way the system is able to evolve and improve its knowledge base based on the user's questions and answers. 
