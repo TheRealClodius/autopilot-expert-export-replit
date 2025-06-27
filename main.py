@@ -7,7 +7,7 @@ import asyncio
 import logging
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException, Request, BackgroundTasks
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, PlainTextResponse
 import uvicorn
 import os
 
@@ -87,10 +87,10 @@ async def slack_events(request: Request, background_tasks: BackgroundTasks):
         
         # Handle Slack URL verification challenge
         if body.get("type") == "url_verification":
-            # Return challenge directly without strict validation for URL verification
+            # Return challenge as plain text according to Slack documentation
             challenge_value = body.get("challenge")
             if challenge_value:
-                return {"challenge": challenge_value}
+                return PlainTextResponse(challenge_value)
             else:
                 raise HTTPException(status_code=400, detail="Missing challenge parameter")
         
