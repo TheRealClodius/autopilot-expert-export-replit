@@ -181,16 +181,82 @@ async def process_slack_message(event_data: SlackEvent):
 
 @app.post("/admin/trigger-ingestion")
 async def trigger_manual_ingestion():
-    """Admin endpoint to manually trigger data ingestion"""
-    if not CELERY_AVAILABLE or not celery_app:
-        raise HTTPException(status_code=503, detail="Background task processing is not available in this deployment")
-    
+    """Admin endpoint to manually trigger data ingestion (bypasses Celery)"""
     try:
-        task = celery_app.send_task('workers.knowledge_update_worker.manual_ingestion')
-        return {"status": "triggered", "task_id": task.id}
+        # Direct ingestion without Celery dependency
+        from services.slack_connector import SlackConnector
+        from services.data_processor import DataProcessor
+        from datetime import datetime, timedelta
+        
+        logger.info("Starting direct Slack data ingestion...")
+        
+        # Get monitored channels
+        channels = settings.get_monitored_channels()
+        if not channels:
+            return {"status": "skipped", "reason": "no_channels_configured", "channels": []}
+        
+        logger.info(f"Found {len(channels)} channels to monitor: {channels}")
+        
+        # Initialize connector
+        slack_connector = SlackConnector()
+        data_processor = DataProcessor()
+        
+        # Set time range for ingestion (last 7 days for initial population)
+        end_time = datetime.now()
+        start_time = end_time - timedelta(days=7)
+        
+        results = {
+            "status": "success",
+            "channels_processed": [],
+            "total_messages": 0,
+            "errors": []
+        }
+        
+        for channel in channels:
+            try:
+                logger.info(f"Processing channel: {channel}")
+                
+                # Extract messages from channel
+                messages = await slack_connector.extract_channel_messages(
+                    channel_id=channel,
+                    start_time=start_time,
+                    end_time=end_time
+                )
+                
+                if messages:
+                    # Process and clean messages
+                    processed_messages = await data_processor.process_messages(messages)
+                    
+                    channel_result = {
+                        "channel": channel,
+                        "raw_messages": len(messages),
+                        "processed_messages": len(processed_messages),
+                        "time_range": f"{start_time.isoformat()} to {end_time.isoformat()}"
+                    }
+                    
+                    results["channels_processed"].append(channel_result)
+                    results["total_messages"] += len(processed_messages)
+                    
+                    logger.info(f"Channel {channel}: {len(messages)} raw messages, {len(processed_messages)} processed")
+                else:
+                    results["channels_processed"].append({
+                        "channel": channel,
+                        "raw_messages": 0,
+                        "processed_messages": 0,
+                        "note": "No messages found in time range"
+                    })
+                    
+            except Exception as e:
+                error_msg = f"Error processing channel {channel}: {str(e)}"
+                logger.error(error_msg)
+                results["errors"].append(error_msg)
+        
+        logger.info(f"Ingestion completed: {results['total_messages']} total messages processed")
+        return results
+        
     except Exception as e:
         logger.error(f"Failed to trigger ingestion: {e}")
-        raise HTTPException(status_code=500, detail="Failed to trigger ingestion")
+        raise HTTPException(status_code=500, detail=f"Failed to trigger ingestion: {str(e)}")
 
 @app.get("/admin/system-status")
 async def system_status():
@@ -334,6 +400,71 @@ async def test_conversation_memory():
             "error": str(e),
             "test_results": test_results
         }
+
+@app.get("/admin/channel-diagnostic")
+async def channel_diagnostic():
+    """Admin endpoint to diagnose channel access and permissions"""
+    try:
+        from services.slack_connector import SlackConnector
+        
+        slack_connector = SlackConnector()
+        channels = settings.get_monitored_channels()
+        
+        if not channels:
+            return {"status": "no_channels_configured", "channels": []}
+        
+        results = {
+            "configured_channels": channels,
+            "channel_details": [],
+            "bot_permissions": {},
+            "recommendations": []
+        }
+        
+        # Test each channel
+        for channel in channels:
+            channel_info = {
+                "channel_id": channel,
+                "accessible": False,
+                "error": None,
+                "member_count": None,
+                "channel_name": None
+            }
+            
+            try:
+                # Try to get channel info
+                response = slack_connector.client.conversations_info(channel=channel)
+                if response["ok"]:
+                    channel_data = response["channel"]
+                    channel_info.update({
+                        "accessible": True,
+                        "channel_name": channel_data.get("name", "unknown"),
+                        "is_private": channel_data.get("is_private", False),
+                        "is_member": channel_data.get("is_member", False),
+                        "member_count": channel_data.get("num_members", 0)
+                    })
+                else:
+                    channel_info["error"] = response.get("error", "unknown_error")
+                    
+            except Exception as e:
+                channel_info["error"] = str(e)
+            
+            results["channel_details"].append(channel_info)
+        
+        # Add recommendations
+        for channel_detail in results["channel_details"]:
+            if not channel_detail["accessible"]:
+                if "not_in_channel" in str(channel_detail.get("error", "")):
+                    results["recommendations"].append(f"Add bot to channel {channel_detail['channel_id']} (/invite @your-bot-name)")
+                elif "channel_not_found" in str(channel_detail.get("error", "")):
+                    results["recommendations"].append(f"Channel {channel_detail['channel_id']} may not exist or bot lacks permissions")
+            elif not channel_detail.get("is_member", False):
+                results["recommendations"].append(f"Bot needs to be added as member to {channel_detail.get('channel_name', channel_detail['channel_id'])}")
+        
+        return results
+        
+    except Exception as e:
+        logger.error(f"Error in channel diagnostic: {e}")
+        return {"status": "error", "error": str(e)}
 
 if __name__ == "__main__":
     # Get port from environment for Cloud Run deployment
