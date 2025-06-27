@@ -92,6 +92,115 @@ class MemoryService:
             self.redis_client = None
             return True
     
+    async def store_raw_message(
+        self,
+        conversation_key: str,
+        message_data: Dict[str, Any],
+        max_messages: int = 10
+    ) -> bool:
+        """
+        Store raw message in conversation history with sliding window of max_messages.
+        
+        Args:
+            conversation_key: Unique key for the conversation
+            message_data: Raw message data to store
+            max_messages: Maximum number of messages to keep (default 10)
+            
+        Returns:
+            True if successful, False otherwise
+        """
+        try:
+            # Get the key for raw messages
+            messages_key = f"{conversation_key}:messages"
+            
+            # Add timestamp to message data
+            message_with_timestamp = {
+                **message_data,
+                "stored_at": datetime.now().isoformat()
+            }
+            
+            if self.redis_available and self.redis_client:
+                # Push to Redis list (left push for newest first)
+                await self.redis_client.lpush(messages_key, json.dumps(message_with_timestamp, default=str))
+                # Trim to keep only the most recent max_messages
+                await self.redis_client.ltrim(messages_key, 0, max_messages - 1)
+                # Set TTL on the list
+                await self.redis_client.expire(messages_key, 86400)  # 24 hours
+            else:
+                # Handle in-memory cache
+                if messages_key not in self._memory_cache:
+                    self._memory_cache[messages_key] = {
+                        'data': [],
+                        'expiry': datetime.now() + timedelta(seconds=86400)
+                    }
+                
+                # Add message to front of list
+                cached_messages = json.loads(self._memory_cache[messages_key]['data']) if isinstance(self._memory_cache[messages_key]['data'], str) else self._memory_cache[messages_key]['data']
+                if not isinstance(cached_messages, list):
+                    cached_messages = []
+                
+                cached_messages.insert(0, message_with_timestamp)
+                # Keep only the most recent max_messages
+                cached_messages = cached_messages[:max_messages]
+                
+                self._memory_cache[messages_key] = {
+                    'data': cached_messages,
+                    'expiry': datetime.now() + timedelta(seconds=86400)
+                }
+            
+            logger.debug(f"Stored raw message in conversation: {conversation_key}")
+            return True
+            
+        except Exception as e:
+            logger.error(f"Error storing raw message: {e}")
+            return False
+    
+    async def get_recent_messages(
+        self,
+        conversation_key: str,
+        limit: int = 10
+    ) -> List[Dict[str, Any]]:
+        """
+        Get recent raw messages from conversation history.
+        
+        Args:
+            conversation_key: Unique key for the conversation
+            limit: Maximum number of messages to retrieve
+            
+        Returns:
+            List of recent messages (newest first)
+        """
+        try:
+            messages_key = f"{conversation_key}:messages"
+            
+            if self.redis_available and self.redis_client:
+                # Get messages from Redis list
+                raw_messages = await self.redis_client.lrange(messages_key, 0, limit - 1)
+                messages = [json.loads(msg) for msg in raw_messages]
+            else:
+                # Get from in-memory cache
+                cached_item = self._memory_cache.get(messages_key)
+                if not cached_item:
+                    return []
+                
+                # Check if expired
+                if cached_item['expiry'] and datetime.now() > cached_item['expiry']:
+                    del self._memory_cache[messages_key]
+                    return []
+                
+                cached_messages = cached_item['data']
+                if isinstance(cached_messages, str):
+                    cached_messages = json.loads(cached_messages)
+                
+                messages = cached_messages[:limit] if isinstance(cached_messages, list) else []
+            
+            logger.debug(f"Retrieved {len(messages)} recent messages for conversation: {conversation_key}")
+            return messages
+            
+        except Exception as e:
+            logger.error(f"Error retrieving recent messages: {e}")
+            return []
+
     async def store_conversation_context(
         self, 
         conversation_key: str, 

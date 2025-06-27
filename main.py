@@ -328,6 +328,80 @@ async def reload_prompts():
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to reload prompts: {e}")
 
+@app.get("/admin/short-term-memory-test")
+async def test_short_term_memory():
+    """Admin endpoint to test 10-message short-term memory system"""
+    if not memory_service:
+        raise HTTPException(status_code=503, detail="Memory service not available")
+    
+    test_results = {}
+    
+    try:
+        # Test conversation key format
+        channel_id = "C1234567890"
+        thread_ts = "1640995200.001500"
+        conversation_key = f"conv:{channel_id}:{thread_ts}"
+        test_results["conversation_key"] = conversation_key
+        
+        # Test storing multiple raw messages (simulate conversation)
+        messages = [
+            {"text": "Hi, I need help with Autopilot", "user_name": "john", "message_ts": "1640995200.001500"},
+            {"text": "What specific aspect of Autopilot are you working on?", "user_name": "bot", "message_ts": "1640995205.001501"},
+            {"text": "I'm trying to set up triggers for our process", "user_name": "john", "message_ts": "1640995210.001502"},
+            {"text": "Triggers are powerful! What kind of process are you automating?", "user_name": "bot", "message_ts": "1640995215.001503"},
+            {"text": "We want to automate our approval workflow", "user_name": "john", "message_ts": "1640995220.001504"},
+            {"text": "Great! Approval workflows are perfect for Autopilot. Do you have the process mapped out?", "user_name": "bot", "message_ts": "1640995225.001505"},
+            {"text": "Yes, we have 3 approval steps", "user_name": "john", "message_ts": "1640995230.001506"},
+            {"text": "Perfect! For 3-step approvals, you'll want to use conditional logic...", "user_name": "bot", "message_ts": "1640995235.001507"},
+            {"text": "That sounds complex. Can you walk me through it?", "user_name": "john", "message_ts": "1640995240.001508"},
+            {"text": "Of course! Let me break it down step by step...", "user_name": "bot", "message_ts": "1640995245.001509"},
+            {"text": "Ok, tell me about the unified trigger in the web platform", "user_name": "john", "message_ts": "1640995250.001510"},
+        ]
+        
+        # Store all messages
+        for i, msg_data in enumerate(messages):
+            success = await memory_service.store_raw_message(conversation_key, msg_data, max_messages=10)
+            test_results[f"store_message_{i+1}"] = success
+        
+        # Retrieve recent messages
+        recent_messages = await memory_service.get_recent_messages(conversation_key, limit=10)
+        test_results["retrieved_message_count"] = len(recent_messages)
+        test_results["messages_in_correct_order"] = recent_messages[0]["text"] == messages[-1]["text"] if recent_messages else False
+        test_results["oldest_message_preserved"] = len(recent_messages) == 10 and recent_messages[-1]["text"] == messages[1]["text"]
+        
+        # Test that only 10 messages are kept (sliding window)
+        test_results["sliding_window_working"] = len(recent_messages) <= 10
+        
+        # Test conversation context flow
+        last_3_messages = recent_messages[:3] if len(recent_messages) >= 3 else recent_messages
+        conversation_flow = " | ".join([msg["text"][:30] + "..." for msg in reversed(last_3_messages)])
+        test_results["conversation_flow_sample"] = conversation_flow
+        
+        overall_success = all([
+            test_results["retrieved_message_count"] > 0,
+            test_results["messages_in_correct_order"],
+            test_results["sliding_window_working"]
+        ])
+        
+        return {
+            "status": "success" if overall_success else "partial_failure",
+            "short_term_memory_working": overall_success,
+            "test_results": test_results,
+            "summary": {
+                "backend": "redis" if memory_service.redis_available else "in_memory",
+                "messages_stored": test_results["retrieved_message_count"],
+                "conversation_context_preserved": overall_success
+            }
+        }
+        
+    except Exception as e:
+        logger.error(f"Error testing short-term memory: {e}")
+        return {
+            "status": "error",
+            "error": str(e),
+            "test_results": test_results
+        }
+
 @app.get("/admin/conversation-memory-test")
 async def test_conversation_memory():
     """Admin endpoint to test conversation memory similar to real Slack usage"""

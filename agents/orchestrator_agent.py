@@ -48,8 +48,15 @@ class OrchestratorAgent:
         try:
             logger.info(f"Orchestrator processing query: {message.text[:100]}...")
             
-            # Store conversation context in memory
+            # Store raw message in short-term memory (10 message sliding window)
             conversation_key = f"conv:{message.channel_id}:{message.thread_ts or message.message_ts}"
+            await self.memory_service.store_raw_message(
+                conversation_key,
+                message.dict(),
+                max_messages=10
+            )
+            
+            # Also store current conversation context for compatibility
             await self.memory_service.store_conversation_context(
                 conversation_key, 
                 message.dict(), 
@@ -125,17 +132,21 @@ class OrchestratorAgent:
             Execution plan dictionary
         """
         try:
-            # Get conversation history for context
+            # Get recent messages for better context (10 message sliding window)
             conversation_key = f"conv:{message.channel_id}:{message.thread_ts or message.message_ts}"
+            recent_messages = await self.memory_service.get_recent_messages(conversation_key, limit=10)
+            
+            # Also get legacy conversation history for compatibility
             conversation_history = await self.memory_service.get_conversation_context(conversation_key)
             
-            # Prepare context for analysis
+            # Prepare context for analysis with short-term memory
             context = {
                 "query": message.text,
                 "user": message.user_name,
                 "channel": message.channel_name,
                 "is_dm": message.is_dm,
                 "thread_context": message.thread_context,
+                "recent_messages": recent_messages,  # Last 10 raw messages
                 "conversation_history": conversation_history
             }
             

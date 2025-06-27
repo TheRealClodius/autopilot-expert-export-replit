@@ -119,6 +119,21 @@ The system uses environment variables for configuration management and supports 
 - Changed default structured response model to Flash with Pro override for Orchestrator
 - Improved response speed while maintaining planning quality
 
+✅ **June 27, 2025 - Fixed Conversation Memory with 10-Message Short-Term Memory**
+- Implemented proper 10-message sliding window memory system using Redis/in-memory cache
+- Fixed conversation context loss issue where bot would lose understanding mid-conversation
+- Added `store_raw_message()` and `get_recent_messages()` methods to Memory Service
+- Orchestrator now stores and retrieves last 10 raw messages for better conversation flow
+- Added admin endpoint `/admin/short-term-memory-test` to verify memory functionality
+- System now maintains natural conversation context throughout extended discussions
+
+✅ **June 27, 2025 - Implemented Slack AI Agent Suggestions Feature**
+- Added contextual suggestion generation using Gemini 2.5 Flash
+- Client Agent generates 3-5 relevant follow-up questions after each response
+- Suggestions appear as interactive buttons in Slack for improved user engagement
+- Smart suggestion logic focuses on Autopilot-specific topics and troubleshooting
+- Fallback system provides default suggestions when AI generation fails
+
 ✅ **June 27, 2025 - Cleaned Up Architecture - Removed Unnecessary Slack Gateway Prompt**
 - Removed Slack Gateway prompt as it's a pure interface layer with no AI generation
 - Slack Gateway only handles message parsing, API calls, and response delivery
