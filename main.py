@@ -128,14 +128,35 @@ async def process_slack_message(event_data: SlackEvent):
         processed_message = await slack_gateway.process_message(event_data)
         
         if processed_message:
-            # Forward to Orchestrator Agent
+            # Send immediate thinking indicator
+            thinking_message_ts = await slack_gateway.send_thinking_indicator(
+                processed_message.channel_id,
+                processed_message.thread_ts
+            )
+            
+            # Forward to Orchestrator Agent for processing
             response = await orchestrator_agent.process_query(processed_message)
             
-            # Send response back to Slack
-            if response:
+            # Update the thinking message with final response
+            if response and thinking_message_ts:
+                await slack_gateway.update_message(
+                    processed_message.channel_id,
+                    thinking_message_ts,
+                    response.get("text", "Sorry, I couldn't generate a response.")
+                )
+                logger.info("Successfully processed and updated Slack message")
+            elif response:
+                # Fallback: send new message if update failed
                 await slack_gateway.send_response(response)
                 logger.info("Successfully processed and responded to Slack message")
             else:
+                # Update thinking indicator with error message
+                if thinking_message_ts:
+                    await slack_gateway.update_message(
+                        processed_message.channel_id,
+                        thinking_message_ts,
+                        "Sorry, I couldn't process your request at the moment."
+                    )
                 logger.warning("No response generated for Slack message")
         else:
             logger.info("Message filtered out by Slack Gateway")
@@ -145,10 +166,14 @@ async def process_slack_message(event_data: SlackEvent):
         # Send error message to Slack
         try:
             channel_id = event_data.event.get('channel')
+            thread_ts = event_data.event.get('thread_ts')
+            
             if slack_gateway and channel_id:
+                # Try to update thinking message if it exists, otherwise send new error
                 await slack_gateway.send_error_response(
                     channel_id,
-                    "I'm experiencing technical difficulties. Please try again later."
+                    "I'm experiencing technical difficulties. Please try again later.",
+                    thread_ts
                 )
         except Exception as send_err:
             logger.error(f"Failed to send error response: {send_err}")

@@ -146,7 +146,7 @@ class SlackGateway:
         try:
             response = self.client.chat_postMessage(
                 channel=channel_id,
-                text="🤔 Thinking...",
+                text="💭 Thinking and typing...",
                 thread_ts=thread_ts,
                 unfurl_links=False,
                 unfurl_media=False
