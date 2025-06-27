@@ -132,6 +132,69 @@ class SlackGateway:
             logger.error(f"Error sending Slack response: {e}")
             return False
     
+    async def send_thinking_indicator(self, channel_id: str, thread_ts: Optional[str] = None) -> Optional[str]:
+        """
+        Send a thinking indicator message to Slack.
+        
+        Args:
+            channel_id: Slack channel ID
+            thread_ts: Thread timestamp if replying in thread
+            
+        Returns:
+            Message timestamp of the thinking indicator for later editing
+        """
+        try:
+            response = self.client.chat_postMessage(
+                channel=channel_id,
+                text="🤔 Thinking...",
+                thread_ts=thread_ts,
+                unfurl_links=False,
+                unfurl_media=False
+            )
+            
+            if response["ok"]:
+                logger.info(f"Sent thinking indicator to {channel_id}")
+                return response["ts"]
+            else:
+                logger.error(f"Failed to send thinking indicator: {response.get('error')}")
+                return None
+                
+        except Exception as e:
+            logger.error(f"Error sending thinking indicator: {e}")
+            return None
+    
+    async def update_message(self, channel_id: str, message_ts: str, new_text: str) -> bool:
+        """
+        Update an existing Slack message.
+        
+        Args:
+            channel_id: Slack channel ID
+            message_ts: Timestamp of message to update
+            new_text: New text content
+            
+        Returns:
+            True if successful, False otherwise
+        """
+        try:
+            response = self.client.chat_update(
+                channel=channel_id,
+                ts=message_ts,
+                text=new_text,
+                unfurl_links=False,
+                unfurl_media=False
+            )
+            
+            if response["ok"]:
+                logger.info(f"Updated message {message_ts} in {channel_id}")
+                return True
+            else:
+                logger.error(f"Failed to update message: {response.get('error')}")
+                return False
+                
+        except Exception as e:
+            logger.error(f"Error updating message: {e}")
+            return False
+
     async def send_error_response(self, channel_id: str, error_message: str, thread_ts: Optional[str] = None) -> bool:
         """Send error message to Slack"""
         try:
