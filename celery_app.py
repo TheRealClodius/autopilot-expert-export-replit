@@ -4,7 +4,7 @@ Handles task queuing, scheduling, and worker management.
 """
 
 import logging
-from celery import Celery
+from celery import Celery, signals
 from celery.schedules import crontab
 from kombu import Queue
 
@@ -120,9 +120,8 @@ celery_app.conf.update(
     worker_send_task_events=True,
     task_send_sent_event=True,
     
-    # Error handling
-    task_reject_on_worker_lost=True,
-    task_acks_late=True,
+    # Error handling (task_acks_late already set above)
+    # task_reject_on_worker_lost=True, # Also duplicate
 )
 
 # Custom task base class
