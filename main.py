@@ -16,7 +16,14 @@ from agents.orchestrator_agent import OrchestratorAgent
 from config import settings
 from models.schemas import SlackEvent, SlackChallenge
 from services.memory_service import MemoryService
-from celery_app import celery_app
+
+# Import Celery only if configured
+try:
+    from celery_app import celery_app
+    CELERY_AVAILABLE = True
+except ImportError:
+    CELERY_AVAILABLE = False
+    celery_app = None
 
 # Configure logging
 logging.basicConfig(
@@ -145,6 +152,9 @@ async def process_slack_message(event_data: SlackEvent):
 @app.post("/admin/trigger-ingestion")
 async def trigger_manual_ingestion():
     """Admin endpoint to manually trigger data ingestion"""
+    if not CELERY_AVAILABLE or not celery_app:
+        raise HTTPException(status_code=503, detail="Background task processing is not available in this deployment")
+    
     try:
         task = celery_app.send_task('workers.knowledge_update_worker.manual_ingestion')
         return {"status": "triggered", "task_id": task.id}
@@ -161,12 +171,15 @@ async def system_status():
         if memory_service:
             redis_status = await memory_service.health_check()
         
-        # Check Celery workers
-        celery_status = False
-        try:
-            celery_status = celery_app.control.inspect().active() is not None
-        except Exception:
-            celery_status = False
+        # Check Celery workers (disabled for Cloud Run deployment)
+        if CELERY_AVAILABLE and celery_app and settings.CELERY_BROKER_URL and settings.CELERY_BROKER_URL.strip():
+            try:
+                celery_status = celery_app.control.inspect().active() is not None
+            except Exception:
+                celery_status = False
+        else:
+            # Celery not configured or not available
+            celery_status = "disabled"
         
         return {
             "redis": "healthy" if redis_status else "unhealthy",
@@ -179,10 +192,13 @@ async def system_status():
         return {"error": str(e)}
 
 if __name__ == "__main__":
+    # Get port from environment for Cloud Run deployment
+    port = int(os.environ.get("PORT", 5000))
+    
     uvicorn.run(
         app,
         host="0.0.0.0",
-        port=5000,
+        port=port,
         reload=False,
         log_level="info",
         access_log=True

@@ -78,6 +78,13 @@ The system uses environment variables for configuration management and supports 
 
 ## Recent Changes
 
+✅ **June 27, 2025 - Cloud Run Deployment Configuration Fixed**
+- Updated application to use dynamic PORT environment variable for Cloud Run compatibility
+- Removed Redis and Celery dependencies from deployment configuration
+- Disabled Redis/Celery port configuration that was causing connection failures
+- Application now binds to all interfaces (0.0.0.0) for proper Cloud Run deployment
+- Simplified dependencies to only include required packages for deployment
+
 ✅ **June 27, 2025 - Redis Fallback System Implemented**
 - Fixed deployment failure caused by Redis connection errors in production
 - Implemented in-memory cache fallback when Redis is unavailable

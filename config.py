@@ -30,9 +30,9 @@ class Settings(BaseSettings):
     REDIS_URL: str = os.getenv("REDIS_URL", "")
     REDIS_PASSWORD: Optional[str] = os.getenv("REDIS_PASSWORD")
     
-    # Celery Configuration
-    CELERY_BROKER_URL: str = os.getenv("CELERY_BROKER_URL", "redis://localhost:6379/1")
-    CELERY_RESULT_BACKEND: str = os.getenv("CELERY_RESULT_BACKEND", "redis://localhost:6379/2")
+    # Celery Configuration (disabled for Cloud Run deployment)
+    CELERY_BROKER_URL: str = os.getenv("CELERY_BROKER_URL", "")
+    CELERY_RESULT_BACKEND: str = os.getenv("CELERY_RESULT_BACKEND", "")
     
     # System Configuration
     MAX_CHUNK_SIZE: int = int(os.getenv("MAX_CHUNK_SIZE", "1000"))
