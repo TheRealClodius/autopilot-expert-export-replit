@@ -6,10 +6,17 @@ Handles short-term memory, conversation context, and graph data persistence.
 import json
 import logging
 from typing import Dict, Any, List, Optional, Union
-import redis.asyncio as redis
 from datetime import datetime, timedelta
 
 from config import settings
+
+# Try to import Redis, but handle gracefully if not available
+try:
+    import redis.asyncio as redis
+    REDIS_AVAILABLE = True
+except ImportError:
+    REDIS_AVAILABLE = False
+    redis = None
 
 logger = logging.getLogger(__name__)
 
@@ -28,6 +35,13 @@ class MemoryService:
     def _initialize_redis(self):
         """Initialize Redis connection with fallback to in-memory cache"""
         try:
+            # Check if Redis module is available
+            if not REDIS_AVAILABLE or redis is None:
+                logger.info("Redis module not available, using in-memory cache")
+                self.redis_available = False
+                self.redis_client = None
+                return
+            
             # Check if Redis URL is configured
             redis_url = settings.REDIS_URL
             if not redis_url or redis_url.strip() == "":

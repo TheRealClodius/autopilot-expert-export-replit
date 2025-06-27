@@ -10,6 +10,7 @@ dependencies = [
     "pinecone-client>=6.0.0",
     "pydantic>=2.11.7",
     "pydantic-settings>=2.10.1",
+    "redis>=6.2.0",
     "slack-sdk>=3.35.0",
     "uvicorn>=0.34.3",
 ]
