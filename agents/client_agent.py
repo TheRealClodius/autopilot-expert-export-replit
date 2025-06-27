@@ -180,14 +180,7 @@ If you don't have enough information to fully answer the question, say so honest
                 # Truncate and add continuation message
                 response = response[:1900] + "\n\n... (response truncated for brevity)"
             
-            # Add helpful footer for DMs only when appropriate
-            if (message.is_dm and 
-                "I don't have" not in response and 
-                "I couldn't find" not in response and
-                "follow-up" not in response.lower() and
-                "ask me" not in response.lower() and
-                len(response) < 200):  # Only for shorter responses that might need encouragement
-                response += "\n\nAnything else you'd like to know?"
+            # No automatic footers - let the prompts handle conversational flow naturally
             
             return response
             
