@@ -51,8 +51,13 @@ class SlackGateway:
             is_mention = f"<@{self.bot_user_id}>" in text if self.bot_user_id else False
             is_thread_reply = thread_ts is not None
             
+            # Debug logging for mention detection
+            logger.info(f"Message processing: is_dm={is_dm}, is_mention={is_mention}, is_thread_reply={is_thread_reply}")
+            logger.info(f"Bot user ID: {self.bot_user_id}, Message text: '{text[:100]}...'")
+            
             # Only process if it's a DM, mention, or thread reply to bot
             if not (is_dm or is_mention or (is_thread_reply and await self._is_bot_thread(channel_id, thread_ts))):
+                logger.info(f"Message ignored: not a DM, mention, or bot thread reply")
                 return None
             
             # Clean the message text (remove mentions)
