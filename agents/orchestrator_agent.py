@@ -79,19 +79,34 @@ class OrchestratorAgent:
             logger.info(f"Response generation took {time.time() - response_start:.2f}s")
             
             if response:
+                # Handle both string and dict responses from Client Agent
+                if isinstance(response, dict):
+                    response_text = response.get("text", "")
+                    suggestions = response.get("suggestions", [])
+                else:
+                    response_text = response
+                    suggestions = []
+                
                 # Trigger Observer Agent for learning (fire and forget - don't wait)
                 import asyncio
-                asyncio.create_task(self._trigger_observation(message, response, gathered_information))
+                asyncio.create_task(self._trigger_observation(message, response_text, gathered_information))
                 
                 total_time = time.time() - start_time
                 logger.info(f"Total processing time: {total_time:.2f}s")
                 
-                return {
+                result = {
                     "channel_id": message.channel_id,
                     "thread_ts": message.thread_ts,
-                    "text": response,
+                    "text": response_text,
                     "timestamp": datetime.now().isoformat()
                 }
+                
+                # Add suggestions if they exist
+                if suggestions:
+                    result["suggestions"] = suggestions
+                    logger.info(f"Including {len(suggestions)} suggestions in response")
+                
+                return result
             
             return await self._generate_fallback_response(message)
             

@@ -4,7 +4,7 @@ Formats responses for the end user based on gathered information.
 """
 
 import logging
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List
 
 from utils.gemini_client import GeminiClient
 from models.schemas import ProcessedMessage
@@ -194,3 +194,92 @@ If you don't have enough information to fully answer the question, say so honest
         except Exception as e:
             logger.error(f"Error post-processing response: {e}")
             return response
+    
+    async def _generate_suggestions(
+        self, 
+        message: ProcessedMessage,
+        gathered_info: Dict[str, Any],
+        context: Dict[str, Any],
+        response_text: str
+    ) -> List[str]:
+        """
+        Generate contextual suggestions for Slack AI agent mode.
+        
+        Args:
+            message: Original processed message
+            gathered_info: Information gathered by tools
+            context: Execution context
+            response_text: Generated response text
+            
+        Returns:
+            List of suggestion strings
+        """
+        try:
+            # Generate smart suggestions based on context
+            suggestion_prompt = f"""
+Based on this Autopilot expert conversation, generate 3-5 helpful follow-up questions or actions the user might want to explore next.
+
+User's Original Question: {message.text}
+My Response: {response_text}
+Context: {message.channel_name} channel
+
+Generate practical suggestions that would help the user:
+1. Learn more about Autopilot features
+2. Get specific implementation guidance  
+3. Troubleshoot common issues
+4. Explore related topics
+
+Format as a simple list, one suggestion per line. Keep each under 75 characters.
+Focus on actionable next steps, not generic questions.
+
+Example format:
+- How to set up Autopilot triggers?
+- Best practices for AI Builder models
+- Common deployment issues and fixes
+"""
+
+            suggestions_response = await self.gemini_client.generate_response(
+                "You are an expert at generating helpful follow-up suggestions for Autopilot conversations.",
+                suggestion_prompt,
+                model="gemini-2.5-flash",
+                max_tokens=200
+            )
+            
+            if suggestions_response:
+                # Parse suggestions from response
+                suggestions = []
+                lines = suggestions_response.strip().split('\n')
+                for line in lines:
+                    line = line.strip()
+                    if line and (line.startswith('-') or line.startswith('•')):
+                        suggestion = line[1:].strip()
+                        if suggestion and len(suggestion) <= 75:
+                            suggestions.append(suggestion)
+                
+                # Fallback suggestions if parsing fails or no suggestions generated
+                if not suggestions:
+                    suggestions = self._get_fallback_suggestions(message, context)
+                
+                return suggestions[:5]  # Limit to 5 suggestions
+            
+            # Return fallback suggestions if generation fails
+            return self._get_fallback_suggestions(message, context)
+            
+        except Exception as e:
+            logger.error(f"Error generating suggestions: {e}")
+            return self._get_fallback_suggestions(message, context)
+    
+    def _get_fallback_suggestions(self, message: ProcessedMessage, context: Dict[str, Any]) -> List[str]:
+        """Get fallback suggestions when generation fails."""
+        if message.is_dm:
+            return [
+                "How to create Autopilot actions?",
+                "Best practices for AI Builder",
+                "Troubleshooting automation issues"
+            ]
+        else:
+            return [
+                "Show me Autopilot examples",
+                "Help with process automation",
+                "AI Builder model tips"
+            ]
