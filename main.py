@@ -87,8 +87,12 @@ async def slack_events(request: Request, background_tasks: BackgroundTasks):
         
         # Handle Slack URL verification challenge
         if body.get("type") == "url_verification":
-            challenge = SlackChallenge(**body)
-            return {"challenge": challenge.challenge}
+            # Return challenge directly without strict validation for URL verification
+            challenge_value = body.get("challenge")
+            if challenge_value:
+                return {"challenge": challenge_value}
+            else:
+                raise HTTPException(status_code=400, detail="Missing challenge parameter")
         
         # Handle Slack events
         if body.get("type") == "event_callback":
