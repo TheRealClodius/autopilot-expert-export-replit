@@ -30,39 +30,38 @@ slack_gateway = None
 orchestrator_agent = None
 memory_service = None
 
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    """Initialize services on startup"""
+# Initialize FastAPI without complex lifespan manager
+app = FastAPI(
+    title="Autopilot Expert Multi-Agent System",
+    description="Backend system for AI-powered Slack responses with multi-agent architecture",
+    version="1.0.0"
+)
+
+# Initialize services immediately for faster startup
+def initialize_services():
+    """Initialize services synchronously"""
     global slack_gateway, orchestrator_agent, memory_service
     
     logger.info("Initializing multi-agent system...")
     
-    # Initialize services
-    memory_service = MemoryService()
-    slack_gateway = SlackGateway()
-    orchestrator_agent = OrchestratorAgent(memory_service)
-    
-    # Note: Background tasks will be available once Celery workers are running
-    logger.info("Core system initialized - background workers available separately")
-    
-    logger.info("Multi-agent system initialized successfully")
-    yield
-    
-    # Cleanup on shutdown
-    logger.info("Shutting down multi-agent system...")
-    if memory_service:
-        await memory_service.close()
+    try:
+        # Initialize services
+        memory_service = MemoryService()
+        slack_gateway = SlackGateway()
+        orchestrator_agent = OrchestratorAgent(memory_service)
+        
+        logger.info("Multi-agent system initialized successfully")
+        return True
+    except Exception as e:
+        logger.error(f"Failed to initialize services: {e}")
+        return False
 
-app = FastAPI(
-    title="Autopilot Expert Multi-Agent System",
-    description="Backend system for AI-powered Slack responses with multi-agent architecture",
-    version="1.0.0",
-    lifespan=lifespan
-)
+# Initialize on startup
+services_initialized = initialize_services()
 
 @app.get("/")
-async def root():
-    """Root endpoint"""
+def root():
+    """Root endpoint - responds immediately for health checks"""
     return {"service": "autopilot-expert", "status": "running", "version": "1.0.0"}
 
 @app.get("/health")
@@ -109,6 +108,11 @@ async def process_slack_message(event_data: SlackEvent):
     try:
         logger.info(f"Processing message from user {event_data.event.get('user')} in channel {event_data.event.get('channel')}")
         
+        # Check if services are initialized
+        if not slack_gateway or not orchestrator_agent:
+            logger.error("Services not properly initialized")
+            return
+        
         # Pass to Slack Gateway for initial processing
         processed_message = await slack_gateway.process_message(event_data)
         
@@ -129,10 +133,12 @@ async def process_slack_message(event_data: SlackEvent):
         logger.error(f"Error in message processing pipeline: {e}")
         # Send error message to Slack
         try:
-            await slack_gateway.send_error_response(
-                event_data.event.get('channel'),
-                "I'm experiencing technical difficulties. Please try again later."
-            )
+            channel_id = event_data.event.get('channel')
+            if slack_gateway and channel_id:
+                await slack_gateway.send_error_response(
+                    channel_id,
+                    "I'm experiencing technical difficulties. Please try again later."
+                )
         except Exception as send_err:
             logger.error(f"Failed to send error response: {send_err}")
 
@@ -151,15 +157,22 @@ async def system_status():
     """Admin endpoint to check system status"""
     try:
         # Check Redis connection
-        redis_status = await memory_service.health_check() if memory_service else False
+        redis_status = False
+        if memory_service:
+            redis_status = await memory_service.health_check()
         
         # Check Celery workers
-        celery_status = celery_app.control.inspect().active() is not None
+        celery_status = False
+        try:
+            celery_status = celery_app.control.inspect().active() is not None
+        except Exception:
+            celery_status = False
         
         return {
             "redis": "healthy" if redis_status else "unhealthy",
             "celery": "healthy" if celery_status else "unhealthy",
-            "agents": "healthy" if slack_gateway and orchestrator_agent else "unhealthy"
+            "agents": "healthy" if slack_gateway and orchestrator_agent else "unhealthy",
+            "services_initialized": services_initialized
         }
     except Exception as e:
         logger.error(f"Error checking system status: {e}")
