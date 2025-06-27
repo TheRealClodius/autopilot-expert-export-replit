@@ -201,6 +201,27 @@ async def trigger_manual_ingestion():
         slack_connector = SlackConnector()
         data_processor = DataProcessor()
         
+        # First, try to get list of accessible channels (if we have permissions)
+        try:
+            accessible_response = slack_connector.client.conversations_list(
+                types="public_channel,private_channel",
+                exclude_archived=True
+            )
+            if accessible_response["ok"]:
+                accessible_channels = [ch["id"] for ch in accessible_response["channels"] if ch.get("is_member", False)]
+                logger.info(f"Found {len(accessible_channels)} accessible channels where bot is member")
+                # Filter to only try accessible channels
+                channels = [ch for ch in channels if ch in accessible_channels]
+                if not channels:
+                    return {
+                        "status": "no_accessible_channels",
+                        "message": "Bot is not a member of any configured channels. Add bot to channels first.",
+                        "accessible_channels": accessible_channels
+                    }
+        except Exception as list_error:
+            logger.warning(f"Could not list channels (missing permissions): {list_error}")
+            # Continue with original channels list
+        
         # Set time range for ingestion (last 7 days for initial population)
         end_time = datetime.now()
         start_time = end_time - timedelta(days=7)
@@ -464,6 +485,78 @@ async def channel_diagnostic():
         
     except Exception as e:
         logger.error(f"Error in channel diagnostic: {e}")
+        return {"status": "error", "error": str(e)}
+
+@app.get("/admin/workspace-channels")
+async def list_workspace_channels():
+    """Admin endpoint to list all accessible channels in the workspace"""
+    try:
+        from services.slack_connector import SlackConnector
+        
+        slack_connector = SlackConnector()
+        
+        # Get all conversations the bot can see
+        all_channels = []
+        cursor = None
+        
+        while True:
+            try:
+                response = slack_connector.client.conversations_list(
+                    exclude_archived=True,
+                    types="public_channel,private_channel",
+                    limit=100,
+                    cursor=cursor
+                )
+                
+                if not response["ok"]:
+                    return {"error": f"API error: {response.get('error')}", "channels": []}
+                
+                channels = response.get("channels", [])
+                for channel in channels:
+                    channel_info = {
+                        "id": channel.get("id"),
+                        "name": channel.get("name"),
+                        "is_private": channel.get("is_private", False),
+                        "is_member": channel.get("is_member", False),
+                        "num_members": channel.get("num_members", 0),
+                        "created": channel.get("created", 0),
+                        "purpose": channel.get("purpose", {}).get("value", ""),
+                        "topic": channel.get("topic", {}).get("value", "")
+                    }
+                    all_channels.append(channel_info)
+                
+                # Check for more channels
+                if not response.get("response_metadata", {}).get("next_cursor"):
+                    break
+                cursor = response["response_metadata"]["next_cursor"]
+                
+            except Exception as e:
+                return {"error": str(e), "channels": all_channels}
+        
+        # Separate channels by accessibility
+        accessible_channels = [ch for ch in all_channels if ch["is_member"]]
+        public_channels = [ch for ch in all_channels if not ch["is_private"] and not ch["is_member"]]
+        private_channels = [ch for ch in all_channels if ch["is_private"]]
+        
+        # Check if our target channel is in the list
+        target_channel = "C087QKECFKQ"
+        target_found = None
+        for ch in all_channels:
+            if ch["id"] == target_channel:
+                target_found = ch
+                break
+        
+        return {
+            "total_channels": len(all_channels),
+            "accessible_channels": accessible_channels,
+            "public_channels_not_member": public_channels,
+            "private_channels": private_channels,
+            "target_channel_info": target_found,
+            "can_ingest_from": [ch["id"] for ch in accessible_channels]
+        }
+        
+    except Exception as e:
+        logger.error(f"Error listing workspace channels: {e}")
         return {"status": "error", "error": str(e)}
 
 if __name__ == "__main__":

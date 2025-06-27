@@ -57,13 +57,39 @@ class SlackConnector:
             while True:
                 try:
                     # Get channel history with pagination
-                    response = self.client.conversations_history(
-                        channel=channel_id,
-                        limit=batch_size,
-                        oldest=oldest,
-                        latest=latest,
-                        cursor=cursor
-                    )
+                    # Try different methods based on available permissions
+                    response = None
+                    
+                    # Method 1: Direct conversations_history (works for public channels)
+                    try:
+                        response = self.client.conversations_history(
+                            channel=channel_id,
+                            limit=batch_size,
+                            oldest=oldest,
+                            latest=latest,
+                            cursor=cursor
+                        )
+                    except SlackApiError as api_error:
+                        if api_error.response["error"] == "not_in_channel":
+                            # Method 2: Try to join the channel first if it's public
+                            try:
+                                join_response = self.client.conversations_join(channel=channel_id)
+                                if join_response["ok"]:
+                                    logger.info(f"Successfully joined channel {channel_id}")
+                                    response = self.client.conversations_history(
+                                        channel=channel_id,
+                                        limit=batch_size,
+                                        oldest=oldest,
+                                        latest=latest,
+                                        cursor=cursor
+                                    )
+                                else:
+                                    logger.warning(f"Could not join channel {channel_id}: {join_response.get('error')}")
+                            except SlackApiError as join_error:
+                                logger.warning(f"Could not join channel {channel_id}: {join_error.response.get('error')}")
+                                raise api_error  # Re-raise original error
+                        else:
+                            raise  # Re-raise for other errors
                     
                     if not response["ok"]:
                         logger.error(f"Slack API error: {response.get('error', 'Unknown error')}")
