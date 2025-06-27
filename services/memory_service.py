@@ -21,10 +21,12 @@ class MemoryService:
     
     def __init__(self):
         self.redis_client = None
+        self.redis_available = False
+        self._memory_cache = {}  # Fallback in-memory cache
         self._initialize_redis()
         
     def _initialize_redis(self):
-        """Initialize Redis connection"""
+        """Initialize Redis connection with fallback to in-memory cache"""
         try:
             # Parse Redis URL and create connection
             redis_url = settings.REDIS_URL
@@ -43,14 +45,20 @@ class MemoryService:
                 socket_timeout=5
             )
             
+            self.redis_available = True
             logger.info("Redis connection initialized")
             
         except Exception as e:
-            logger.error(f"Failed to initialize Redis: {e}")
-            raise
+            logger.warning(f"Redis not available, using in-memory cache: {e}")
+            self.redis_available = False
+            self.redis_client = None
     
     async def health_check(self) -> bool:
-        """Check Redis connection health"""
+        """Check Redis connection health or return True for in-memory fallback"""
+        if not self.redis_available:
+            # In-memory cache is always "healthy"
+            return True
+            
         try:
             if not self.redis_client:
                 return False
@@ -60,16 +68,19 @@ class MemoryService:
             
         except Exception as e:
             logger.error(f"Redis health check failed: {e}")
-            return False
+            # Switch to in-memory cache if Redis fails
+            self.redis_available = False
+            self.redis_client = None
+            return True
     
     async def store_conversation_context(
         self, 
         conversation_key: str, 
         context_data: Dict[str, Any],
-        ttl: int = None
+        ttl: Optional[int] = None
     ) -> bool:
         """
-        Store conversation context in Redis.
+        Store conversation context in Redis or in-memory cache.
         
         Args:
             conversation_key: Unique key for the conversation
@@ -80,21 +91,33 @@ class MemoryService:
             True if successful, False otherwise
         """
         try:
-            if not self.redis_client:
-                return False
-            
             # Serialize context data
             serialized_data = json.dumps(context_data, default=str)
             
-            # Store with optional TTL
-            if ttl:
-                await self.redis_client.setex(
-                    conversation_key, 
-                    ttl, 
-                    serialized_data
-                )
+            if self.redis_available and self.redis_client:
+                # Store with optional TTL in Redis
+                if ttl:
+                    await self.redis_client.setex(
+                        conversation_key, 
+                        ttl, 
+                        serialized_data
+                    )
+                else:
+                    await self.redis_client.set(conversation_key, serialized_data)
             else:
-                await self.redis_client.set(conversation_key, serialized_data)
+                # Store in in-memory cache
+                if ttl:
+                    # Calculate expiry time for in-memory cache
+                    expiry = datetime.now() + timedelta(seconds=ttl)
+                    self._memory_cache[conversation_key] = {
+                        'data': serialized_data,
+                        'expiry': expiry
+                    }
+                else:
+                    self._memory_cache[conversation_key] = {
+                        'data': serialized_data,
+                        'expiry': None
+                    }
             
             logger.debug(f"Stored conversation context: {conversation_key}")
             return True
@@ -105,7 +128,7 @@ class MemoryService:
     
     async def get_conversation_context(self, conversation_key: str) -> Optional[Dict[str, Any]]:
         """
-        Retrieve conversation context from Redis.
+        Retrieve conversation context from Redis or in-memory cache.
         
         Args:
             conversation_key: Unique key for the conversation
@@ -114,13 +137,22 @@ class MemoryService:
             Context data or None if not found
         """
         try:
-            if not self.redis_client:
-                return None
-            
-            serialized_data = await self.redis_client.get(conversation_key)
-            
-            if serialized_data:
-                return json.loads(serialized_data)
+            if self.redis_available and self.redis_client:
+                # Get from Redis
+                serialized_data = await self.redis_client.get(conversation_key)
+                if serialized_data:
+                    return json.loads(serialized_data)
+            else:
+                # Get from in-memory cache
+                cached_item = self._memory_cache.get(conversation_key)
+                if cached_item:
+                    # Check if expired
+                    if cached_item['expiry'] and datetime.now() > cached_item['expiry']:
+                        # Remove expired item
+                        del self._memory_cache[conversation_key]
+                        return None
+                    
+                    return json.loads(cached_item['data'])
             
             return None
             
