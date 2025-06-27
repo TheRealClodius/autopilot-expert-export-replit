@@ -114,7 +114,7 @@ class ConversationContext(BaseModel):
 class IngestionMetadata(BaseModel):
     """Schema for data ingestion metadata"""
     timestamp: str
-    ingestion_type: str = Field(..., regex="^(daily|manual|incremental)$")
+    ingestion_type: str = Field(..., pattern="^(daily|manual|incremental)$")
     channels_processed: int = Field(..., ge=0)
     total_messages_processed: int = Field(..., ge=0)
     total_messages_embedded: int = Field(..., ge=0)
@@ -125,12 +125,12 @@ class IngestionMetadata(BaseModel):
 class KnowledgeQueueItem(BaseModel):
     """Schema for knowledge update queue items"""
     id: Optional[str] = None
-    type: str = Field(..., regex="^(knowledge_gap|entity_research|manual_task)$")
+    type: str = Field(..., pattern="^(knowledge_gap|entity_research|manual_task)$")
     description: Optional[str] = None
     entity: Optional[str] = None
-    priority: str = Field(default="medium", regex="^(low|medium|high|urgent)$")
+    priority: str = Field(default="medium", pattern="^(low|medium|high|urgent)$")
     timestamp: str
-    status: str = Field(default="pending", regex="^(pending|processing|completed|failed)$")
+    status: str = Field(default="pending", pattern="^(pending|processing|completed|failed)$")
     metadata: Dict[str, Any] = {}
 
 class ObservationData(BaseModel):
@@ -144,11 +144,11 @@ class ObservationData(BaseModel):
 
 class SystemHealth(BaseModel):
     """Schema for system health status"""
-    redis: str = Field(..., regex="^(healthy|unhealthy|unknown)$")
-    celery: str = Field(..., regex="^(healthy|unhealthy|unknown)$")
-    agents: str = Field(..., regex="^(healthy|unhealthy|unknown)$")
-    pinecone: Optional[str] = Field(None, regex="^(healthy|unhealthy|unknown)$")
-    gemini: Optional[str] = Field(None, regex="^(healthy|unhealthy|unknown)$")
+    redis: str = Field(..., pattern="^(healthy|unhealthy|unknown)$")
+    celery: str = Field(..., pattern="^(healthy|unhealthy|unknown)$")
+    agents: str = Field(..., pattern="^(healthy|unhealthy|unknown)$")
+    pinecone: Optional[str] = Field(None, pattern="^(healthy|unhealthy|unknown)$")
+    gemini: Optional[str] = Field(None, pattern="^(healthy|unhealthy|unknown)$")
     last_check: str
     uptime_seconds: Optional[float] = None
 

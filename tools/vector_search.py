@@ -5,11 +5,8 @@ Provides intelligent search capabilities with query expansion and filtering.
 
 import logging
 from typing import List, Dict, Any, Optional
-import pinecone
-from pinecone import Pinecone
 
 from config import settings
-from services.embedding_service import EmbeddingService
 
 logger = logging.getLogger(__name__)
 
