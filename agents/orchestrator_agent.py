@@ -69,7 +69,9 @@ class OrchestratorAgent:
             logger.info(f"Query analysis took {time.time() - plan_start:.2f}s")
             
             if not execution_plan:
-                return await self._generate_fallback_response(message)
+                # Instead of generic fallback, create a minimal plan to proceed
+                logger.warning("Query analysis failed, creating minimal execution plan")
+                execution_plan = await self._create_minimal_plan(message)
             
             exec_start = time.time()
             # Execute the plan
@@ -176,13 +178,48 @@ Current Query: "{message.text}"
                     return plan
                 except json.JSONDecodeError as e:
                     logger.error(f"Failed to parse execution plan JSON: {e}")
+                    logger.error(f"Raw Gemini response: {response[:500]}...")
                     return None
-            
-            return None
+            else:
+                logger.error("Gemini API returned empty/None response")
+                return None
             
         except Exception as e:
             logger.error(f"Error analyzing query: {e}")
             return None
+    
+    async def _create_minimal_plan(self, message: ProcessedMessage) -> Dict[str, Any]:
+        """
+        Create a minimal execution plan when the main analysis fails.
+        This prevents the generic "trouble understanding" fallback.
+        """
+        logger.info("Creating minimal execution plan as fallback")
+        
+        # Determine if this is likely an Autopilot-related query
+        autopilot_keywords = ["autopilot", "automation", "ai", "design", "pattern", "workflow", "process"]
+        is_autopilot_query = any(keyword in message.text.lower() for keyword in autopilot_keywords)
+        
+        # Create a simple plan that bypasses complex analysis
+        if is_autopilot_query:
+            return {
+                "analysis": f"User is asking about Autopilot or automation-related topics: '{message.text}'",
+                "tools_needed": [],  # Skip vector search to avoid additional failures
+                "context": {
+                    "intent": "autopilot_information_request",
+                    "response_approach": "Provide helpful Autopilot information based on general knowledge and expertise",
+                    "tone_guidance": "Helpful and knowledgeable, acknowledging if specific details aren't available"
+                }
+            }
+        else:
+            return {
+                "analysis": f"User is asking a general question: '{message.text}'",
+                "tools_needed": [],
+                "context": {
+                    "intent": "general_query",
+                    "response_approach": "Respond helpfully based on available knowledge and context",
+                    "tone_guidance": "Friendly and supportive"
+                }
+            }
     
     async def _execute_plan(self, plan: Dict[str, Any], message: ProcessedMessage) -> Dict[str, Any]:
         """
