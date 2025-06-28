@@ -1,14 +1,12 @@
 """
 Embedding Service - Generates embeddings and manages vector storage.
-Handles text embedding generation and Pinecone operations.
+Handles text embedding generation and Pinecone operations using Google Gemini.
 """
 
 import logging
 from typing import List, Dict, Any, Optional
 import asyncio
-from sentence_transformers import SentenceTransformer
-import numpy as np
-import pinecone
+import google.genai as genai
 from pinecone import Pinecone
 
 from config import settings
@@ -18,30 +16,24 @@ logger = logging.getLogger(__name__)
 class EmbeddingService:
     """
     Service for generating text embeddings and managing vector storage.
-    Uses SentenceTransformers for embedding generation and Pinecone for storage.
+    Uses Google Gemini text-embedding-004 model for embedding generation and Pinecone for storage.
     """
     
     def __init__(self):
-        self.model_name = "all-MiniLM-L6-v2"  # Fast, good quality embeddings
-        self.model = None
+        self.embedding_model = "text-embedding-004"  # Google's latest embedding model
         self.pc = None
         self.index = None
         self._initialize_services()
         
     def _initialize_services(self):
-        """Initialize embedding model and Pinecone connection"""
+        """Initialize Gemini and Pinecone connection"""
         try:
-            # Initialize SentenceTransformer model
-            logger.info(f"Loading embedding model: {self.model_name}")
-            self.model = SentenceTransformer(self.model_name)
-            logger.info("Embedding model loaded successfully")
+            # Initialize Gemini API
+            genai.configure(api_key=settings.GEMINI_API_KEY)
+            logger.info(f"Initialized Gemini API for embeddings")
             
             # Initialize Pinecone
-            self.pc = Pinecone(
-                api_key=settings.PINECONE_API_KEY,
-                environment=settings.PINECONE_ENVIRONMENT
-            )
-            
+            self.pc = Pinecone(api_key=settings.PINECONE_API_KEY)
             self.index = self.pc.Index(settings.PINECONE_INDEX_NAME)
             logger.info(f"Connected to Pinecone index: {settings.PINECONE_INDEX_NAME}")
             
@@ -51,7 +43,7 @@ class EmbeddingService:
     
     async def embed_text(self, text: str) -> Optional[List[float]]:
         """
-        Generate embedding for a single text string.
+        Generate embedding for a single text string using Gemini.
         
         Args:
             text: Text to embed
@@ -63,19 +55,26 @@ class EmbeddingService:
             if not text or not text.strip():
                 return None
             
-            # Generate embedding using SentenceTransformers
-            embedding = self.model.encode(text, convert_to_tensor=False)
+            # Generate embedding using Gemini
+            result = genai.embed_content(
+                model=self.embedding_model,
+                content=text,
+                task_type="retrieval_document"
+            )
             
-            # Convert to list for JSON serialization
-            return embedding.tolist()
+            if result and 'embedding' in result:
+                return result['embedding']
+            else:
+                logger.warning("No embedding returned from Gemini API")
+                return None
             
         except Exception as e:
-            logger.error(f"Error generating embedding: {e}")
+            logger.error(f"Error generating embedding with Gemini: {e}")
             return None
     
     async def embed_batch(self, texts: List[str]) -> List[Optional[List[float]]]:
         """
-        Generate embeddings for a batch of texts.
+        Generate embeddings for a batch of texts using Gemini.
         
         Args:
             texts: List of texts to embed
@@ -95,11 +94,19 @@ class EmbeddingService:
             
             logger.info(f"Generating embeddings for {len(valid_texts)} texts...")
             
-            # Generate embeddings in batch for efficiency
-            embeddings = self.model.encode(valid_texts, convert_to_tensor=False, batch_size=32)
-            
-            # Convert to list of lists
-            embedding_list = [emb.tolist() for emb in embeddings]
+            # Generate embeddings one by one (Gemini API limitation)
+            embeddings = []
+            for text in valid_texts:
+                try:
+                    embedding = await self.embed_text(text)
+                    embeddings.append(embedding)
+                    
+                    # Small delay to avoid rate limiting
+                    await asyncio.sleep(0.1)
+                    
+                except Exception as e:
+                    logger.warning(f"Failed to embed text: {str(e)}")
+                    embeddings.append(None)
             
             # Map back to original positions
             result = []
@@ -107,12 +114,13 @@ class EmbeddingService:
             
             for text in texts:
                 if text and text.strip():
-                    result.append(embedding_list[valid_idx])
+                    result.append(embeddings[valid_idx])
                     valid_idx += 1
                 else:
                     result.append(None)
             
-            logger.info(f"Generated {len(embedding_list)} embeddings")
+            successful_embeddings = len([e for e in embeddings if e is not None])
+            logger.info(f"Generated {successful_embeddings}/{len(valid_texts)} embeddings successfully")
             return result
             
         except Exception as e:
