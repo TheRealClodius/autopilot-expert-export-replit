@@ -156,14 +156,14 @@ The system uses environment variables for configuration management and supports 
 - **Enhanced Logging**: Added detailed error logging to identify API failure root causes
 - **Result**: Agent now provides helpful responses even during API issues instead of generic "trouble understanding" messages
 
-✅ **June 28, 2025 - CRITICAL THREAD HANDLING FIX: Proper Channel Mention → Thread Response Flow**
-- **Thread Creation Logic**: Fixed bot to create thread responses when mentioned in channels (not just reply in existing threads)
+✅ **June 28, 2025 - MAJOR ARCHITECTURE REFACTOR: State Stack Approach for Clean Separation of Concerns**
+- **Orchestrator State Building**: Orchestrator now builds comprehensive state stack containing all context for client agent
+- **Client Agent Simplification**: Client agent removed memory service dependency, focuses purely on personality and formatting
+- **State Stack Components**: Summarized long conversation history + last 10 messages + current query + orchestrator insights
+- **Clean Data Flow**: Orchestrator → State Stack → Client Agent → Formatted Response (no tool access in client)
+- **Thread Handling**: Fixed proper channel mention → thread creation logic with consistent memory tracking
 - **Response Thread Logic**: For new mentions, use `message_ts` as `thread_ts`; for thread replies, continue same thread
-- **Memory Consistency**: Fixed conversation memory to use consistent thread identifiers for proper history tracking
-- **Client Agent Enhancement**: Added recent conversation history to client agent for better thread continuity
-- **Conversation Keys**: Standardized thread identifier logic: `thread_ts || message_ts` for consistent memory storage
-- **Memory Integration**: Client agent now retrieves last 5 messages for contextual thread responses
-- **Result**: When mentioned in channel → bot creates thread; subsequent questions in thread maintain conversation history
+- **Result**: Cleaner architecture where client agent focuses on personality while orchestrator handles all context gathering
 
 ✅ **June 28, 2025 - COMPLETE GRAPH TOOL CLEANUP: Simplified Architecture to Vector Search Only**
 - **Graph Tool File Removal**: Deleted `tools/graph_query.py` and related backup files from filesystem
