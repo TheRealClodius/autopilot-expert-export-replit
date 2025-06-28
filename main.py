@@ -584,7 +584,7 @@ async def cleanup_test_data():
         return {"status": "error", "error": str(e)}
 
 @app.get("/admin/orchestrator-test")
-async def orchestrator_test():
+async def orchestrator_test(request: Request):
     """Admin endpoint to test orchestrator query analysis specifically"""
     try:
         from agents.orchestrator_agent import OrchestratorAgent
@@ -596,11 +596,14 @@ async def orchestrator_test():
         memory_service = MemoryService()
         orchestrator = OrchestratorAgent(memory_service)
         
-        # Create a test message that should trigger vector search
+        # Get query parameter or use default
+        query = request.query_params.get("query", "What's the latest update on the UiPath integration project?")
+        
+        # Create a test message 
         test_message = ProcessedMessage(
             channel_id="C087QKECFKQ",
             user_id="U12345TEST",
-            text="What's the latest update on the UiPath integration project?",
+            text=query,
             message_ts="1640995200.001500",
             thread_ts=None,
             user_name="test_user",

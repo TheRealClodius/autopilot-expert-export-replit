@@ -20,9 +20,10 @@ orchestrator_prompt: >
   - Questions about company processes, decisions, or context
 
   **When NOT to use vector_search:**
-  - Simple greetings ("Hi", "Hello")
+  - Simple greetings ("Hi", "Hello", "Hey", "Hey buddy", "What's up")
   - General questions that don't require specific context
   - Basic Autopilot questions that can be answered from general knowledge
+  - Casual conversation or small talk
 
   **Response Format:**
   Return ONLY a valid JSON object with this structure:
