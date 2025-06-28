@@ -59,7 +59,35 @@ return {
 - **Result**: Prevents API rate limits while maintaining system stability
 - **Benefits**: Lightweight solution that doesn't break initialization process
 
-## Verification
-The fix has been verified locally - the client agent now successfully finds the query in the state stack.
+## Pre-Deployment Testing Protocol
+**MANDATORY: Always test the server before deployment**
 
-**Status**: Ready for immediate deployment to resolve production issue.
+### 1. Health Check
+```bash
+curl -s http://localhost:5000/health
+```
+Expected: `{"status":"healthy","service":"autopilot-expert"}`
+
+### 2. System Status Check
+```bash
+curl -s http://localhost:5000/admin/system-status
+```
+Expected: All components showing as operational
+
+### 3. Agent Response Test
+```bash
+curl -X GET "http://localhost:5000/admin/orchestrator-test?query=Hello"
+```
+Expected: Valid response with text and suggestions
+
+### 4. Server Startup Verification
+- Check workflow logs for successful initialization
+- Verify no error messages during startup
+- Confirm all agents loaded properly
+
+## Verification Completed
+✅ Server health check passed  
+✅ Agent response system tested  
+✅ All fixes verified locally
+
+**Status**: Ready for deployment after successful testing protocol.

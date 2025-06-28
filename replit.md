@@ -258,4 +258,5 @@ Changelog:
 
 ```
 Preferred communication style: Simple, everyday language.
+Deployment rule: Always test the server before deployment using the testing protocol.
 ```
