@@ -11,6 +11,7 @@ from datetime import datetime
 
 from utils.gemini_client import GeminiClient
 from tools.vector_search import VectorSearchTool
+from tools.perplexity_search import PerplexitySearchTool
 from agents.client_agent import ClientAgent
 from agents.observer_agent import ObserverAgent
 from services.memory_service import MemoryService
@@ -29,6 +30,7 @@ class OrchestratorAgent:
     def __init__(self, memory_service: MemoryService, progress_tracker: Optional[ProgressTracker] = None):
         self.gemini_client = GeminiClient()
         self.vector_tool = VectorSearchTool()
+        self.perplexity_tool = PerplexitySearchTool()
         self.client_agent = ClientAgent()
         self.observer_agent = ObserverAgent()
         self.memory_service = memory_service
@@ -266,10 +268,44 @@ Current Query: "{message.text}"
         Returns:
             Dictionary containing gathered information from vector search
         """
-        gathered_info = {"vector_results": []}
+        gathered_info = {"vector_results": [], "perplexity_results": []}
         
         try:
             tools_needed = plan.get("tools_needed", [])
+            
+            # Execute Perplexity search if needed
+            if "perplexity_search" in tools_needed:
+                perplexity_queries = plan.get("perplexity_queries", [])
+                if perplexity_queries:
+                    logger.info(f"Executing {len(perplexity_queries)} Perplexity searches")
+                    for i, query in enumerate(perplexity_queries):
+                        # Emit specific search progress
+                        if self.progress_tracker:
+                            search_context = f"real-time web search for '{query[:30]}...'" if len(query) > 30 else f"real-time web search for '{query}'"
+                            await emit_searching(self.progress_tracker, "perplexity_search", search_context)
+                        
+                        try:
+                            result = await self.perplexity_tool.search(
+                                query=query,
+                                max_tokens=1000,
+                                temperature=0.2
+                            )
+                            if result and result.get("content"):
+                                gathered_info["perplexity_results"].append({
+                                    "query": query,
+                                    "content": result["content"],
+                                    "citations": result.get("citations", []),
+                                    "search_time": result.get("search_time", 0),
+                                    "model_used": result.get("model_used", "unknown")
+                                })
+                            elif self.progress_tracker:
+                                # Emit warning if no results found
+                                await emit_warning(self.progress_tracker, "limited_results", f"no web results for '{query[:20]}...'")
+                        except Exception as search_error:
+                            logger.error(f"Perplexity search error for query '{query}': {search_error}")
+                            if self.progress_tracker:
+                                await emit_error(self.progress_tracker, "search_error", f"issue with web search query")
+                            # Continue with other queries even if one fails
             
             # Execute vector search if needed
             if "vector_search" in tools_needed:
@@ -299,7 +335,7 @@ Current Query: "{message.text}"
                                 await emit_error(self.progress_tracker, "search_error", f"issue with search query")
                             # Continue with other queries even if one fails
             
-            logger.info(f"Gathered {len(gathered_info['vector_results'])} vector results")
+            logger.info(f"Gathered {len(gathered_info['vector_results'])} vector results and {len(gathered_info['perplexity_results'])} web results")
             return gathered_info
             
         except Exception as e:
@@ -371,7 +407,8 @@ Current Query: "{message.text}"
                 "orchestrator_analysis": {
                     "intent": execution_plan.get("analysis", ""),
                     "tools_used": execution_plan.get("tools_needed", []),
-                    "search_results": gathered_information.get("vector_results", [])[:3] if gathered_information.get("vector_results") else []  # Limit to top 3 results
+                    "search_results": gathered_information.get("vector_results", [])[:3] if gathered_information.get("vector_results") else [],  # Limit to top 3 results
+                    "web_results": gathered_information.get("perplexity_results", [])[:2] if gathered_information.get("perplexity_results") else []  # Limit to top 2 web results
                 },
                 "response_thread_ts": message.thread_ts or message.message_ts,
                 "trace_id": self._get_current_trace_id()
@@ -391,7 +428,8 @@ Current Query: "{message.text}"
                 "orchestrator_analysis": {
                     "intent": execution_plan.get("analysis", "Error occurred during analysis"),
                     "tools_used": [],
-                    "search_results": []
+                    "search_results": [],
+                    "web_results": []
                 },
                 "response_thread_ts": message.thread_ts or message.message_ts,
                 "trace_id": self._get_current_trace_id()

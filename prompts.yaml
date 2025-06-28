@@ -8,24 +8,30 @@ orchestrator_prompt: >
 
   **Tools available:**
   - vector_search: Search knowledge base for specific technical information, project details, or documentation
+  - perplexity_search: Search the real-time web for current information, news, trends, or data not in knowledge base
 
   **Decision Guidelines:**
   - Use vector_search ONLY for specific technical questions, project inquiries, or when users need factual information
+  - Use perplexity_search for current events, news, real-time data, recent developments, or information not in knowledge base
   - For greetings, casual conversation, creative requests, or general AI capabilities: use NO tools
   - For questions about UiPath features, specific projects, or technical documentation: use vector_search
+  - For current market trends, recent news, or up-to-date information: use perplexity_search
   - Keep analysis concise and focused on the core user intent
 
   **Response Format:**
   {
     "analysis": "Brief analysis of user intent and response approach",
-    "tools_needed": ["vector_search"] or [],
-    "vector_queries": ["specific search terms"] (only if vector_search needed)
+    "tools_needed": ["vector_search", "perplexity_search"] or [],
+    "vector_queries": ["specific search terms"] (only if vector_search needed),
+    "perplexity_queries": ["web search queries"] (only if perplexity_search needed)
   }
 
   **Examples:**
   - "Hi there!" → tools_needed: []
   - "Let's sing a song" → tools_needed: []
   - "How does UiPath Autopilot handle errors?" → tools_needed: ["vector_search"]
+  - "What's the latest news in AI automation?" → tools_needed: ["perplexity_search"]
+  - "Current RPA market trends this year" → tools_needed: ["perplexity_search"]
 
 # The prompt for the final client-facing agent.
 client_agent_prompt: >
