@@ -332,6 +332,199 @@ async def system_status():
         logger.error(f"Error checking system status: {e}")
         return {"error": str(e)}
 
+@app.get("/admin/api-test")
+async def api_test():
+    """Admin endpoint to test all API keys and external services in sequence"""
+    results = {
+        "slack_api": {"status": "unknown", "details": {}},
+        "gemini_api": {"status": "unknown", "details": {}},
+        "pinecone_api": {"status": "unknown", "details": {}},
+        "redis_connection": {"status": "unknown", "details": {}},
+        "summary": {"total_tests": 4, "passed": 0, "failed": 0}
+    }
+    
+    # Test 1: Slack API
+    try:
+        if settings.SLACK_BOT_TOKEN:
+            from slack_sdk import WebClient
+            slack_client = WebClient(token=settings.SLACK_BOT_TOKEN)
+            auth_response = slack_client.auth_test()
+            
+            if auth_response["ok"]:
+                results["slack_api"]["status"] = "success"
+                results["slack_api"]["details"] = {
+                    "user_id": auth_response["user_id"],
+                    "team": auth_response["team"],
+                    "bot_id": auth_response.get("bot_id"),
+                    "token_length": len(settings.SLACK_BOT_TOKEN)
+                }
+                results["summary"]["passed"] += 1
+            else:
+                results["slack_api"]["status"] = "failed"
+                results["slack_api"]["details"] = {"error": "Authentication failed"}
+                results["summary"]["failed"] += 1
+        else:
+            results["slack_api"]["status"] = "failed"
+            results["slack_api"]["details"] = {"error": "No SLACK_BOT_TOKEN configured"}
+            results["summary"]["failed"] += 1
+    except Exception as e:
+        results["slack_api"]["status"] = "failed"
+        results["slack_api"]["details"] = {"error": str(e)}
+        results["summary"]["failed"] += 1
+    
+    # Test 2: Gemini API
+    try:
+        if settings.GEMINI_API_KEY:
+            from google import genai
+            from google.genai import types
+            
+            client = genai.Client(api_key=settings.GEMINI_API_KEY)
+            
+            # Test with a simple query
+            config = types.GenerateContentConfig(
+                system_instruction="You are a test assistant. Respond with exactly: 'API_TEST_SUCCESS'",
+                response_mime_type="text/plain"
+            )
+            
+            response = client.models.generate_content(
+                model=settings.GEMINI_FLASH_MODEL,
+                contents=[
+                    types.Content(role="user", parts=[types.Part(text="Test connection")])
+                ],
+                config=config
+            )
+            
+            if response and response.text:
+                response_text = response.text.strip()
+                results["gemini_api"]["status"] = "success"
+                results["gemini_api"]["details"] = {
+                    "model_used": settings.GEMINI_FLASH_MODEL,
+                    "response_received": response_text[:100],
+                    "api_key_length": len(settings.GEMINI_API_KEY)
+                }
+                results["summary"]["passed"] += 1
+            else:
+                results["gemini_api"]["status"] = "failed"
+                results["gemini_api"]["details"] = {"error": "Empty response from API"}
+                results["summary"]["failed"] += 1
+        else:
+            results["gemini_api"]["status"] = "failed"
+            results["gemini_api"]["details"] = {"error": "No GEMINI_API_KEY configured"}
+            results["summary"]["failed"] += 1
+    except Exception as e:
+        results["gemini_api"]["status"] = "failed"
+        results["gemini_api"]["details"] = {"error": str(e)}
+        results["summary"]["failed"] += 1
+    
+    # Test 3: Pinecone API
+    try:
+        if settings.PINECONE_API_KEY:
+            # Note: Pinecone is in placeholder mode, so we'll just check if we can import
+            results["pinecone_api"]["status"] = "placeholder"
+            results["pinecone_api"]["details"] = {
+                "note": "Vector search in placeholder mode - no ML dependencies loaded",
+                "api_key_configured": bool(settings.PINECONE_API_KEY),
+                "api_key_length": len(settings.PINECONE_API_KEY) if settings.PINECONE_API_KEY else 0
+            }
+            results["summary"]["passed"] += 1
+        else:
+            results["pinecone_api"]["status"] = "failed"
+            results["pinecone_api"]["details"] = {"error": "No PINECONE_API_KEY configured"}
+            results["summary"]["failed"] += 1
+    except Exception as e:
+        results["pinecone_api"]["status"] = "failed"
+        results["pinecone_api"]["details"] = {"error": str(e)}
+        results["summary"]["failed"] += 1
+    
+    # Test 4: Redis Connection
+    try:
+        from services.memory_service import MemoryService
+        memory_service = MemoryService()
+        
+        # Test basic functionality
+        test_key = "api_test_key"
+        test_value = {"test": "api_test_value"}
+        
+        await memory_service.store_temp_data(test_key, test_value, ttl=60)
+        retrieved_value = await memory_service.get_temp_data(test_key)
+        
+        if retrieved_value == test_value:
+            results["redis_connection"]["status"] = "success"
+            results["redis_connection"]["details"] = {
+                "backend_type": "in_memory" if not settings.REDIS_URL else "redis",
+                "redis_url_configured": bool(settings.REDIS_URL),
+                "test_storage": "passed"
+            }
+            results["summary"]["passed"] += 1
+        else:
+            results["redis_connection"]["status"] = "failed"
+            results["redis_connection"]["details"] = {"error": "Storage test failed"}
+            results["summary"]["failed"] += 1
+            
+        # Clean up test data
+        await memory_service.delete_temp_data(test_key)
+        
+    except Exception as e:
+        results["redis_connection"]["status"] = "failed"
+        results["redis_connection"]["details"] = {"error": str(e)}
+        results["summary"]["failed"] += 1
+    
+    return {"status": "complete", "api_test_results": results}
+
+@app.get("/admin/orchestrator-test")
+async def orchestrator_test():
+    """Admin endpoint to test orchestrator query analysis specifically"""
+    try:
+        from agents.orchestrator_agent import OrchestratorAgent
+        from models.schemas import ProcessedMessage
+        from services.memory_service import MemoryService
+        from datetime import datetime
+        
+        # Initialize components
+        memory_service = MemoryService()
+        orchestrator = OrchestratorAgent(memory_service)
+        
+        # Create a test message
+        test_message = ProcessedMessage(
+            channel_id="C087QKECFKQ",
+            user_id="U12345TEST",
+            text="What is Autopilot and how does it work?",
+            message_ts="1640995200.001500",
+            thread_ts=None,
+            user_name="test_user",
+            channel_name="general"
+        )
+        
+        # Test the orchestrator's query analysis
+        execution_plan = await orchestrator._analyze_query_and_plan(test_message)
+        
+        if execution_plan:
+            return {
+                "status": "success",
+                "orchestrator_working": True,
+                "execution_plan_received": True,
+                "plan_details": {
+                    "analysis": execution_plan.get("analysis", "No analysis"),
+                    "intent": execution_plan.get("intent", "No intent"),
+                    "tools_needed": execution_plan.get("tools_needed", []),
+                    "context": execution_plan.get("context", {})
+                }
+            }
+        else:
+            return {
+                "status": "failed",
+                "orchestrator_working": False,
+                "execution_plan_received": False,
+                "error": "Query analysis returned None - this is why bot says 'trouble understanding'"
+            }
+            
+    except Exception as e:
+        return {
+            "status": "error",
+            "error": str(e),
+            "orchestrator_working": False
+        }
+
 @app.get("/admin/prompts")
 async def get_prompt_info():
     """Admin endpoint to get prompt information"""

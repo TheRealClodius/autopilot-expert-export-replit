@@ -344,6 +344,32 @@ class MemoryService:
             logger.error(f"Error retrieving temp data: {e}")
             return None
     
+    async def delete_temp_data(self, key: str) -> bool:
+        """
+        Delete temporary data from Redis or in-memory cache.
+        
+        Args:
+            key: Key to delete
+            
+        Returns:
+            True if successful, False otherwise
+        """
+        try:
+            if self.redis_available and self.redis_client:
+                # Delete from Redis
+                result = await self.redis_client.delete(key)
+                return bool(result)
+            else:
+                # Delete from in-memory cache
+                if key in self._memory_cache:
+                    del self._memory_cache[key]
+                    return True
+                return False
+            
+        except Exception as e:
+            logger.error(f"Error deleting temp data: {e}")
+            return False
+    
     async def store_graph_data(self, graph_key: str, graph_data: Dict[str, Any]) -> bool:
         """
         Store graph data in Redis.
