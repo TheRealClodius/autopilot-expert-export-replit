@@ -1,34 +1,51 @@
-# Deployment Trigger - June 28, 2025
+# Critical Production Bug Fix - Ready for Deployment
 
-## Major Updates Completed:
+## Issue Identified
+The bot was appearing unresponsive in Slack due to a data structure mismatch between the orchestrator and client agent.
 
-### Vector Search & Embeddings System
-- ✅ Pinecone integration with "uipath-slack-chatter" index (768 dimensions)
-- ✅ Google Gemini text-embedding-004 implementation
-- ✅ Document ingestion service with chunking pipeline
-- ✅ Test document with 9 chunks successfully embedded and searchable
-- ✅ Vector search achieving 0.85+ similarity scores
+## Root Cause
+- **Orchestrator** built state stack with `"current_query"` key
+- **Client Agent** expected `"query"` key  
+- **Result**: Client agent logged "No user query found in state stack" and returned None
 
-### New API Endpoints
-- `/admin/ingest-test-document` - Document embedding pipeline
-- `/admin/search-test-content` - Vector similarity search
-- `/admin/pinecone-status` - Index statistics and health
-- `/admin/cleanup-test-data` - Test data management
+## Fix Applied
+Updated `agents/orchestrator_agent.py` in two locations:
 
-### Infrastructure Updates
-- Enhanced embedding service using Gemini API
-- Fixed dimension mismatch (384→768) in vector search
-- Orchestrator intelligent routing between vector search and AI responses
-- Complete test environment validated and functional
+### Line 284 (normal state stack):
+```python
+state_stack = {
+    "query": message.text,  # Added this line - client agent expects this key
+    "current_query": {
+        "text": message.text,
+        ...
+    },
+    ...
+}
+```
 
-### Files Added/Modified
-- `services/embedding_service.py` - Gemini embedding integration
-- `services/document_ingestion.py` - Document processing pipeline
-- `test_data/scandinavian_furniture.md` - Test document (7,944 chars)
-- `tools/vector_search.py` - Enhanced with proper embedding support
-- `main.py` - New admin endpoints for testing
-- `prompts.yaml` - Updated orchestrator prompts
-- `replit.md` - Documentation updates
+### Line 325 (error fallback state stack):
+```python
+return {
+    "query": message.text,  # Added this line - client agent expects this key  
+    "current_query": {
+        "text": message.text,
+        ...
+    },
+    ...
+}
+```
 
-**System Status**: Production ready with full vector search capabilities
-**Timestamp**: 2025-06-28 05:15:00 UTC
+## Impact After Deployment
+✅ Bot will respond to all Slack messages instead of appearing unresponsive  
+✅ Fixes the exact conversation shown in the screenshot  
+✅ Maintains all existing functionality  
+✅ No breaking changes
+
+## Files Changed
+- `agents/orchestrator_agent.py` (2 lines added)
+- `replit.md` (documentation updated)
+
+## Verification
+The fix has been verified locally - the client agent now successfully finds the query in the state stack.
+
+**Status**: Ready for immediate deployment to resolve production issue.

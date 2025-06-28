@@ -175,6 +175,15 @@ The system uses environment variables for configuration management and supports 
 - **System Verification**: Server restarts successfully with simplified architecture
 - **Result**: Streamlined single-tool architecture with Orchestrator using full Gemini 2.5 Pro capabilities
 
+⚠️ **June 28, 2025 - CRITICAL PRODUCTION BUG IDENTIFIED AND FIXED (PENDING DEPLOYMENT)**
+- **Root Cause Found**: State stack data structure mismatch between orchestrator and client agent
+- **Production Issue**: Orchestrator built state with "current_query" but client agent expected "query" key
+- **Exact Error**: "No user query found in state stack" causing bot to return None and appear unresponsive
+- **Fix Applied**: Updated orchestrator to include both "query" and "current_query" for compatibility
+- **Impact**: Bot will respond properly to all Slack messages instead of appearing unresponsive
+- **Status**: Fix implemented locally, needs deployment to resolve production issue
+- **Files Changed**: agents/orchestrator_agent.py (lines 284 and 325)
+
 ✅ **June 27, 2025 - Fixed Channel Mention Response Issue**
 - Fixed bot not responding when tagged in channels (@botname)
 - Implemented automatic bot user ID retrieval from Slack API when environment variable missing
