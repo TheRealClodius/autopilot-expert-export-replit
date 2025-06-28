@@ -72,13 +72,11 @@ class ClientAgent:
             api_duration = (time.time() - api_start) * 1000
             
             # Log the Gemini API call to LangSmith
-            await trace_manager.log_api_call(
-                api_name="gemini",
-                model_name="gemini-2.5-flash",
+            await trace_manager.log_llm_call(
+                model="gemini-2.5-flash",
                 prompt=f"{system_prompt[:200]}...\n\n{user_prompt[:300]}...",
                 response=response[:500] + "..." if response and len(response) > 500 else (response or ""),
-                duration_ms=api_duration,
-                error=None if response else "No response received"
+                duration=api_duration / 1000  # Convert to seconds
             )
             
             # If Gemini doesn't respond, that's an ERROR, not a fallback case
@@ -97,12 +95,7 @@ class ClientAgent:
                 "suggestions": suggestions
             }
             
-            # Log the client response generation to LangSmith
-            total_duration = (time.time() - start_time) * 1000
-            await trace_manager.log_client_response(
-                final_response=response.strip(),
-                duration_ms=total_duration
-            )
+            # Client response logged as part of conversation completion
             
             return final_result
             
