@@ -107,11 +107,13 @@ class ClientAgent:
             api_duration = (time.time() - api_start) * 1000
             
             # Log the Gemini API call to LangSmith (full prompts for debugging)
+            # Nest this LLM call under the client agent operation trace
             await trace_manager.log_llm_call(
                 model="gemini-2.5-flash",
                 prompt=f"SYSTEM:\n{system_prompt}\n\nUSER:\n{user_prompt}",
                 response=response[:1000] + "..." if response and len(response) > 1000 else (response or ""),
-                duration=api_duration / 1000  # Convert to seconds
+                duration=api_duration / 1000,  # Convert to seconds
+                parent_run_id=client_trace_id  # Nest under client agent operation
             )
             
             # If Gemini doesn't respond, that's an ERROR, not a fallback case
