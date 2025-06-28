@@ -79,8 +79,8 @@ class SlackGateway:
             if not should_respond:
                 return None
             
-            # Start LangSmith conversation trace
-            trace_id = await trace_manager.start_conversation_trace(
+            # Start LangSmith conversation session for proper grouping
+            session_id = await trace_manager.start_conversation_session(
                 user_id=user_id,
                 message=text,
                 channel_id=channel_id,

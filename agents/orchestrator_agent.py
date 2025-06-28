@@ -76,18 +76,14 @@ class OrchestratorAgent:
                 await emit_thinking(self.progress_tracker, "planning", "approach to your question")
             
             # Analyze query and create execution plan with tracing
-            await trace_manager.log_agent_step(
-                agent_name="orchestrator",
-                action="analyze_query_start",
-                inputs={"query": message.text, "user_id": message.user_id}
-            )
-            
             execution_plan = await self._analyze_query_and_plan(message)
             logger.info(f"Query analysis took {time.time() - plan_start:.2f}s")
             
-            await trace_manager.log_agent_step(
-                agent_name="orchestrator", 
-                action="analyze_query_complete",
+            # Log orchestrator analysis in LangSmith
+            await trace_manager.log_orchestrator_analysis(
+                query=message.text,
+                execution_plan=execution_plan,
+                duration_ms=(time.time() - plan_start) * 1000
                 inputs={"query": message.text},
                 outputs={"execution_plan": execution_plan}
             )
@@ -147,11 +143,10 @@ class OrchestratorAgent:
                 total_time = time.time() - start_time
                 logger.info(f"Total processing time: {total_time:.2f}s")
                 
-                # Complete LangSmith conversation trace
-                await trace_manager.complete_conversation_trace(
+                # Log client response to LangSmith
+                await trace_manager.log_client_response(
                     final_response=response_text,
-                    total_duration_ms=total_time * 1000,
-                    success=True
+                    duration_ms=total_time * 1000
                 )
                 
                 # Determine thread_ts for response
