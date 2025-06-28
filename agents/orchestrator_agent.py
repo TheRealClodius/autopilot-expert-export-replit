@@ -147,6 +147,13 @@ class OrchestratorAgent:
                 total_time = time.time() - start_time
                 logger.info(f"Total processing time: {total_time:.2f}s")
                 
+                # Complete LangSmith conversation trace
+                await trace_manager.complete_conversation_trace(
+                    final_response=response_text,
+                    total_duration_ms=total_time * 1000,
+                    success=True
+                )
+                
                 # Determine thread_ts for response
                 # If user mentioned bot in channel (not in existing thread), start new thread
                 # If user replied in existing thread, continue same thread
@@ -171,6 +178,13 @@ class OrchestratorAgent:
             
         except Exception as e:
             logger.error(f"Error in orchestrator processing: {e}")
+            # Complete trace with error
+            await trace_manager.complete_conversation_trace(
+                final_response="",
+                total_duration_ms=(time.time() - start_time) * 1000,
+                success=False,
+                error=e
+            )
             # Emit error progress if tracker is available
             if self.progress_tracker:
                 await emit_error(self.progress_tracker, "processing_error", "internal system issue")

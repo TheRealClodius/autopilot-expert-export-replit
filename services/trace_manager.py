@@ -88,6 +88,7 @@ class TraceManager:
             trace_data = {
                 "name": f"slack_conversation_{message_ts}",
                 "project_name": self.settings.LANGSMITH_PROJECT,
+                "run_type": "chain",  # Required parameter for LangSmith
                 "inputs": {
                     "user_message": message,
                     "user_id": user_id,

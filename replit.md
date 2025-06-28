@@ -197,6 +197,20 @@ The system uses environment variables for configuration management and supports 
 - **Files Changed**: models/schemas.py, agents/slack_gateway.py, agents/orchestrator_agent.py, prompts.yaml
 - **All Tests Passing**: Pre-deployment protocol validates enhanced user metadata system
 
+✅ **June 28, 2025 - LANGSMITH TRACING INTEGRATION IMPLEMENTED (WITHOUT LANGCHAIN DEPENDENCIES)**
+- **Standalone LangSmith Client**: Integrated LangSmith for comprehensive observability without requiring LangChain/LangGraph stack
+- **Comprehensive Trace Management**: Built TraceManager service tracking conversation flows, agent operations, API calls, and vector searches
+- **Multi-Agent Tracing**: Complete end-to-end tracing from Slack message → Orchestrator analysis → Vector search → Client response
+- **Performance Monitoring**: Tracks response times, token usage, and operation success/failure rates across all agents
+- **Vector Search Observability**: Detailed logging of Pinecone queries, results, and search performance metrics
+- **API Call Tracing**: Monitors Gemini API calls with prompt/response logging and token consumption tracking
+- **Real-Time Debugging**: LangSmith dashboard provides live view of agent decisions and conversation flows
+- **Test Endpoint**: Added `/admin/langsmith-test` for validating tracing functionality and API connectivity
+- **Error Handling**: Graceful fallback when LangSmith unavailable, maintains system functionality
+- **Files Created/Modified**: services/trace_manager.py, config.py, agents/slack_gateway.py, agents/orchestrator_agent.py, tools/vector_search.py, main.py
+- **Dependencies Added**: langsmith (standalone client, no LangChain bloat)
+- **Configuration**: LANGSMITH_API_KEY, LANGSMITH_PROJECT, LANGSMITH_ENDPOINT environment variables
+
 ✅ **June 28, 2025 - CRITICAL PRODUCTION FIXES IMPLEMENTED AND TESTED (READY FOR DEPLOYMENT)**
 - **Critical Bug Fixed**: State stack mismatch between orchestrator ("current_query") and client agent ("query") resolved
 - **Response Length Optimization**: Increased token limits from 500 to 1500, character limits to 4000 for complete responses
