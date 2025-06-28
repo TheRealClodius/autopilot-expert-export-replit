@@ -59,7 +59,7 @@ class ClientAgent:
                 system_prompt,
                 user_prompt,
                 model="gemini-2.5-flash",
-                max_tokens=500,
+                max_tokens=1500,  # Increased from 500 to allow full responses
                 temperature=0.7
             )
             
@@ -194,8 +194,8 @@ class ClientAgent:
             clean_response = response.strip()
             
             # Ensure response doesn't exceed reasonable length for Slack
-            if len(clean_response) > 2000:
-                clean_response = clean_response[:1950] + "...\n\n*[Response truncated for readability]*"
+            if len(clean_response) > 4000:  # Increased limit to allow fuller responses
+                clean_response = clean_response[:3950] + "...\n\n*[Response truncated for readability]*"
             
             return clean_response
             
