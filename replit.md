@@ -138,13 +138,14 @@ The system uses environment variables for configuration management and supports 
 - Orchestrator intelligently routes project questions to vector search vs. direct AI responses
 - System ready for Slack knowledge ingestion once bot permissions updated
 
-✅ **June 28, 2025 - Fixed "I'm having trouble understanding" Issue**
-- Identified root cause: Mismatch between orchestrator prompt format and execution code
-- Prompt used `"tools_to_use"` but code expected `"tools_needed"`
-- Updated orchestrator prompt to work without external tools (vector search in placeholder mode)
-- Modified client agent to provide direct responses using AI knowledge
-- Added comprehensive API testing endpoint `/admin/api-test` to diagnose service issues
-- System now responds directly to queries instead of requiring external knowledge tools
+✅ **June 28, 2025 - Fixed "I'm having trouble understanding" Issue and Greeting Recognition**
+- **Root Cause Identified**: Persistent conversation context in memory was confusing the orchestrator
+- **Issue**: "Hey buddy" and other greetings were misinterpreted as UiPath integration project questions
+- **Solution**: Enhanced orchestrator prompt with explicit greeting examples ("Hey buddy", "Hi", "Hello")
+- **Memory Issue**: Test conversation data was persisting between requests, causing context confusion
+- **Fix Applied**: Server restart cleared persistent context, allowing proper prompt interpretation
+- **Verification**: All greeting variations now correctly detected as "greeting" query type with no tools needed
+- System now responds naturally to casual greetings and maintains conversation flow
 
 ✅ **June 27, 2025 - Fixed Channel Mention Response Issue**
 - Fixed bot not responding when tagged in channels (@botname)

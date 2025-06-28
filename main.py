@@ -584,7 +584,7 @@ async def cleanup_test_data():
         return {"status": "error", "error": str(e)}
 
 @app.get("/admin/orchestrator-test")
-async def orchestrator_test(request: Request):
+async def orchestrator_test(query: str = "What's the latest update on the UiPath integration project?"):
     """Admin endpoint to test orchestrator query analysis specifically"""
     try:
         from agents.orchestrator_agent import OrchestratorAgent
@@ -596,8 +596,7 @@ async def orchestrator_test(request: Request):
         memory_service = MemoryService()
         orchestrator = OrchestratorAgent(memory_service)
         
-        # Get query parameter or use default
-        query = request.query_params.get("query", "What's the latest update on the UiPath integration project?")
+        # Query parameter is now passed directly as function parameter
         
         # Create a test message 
         test_message = ProcessedMessage(
