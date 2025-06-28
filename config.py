@@ -26,6 +26,9 @@ class Settings(BaseSettings):
     PINECONE_ENVIRONMENT: str = os.getenv("PINECONE_ENVIRONMENT", "")
     PINECONE_INDEX_NAME: str = os.getenv("PINECONE_INDEX_NAME", "uipath-slack-chatter")
     
+    # Perplexity Configuration
+    PERPLEXITY_API_KEY: str = os.getenv("PERPLEXITY_API_KEY", "")
+    
     # Redis Configuration (optional - fallback to in-memory cache if not available)
     REDIS_URL: str = os.getenv("REDIS_URL", "")
     REDIS_PASSWORD: Optional[str] = os.getenv("REDIS_PASSWORD")
