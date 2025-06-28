@@ -80,7 +80,12 @@ class OrchestratorAgent:
             execution_plan = await self._analyze_query_and_plan(message)
             logger.info(f"Query analysis took {time.time() - plan_start:.2f}s")
             
-            # Orchestrator analysis now logged via operation trace structure
+            # Log orchestrator analysis in LangSmith
+            await trace_manager.log_orchestrator_analysis(
+                query=message.text,
+                execution_plan=str(execution_plan),
+                duration=time.time() - plan_start
+            )
             
             if not execution_plan:
                 # Let the orchestrator plan freely without constraints
@@ -211,15 +216,6 @@ Create an execution plan to answer this query effectively.
 Current Query: "{message.text}"
 """
             
-            # Create orchestrator analysis operation trace first
-            from services.trace_manager import trace_manager
-            analysis_operation_id = await trace_manager.log_agent_operation(
-                agent_name="orchestrator",
-                operation="query_analysis",
-                input_data=f"Query: {message.text[:100]}...",
-                metadata={"model": self.gemini_client.pro_model, "agent_type": "orchestrator_planning"}
-            )
-            
             # Track LLM call timing for LangSmith
             llm_start = time.time()
             
@@ -230,23 +226,13 @@ Current Query: "{message.text}"
                 model=self.gemini_client.pro_model  # Orchestrator uses Pro model for complex planning
             )
             
-            # Log LLM call to LangSmith - nested under orchestrator analysis operation
+            # Log LLM call to LangSmith
             llm_duration = time.time() - llm_start
             if response:
                 await trace_manager.log_llm_call(
                     model=self.gemini_client.pro_model,
                     prompt=f"SYSTEM: {system_prompt}\n\nUSER: {user_prompt}",
                     response=response,
-                    duration=llm_duration,
-                    parent_run_id=analysis_operation_id  # Nest under orchestrator operation
-                )
-            
-            # Complete the orchestrator analysis operation
-            if analysis_operation_id:
-                await trace_manager.complete_agent_operation(
-                    trace_id=analysis_operation_id,
-                    output_data=response[:200] + "..." if response and len(response) > 200 else (response or "No response"),
-                    success=bool(response),
                     duration=llm_duration
                 )
             

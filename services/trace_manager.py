@@ -224,8 +224,7 @@ class TraceManager:
             return None
     
     async def log_llm_call(self, model: str, prompt: str, response: str, 
-                          duration: float, tokens_used: Optional[int] = None, 
-                          parent_run_id: Optional[str] = None) -> Optional[str]:
+                          duration: float, tokens_used: Optional[int] = None) -> Optional[str]:
         """Log an LLM API call with proper LangSmith format"""
         if not self.is_enabled() or not self.current_trace_id:
             return None
@@ -251,7 +250,7 @@ class TraceManager:
                 project_name=self.settings.LANGSMITH_PROJECT,
                 start_time=start_time,
                 end_time=end_time,
-                parent_run_id=parent_run_id or self.current_trace_id,
+                parent_run_id=self.current_trace_id,
                 tags=["llm", "api-call", model.replace(".", "_")],
                 extra={
                     "duration_seconds": duration,
