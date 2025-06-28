@@ -76,13 +76,14 @@ class LazyLoader:
                 return None
         
         # Load modules in background thread
+        modules_to_load = [
+            ('google.generativeai', load_google_genai),
+            ('sentence_transformers', load_sentence_transformers),
+            ('pinecone', load_pinecone)
+        ]
         threading.Thread(
             target=self._background_preload,
-            args=[
-                ('google.generativeai', load_google_genai),
-                ('sentence_transformers', load_sentence_transformers),
-                ('pinecone', load_pinecone)
-            ],
+            args=(modules_to_load,),
             daemon=True
         ).start()
     

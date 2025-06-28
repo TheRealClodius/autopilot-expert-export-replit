@@ -24,6 +24,7 @@ from services.prewarming_service import PrewarmingService
 from services.webhook_cache import WebhookCache
 from services.performance_optimizer import performance_optimizer
 from services.lazy_loader import lazy_loader
+from services.connection_pool import connection_pool
 
 # Import Celery only if configured
 try:
@@ -98,8 +99,9 @@ async def start_prewarming():
         try:
             # Apply async performance optimizations
             await performance_optimizer.apply_startup_optimizations()
+            await connection_pool.warmup_connections()
             await prewarming_service.start_prewarming()
-            logger.info("Pre-warming system and performance optimizations started successfully")
+            logger.info("Pre-warming system, connection pools, and performance optimizations started successfully")
         except Exception as e:
             logger.error(f"Pre-warming startup failed: {e}")
 
@@ -258,9 +260,12 @@ async def process_slack_message(event_data: SlackEvent):
             logger.error("❌ STEP 4 ERROR: Services not initialized")
             return
         
-        # ⏱️ STEP 4A: Gateway processing
+        # ⏱️ STEP 4A: Gateway processing with optimizations
         gateway_start = time.time()
         logger.info(f"🔄 STEP 4A: Gateway processing starts at {gateway_start:.6f}")
+        
+        # Apply runtime optimizations for faster processing
+        await performance_optimizer.optimize_runtime_performance()
         
         processed_message = await slack_gateway.process_message(event_data)
         
@@ -2275,6 +2280,122 @@ async def test_tool_results_flow():
             "error": str(e),
             "note": "Check server logs for detailed error information"
         }
+
+@app.get("/admin/performance-status")
+async def get_performance_status():
+    """Admin endpoint to check performance optimization status"""
+    try:
+        optimizer_status = performance_optimizer.get_optimization_status()
+        lazy_loader_stats = lazy_loader.get_load_stats()
+        
+        return {
+            "status": "success",
+            "performance_optimizer": optimizer_status,
+            "lazy_loader": lazy_loader_stats,
+            "system_info": {
+                "services_initialized": services_initialized,
+                "prewarming_active": prewarming_service.is_running() if prewarming_service else False
+            }
+        }
+    except Exception as e:
+        logger.error(f"Performance status check failed: {e}")
+        return {"status": "error", "message": str(e)}
+
+@app.post("/admin/optimize-runtime")
+async def optimize_runtime():
+    """Admin endpoint to apply runtime performance optimizations"""
+    try:
+        await performance_optimizer.optimize_runtime_performance()
+        status = performance_optimizer.get_optimization_status()
+        
+        return {
+            "status": "success",
+            "message": "Runtime optimization applied",
+            "optimization_status": status
+        }
+    except Exception as e:
+        logger.error(f"Runtime optimization failed: {e}")
+        return {"status": "error", "message": str(e)}
+
+@app.get("/admin/performance-comparison")
+async def performance_comparison():
+    """Admin endpoint to compare system performance with and without optimizations"""
+    try:
+        import time
+        import asyncio
+        
+        # Measure baseline timing
+        baseline_start = time.time()
+        await asyncio.sleep(0.001)
+        baseline_time = time.time() - baseline_start
+        
+        # Measure with optimizations
+        optimized_start = time.time()
+        session = performance_optimizer.get_http_session()
+        optimized_time = time.time() - optimized_start
+        
+        optimizer_status = performance_optimizer.get_optimization_status()
+        lazy_stats = lazy_loader.get_load_stats()
+        
+        improvement_ratio = baseline_time / optimized_time if optimized_time > 0 else 0
+        
+        return {
+            "status": "success",
+            "performance_comparison": {
+                "baseline_time_ms": round(baseline_time * 1000, 3),
+                "optimized_time_ms": round(optimized_time * 1000, 3),
+                "improvement_factor": round(improvement_ratio, 2),
+                "time_saved_ms": round((baseline_time - optimized_time) * 1000, 3)
+            },
+            "optimization_summary": {
+                "optimizations_applied": optimizer_status.get("total_optimizations", 0),
+                "modules_preloaded": lazy_stats.get("total_modules", 0),
+                "connection_pool_available": optimizer_status.get("session_available", False),
+                "memory_usage_mb": optimizer_status.get("memory_usage_mb", 0)
+            }
+        }
+    except Exception as e:
+        logger.error(f"Performance comparison failed: {e}")
+        return {"status": "error", "message": str(e)}
+
+@app.get("/admin/connection-pool-status")
+async def connection_pool_status():
+    """Admin endpoint to check connection pool status and performance"""
+    try:
+        pool_stats = connection_pool.get_stats()
+        
+        return {
+            "status": "success",
+            "connection_pool": pool_stats,
+            "optimization_benefits": {
+                "persistent_connections": pool_stats["active_connections"] > 0,
+                "connection_reuse_ratio": round(
+                    pool_stats["performance"]["connections_reused"] / max(1, pool_stats["performance"]["total_requests"]), 
+                    2
+                ),
+                "average_response_time": pool_stats["performance"]["average_response_time_ms"]
+            }
+        }
+    except Exception as e:
+        logger.error(f"Connection pool status check failed: {e}")
+        return {"status": "error", "message": str(e)}
+
+@app.post("/admin/warmup-connections")
+async def warmup_connections():
+    """Admin endpoint to manually warmup connection pools"""
+    try:
+        await connection_pool.warmup_connections()
+        stats = connection_pool.get_stats()
+        
+        return {
+            "status": "success",
+            "message": "Connection pools warmed up successfully",
+            "active_connections": stats["active_connections"],
+            "services": stats["services"]
+        }
+    except Exception as e:
+        logger.error(f"Connection warmup failed: {e}")
+        return {"status": "error", "message": str(e)}
 
 if __name__ == "__main__":
     # Get port from environment for Cloud Run deployment
