@@ -5,6 +5,7 @@ Handles short-term memory, conversation context, and graph data persistence.
 
 import json
 import logging
+import time
 from typing import Dict, Any, List, Optional, Union
 from datetime import datetime, timedelta
 
@@ -671,6 +672,34 @@ class MemoryService:
         except Exception as e:
             logger.error(f"Error getting memory stats: {e}")
             return {}
+    
+    async def track_thread_participation(self, channel_id: str, thread_ts: str, bot_user_id: str) -> bool:
+        """Track that the bot has participated in a thread"""
+        try:
+            thread_key = f"thread_participation:{channel_id}:{thread_ts}"
+            participation_data = {
+                "bot_participated": True,
+                "bot_user_id": bot_user_id,
+                "last_participation": str(int(time.time())),
+                "channel_id": channel_id,
+                "thread_ts": thread_ts
+            }
+            
+            # Store for 24 hours
+            return await self.store_cached_data(thread_key, participation_data, ttl=86400)
+            
+        except Exception as e:
+            logger.error(f"Error tracking thread participation: {e}")
+            return False
+    
+    async def get_thread_participation(self, channel_id: str, thread_ts: str) -> Optional[Dict[str, Any]]:
+        """Get thread participation data"""
+        try:
+            thread_key = f"thread_participation:{channel_id}:{thread_ts}"
+            return await self.get_cached_data(thread_key)
+        except Exception as e:
+            logger.error(f"Error getting thread participation: {e}")
+            return None
     
     async def close(self):
         """Close Redis connection"""

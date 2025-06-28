@@ -62,8 +62,20 @@ class SlackGateway:
             is_mention = f"<@{self.bot_user_id}>" in text if self.bot_user_id else False
             is_thread_reply = thread_ts is not None
             
-            # Only process if it's a DM, mention, or thread reply to bot
-            if not (is_dm or is_mention or (is_thread_reply and await self._is_bot_thread(channel_id, thread_ts))):
+            # Enhanced thread participation logic
+            bot_participated_in_thread = False
+            if is_thread_reply:
+                bot_participated_in_thread = await self._has_bot_participated_in_thread(channel_id, thread_ts)
+            
+            # Process if it's a DM, mention, bot's thread, or thread where bot has participated
+            should_respond = (
+                is_dm or 
+                is_mention or 
+                (is_thread_reply and await self._is_bot_thread(channel_id, thread_ts)) or
+                bot_participated_in_thread
+            )
+            
+            if not should_respond:
                 return None
             
             # Clean the message text (remove mentions)
@@ -142,6 +154,17 @@ class SlackGateway:
             
             if response["ok"]:
                 logger.info(f"Successfully sent response to channel {channel_id}")
+                
+                # Track thread participation if this was a threaded message
+                if thread_ts and self.bot_user_id:
+                    try:
+                        from services.memory_service import MemoryService
+                        memory_service = MemoryService()
+                        await memory_service.track_thread_participation(channel_id, thread_ts, self.bot_user_id)
+                        logger.debug(f"Tracked bot participation in thread {thread_ts}")
+                    except Exception as e:
+                        logger.warning(f"Failed to track thread participation: {e}")
+                
                 return True
             else:
                 logger.error(f"Failed to send Slack message: {response.get('error')}")
@@ -295,6 +318,47 @@ class SlackGateway:
             
         except Exception as e:
             logger.error(f"Error checking bot thread: {e}")
+            return False
+    
+    async def _has_bot_participated_in_thread(self, channel_id: str, thread_ts: str) -> bool:
+        """Check if the bot has participated in this thread"""
+        try:
+            # First check memory service for cached thread participation
+            from services.memory_service import MemoryService
+            memory_service = MemoryService()
+            
+            thread_key = f"thread_participation:{channel_id}:{thread_ts}"
+            cached_participation = await memory_service.get_cached_data(thread_key)
+            
+            if cached_participation is not None:
+                return cached_participation.get("bot_participated", False)
+            
+            # If not cached, check Slack API for bot messages in thread
+            response = self.client.conversations_replies(
+                channel=channel_id,
+                ts=thread_ts,
+                limit=50  # Check last 50 messages in thread
+            )
+            
+            bot_participated = False
+            if response["ok"] and response["messages"]:
+                # Check if bot has sent any messages in this thread
+                for message in response["messages"]:
+                    if message.get("user") == self.bot_user_id:
+                        bot_participated = True
+                        break
+            
+            # Cache the result for 1 hour to avoid repeated API calls
+            await memory_service.store_cached_data(
+                thread_key,
+                {"bot_participated": bot_participated, "checked_at": response["messages"][-1].get("ts", "") if response.get("messages") else ""},
+                ttl=3600
+            )
+            
+            return bot_participated
+            
+        except Exception as e:
+            logger.error(f"Error checking bot thread participation: {e}")
             return False
     
     def _clean_message_text(self, text: str) -> str:
