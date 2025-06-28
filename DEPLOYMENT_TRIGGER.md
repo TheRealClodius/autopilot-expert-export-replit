@@ -44,6 +44,7 @@ return {
 ## Files Changed
 - `agents/orchestrator_agent.py` (2 lines added - fixes state stack mismatch)
 - `agents/client_agent.py` (2 lines changed - fixes response truncation)
+- `prompts.yaml` (1 line added - adds conciseness guidance)
 - `replit.md` (documentation updated)
 
 ## Additional Fix - Response Truncation
