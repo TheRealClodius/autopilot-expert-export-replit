@@ -138,14 +138,15 @@ The system uses environment variables for configuration management and supports 
 - Orchestrator intelligently routes project questions to vector search vs. direct AI responses
 - System ready for Slack knowledge ingestion once bot permissions updated
 
-✅ **June 28, 2025 - Fixed "I'm having trouble understanding" Issue and Greeting Recognition**
-- **Root Cause Identified**: Persistent conversation context in memory was confusing the orchestrator
-- **Issue**: "Hey buddy" and other greetings were misinterpreted as UiPath integration project questions
-- **Solution**: Enhanced orchestrator prompt with explicit greeting examples ("Hey buddy", "Hi", "Hello")
-- **Memory Issue**: Test conversation data was persisting between requests, causing context confusion
-- **Fix Applied**: Server restart cleared persistent context, allowing proper prompt interpretation
-- **Verification**: All greeting variations now correctly detected as "greeting" query type with no tools needed
-- System now responds naturally to casual greetings and maintains conversation flow
+✅ **June 28, 2025 - Fixed "I'm having trouble understanding" Issue and Fallback Response Behavior**
+- **Root Cause Identified**: Two separate issues causing fallback responses
+  1. **Greeting Recognition**: Persistent conversation context was confusing orchestrator for greetings
+  2. **Irrelevant Search Results**: Client agent falling back instead of using general AI knowledge
+- **Greeting Issue Fix**: Enhanced orchestrator prompt with explicit examples ("Hey buddy", "Hi", "Hello")
+- **Search Results Issue Fix**: Updated client agent to gracefully handle irrelevant vector search results
+- **New Behavior**: When search returns irrelevant content, client agent acknowledges lack of specific knowledge but provides general Autopilot knowledge and suggests next steps
+- **Fallback Strategy**: Instead of generic "trouble understanding" message, bot now says "I don't have specific information about that in our knowledge base, but I can share what I know about Autopilot generally"
+- System maintains helpful responses even when knowledge base lacks relevant content
 
 ✅ **June 27, 2025 - Fixed Channel Mention Response Issue**
 - Fixed bot not responding when tagged in channels (@botname)
