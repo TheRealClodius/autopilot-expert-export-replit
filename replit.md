@@ -119,6 +119,14 @@ The system uses environment variables for configuration management and supports 
 - Changed default structured response model to Flash with Pro override for Orchestrator
 - Improved response speed while maintaining planning quality
 
+✅ **June 28, 2025 - Fixed "I'm having trouble understanding" Issue**
+- Identified root cause: Mismatch between orchestrator prompt format and execution code
+- Prompt used `"tools_to_use"` but code expected `"tools_needed"`
+- Updated orchestrator prompt to work without external tools (vector search in placeholder mode)
+- Modified client agent to provide direct responses using AI knowledge
+- Added comprehensive API testing endpoint `/admin/api-test` to diagnose service issues
+- System now responds directly to queries instead of requiring external knowledge tools
+
 ✅ **June 27, 2025 - Fixed Channel Mention Response Issue**
 - Fixed bot not responding when tagged in channels (@botname)
 - Implemented automatic bot user ID retrieval from Slack API when environment variable missing
