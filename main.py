@@ -91,10 +91,7 @@ async def start_prewarming():
         except Exception as e:
             logger.error(f"❌ Pre-warming startup failed: {e}")
 
-# Schedule pre-warming to start immediately 
-import asyncio
-if services_initialized:
-    asyncio.create_task(start_prewarming())
+# Note: Pre-warming will be started via admin endpoint to avoid event loop issues
 
 @app.get("/")
 def root():
@@ -1626,6 +1623,192 @@ async def diagnose_8s_delay():
             "status": "error",
             "error": str(e),
             "description": "Failed to complete 8-second delay diagnosis"
+        }
+
+@app.post("/admin/start-prewarming")
+async def start_prewarming_endpoint():
+    """Admin endpoint to start the pre-warming system"""
+    try:
+        if not prewarming_service:
+            return {
+                "status": "error",
+                "message": "Pre-warming service not initialized"
+            }
+        
+        await prewarming_service.start_prewarming()
+        
+        return {
+            "status": "success",
+            "message": "Pre-warming system started successfully",
+            "description": "Service pre-warming and keep-alive system is now active"
+        }
+        
+    except Exception as e:
+        return {
+            "status": "error",
+            "error": str(e),
+            "description": "Failed to start pre-warming system"
+        }
+
+@app.get("/admin/prewarming-status")
+async def get_prewarming_status():
+    """Admin endpoint to check pre-warming system status"""
+    try:
+        if not prewarming_service:
+            return {
+                "status": "error",
+                "message": "Pre-warming service not initialized"
+            }
+        
+        health_status = prewarming_service.get_health_status()
+        
+        return {
+            "status": "success",
+            "health_status": health_status,
+            "description": "Current status of service pre-warming and keep-alive system"
+        }
+        
+    except Exception as e:
+        return {
+            "status": "error",
+            "error": str(e),
+            "description": "Failed to get pre-warming status"
+        }
+
+@app.post("/admin/stop-prewarming")
+async def stop_prewarming_endpoint():
+    """Admin endpoint to stop the pre-warming system"""
+    try:
+        if not prewarming_service:
+            return {
+                "status": "error",
+                "message": "Pre-warming service not initialized"
+            }
+        
+        await prewarming_service.stop_prewarming()
+        
+        return {
+            "status": "success",
+            "message": "Pre-warming system stopped successfully"
+        }
+        
+    except Exception as e:
+        return {
+            "status": "error",
+            "error": str(e),
+            "description": "Failed to stop pre-warming system"
+        }
+
+@app.get("/admin/performance-comparison")
+async def performance_comparison():
+    """Admin endpoint to compare system performance with and without pre-warming"""
+    try:
+        import time
+        
+        # Get current pre-warming status
+        prewarming_active = prewarming_service._is_running if prewarming_service else False
+        
+        comparison = {
+            "test_timestamp": time.time(),
+            "prewarming_active": prewarming_active,
+            "performance_tests": {},
+            "improvement_analysis": {}
+        }
+        
+        # Test 1: Slack API Response Time (multiple samples for accuracy)
+        slack_times = []
+        for i in range(3):
+            start_time = time.time()
+            try:
+                if slack_gateway and slack_gateway.client:
+                    response = slack_gateway.client.auth_test()
+                    slack_time = time.time() - start_time
+                    slack_times.append(slack_time)
+            except Exception as e:
+                comparison["performance_tests"][f"slack_api_test_{i+1}_error"] = str(e)
+        
+        if slack_times:
+            comparison["performance_tests"]["slack_api"] = {
+                "samples": len(slack_times),
+                "average_response_time": round(sum(slack_times) / len(slack_times), 3),
+                "min_response_time": round(min(slack_times), 3),
+                "max_response_time": round(max(slack_times), 3),
+                "all_samples": [round(t, 3) for t in slack_times]
+            }
+        
+        # Test 2: Memory Service Response Time
+        memory_times = []
+        for i in range(3):
+            start_time = time.time()
+            try:
+                if memory_service:
+                    test_key = f"perf_test_{int(time.time())}_{i}"
+                    await memory_service.store_conversation_context(test_key, {"test": "data"}, ttl=30)
+                    memory_time = time.time() - start_time
+                    memory_times.append(memory_time)
+            except Exception as e:
+                comparison["performance_tests"][f"memory_test_{i+1}_error"] = str(e)
+        
+        if memory_times:
+            comparison["performance_tests"]["memory_service"] = {
+                "samples": len(memory_times),
+                "average_response_time": round(sum(memory_times) / len(memory_times), 3),
+                "min_response_time": round(min(memory_times), 3),
+                "max_response_time": round(max(memory_times), 3),
+                "all_samples": [round(t, 3) for t in memory_times]
+            }
+        
+        # Performance Analysis
+        total_avg_time = 0
+        if "slack_api" in comparison["performance_tests"]:
+            total_avg_time += comparison["performance_tests"]["slack_api"]["average_response_time"]
+        if "memory_service" in comparison["performance_tests"]:
+            total_avg_time += comparison["performance_tests"]["memory_service"]["average_response_time"]
+        
+        comparison["performance_tests"]["total_average_component_time"] = round(total_avg_time, 3)
+        
+        # Improvement Analysis
+        baseline_component_time = 0.11  # Based on previous diagnostics
+        current_component_time = total_avg_time
+        
+        improvement = baseline_component_time - current_component_time
+        improvement_pct = (improvement / baseline_component_time * 100) if baseline_component_time > 0 else 0
+        
+        comparison["improvement_analysis"] = {
+            "baseline_component_time": baseline_component_time,
+            "current_component_time": round(current_component_time, 3),
+            "time_improvement": round(improvement, 3),
+            "improvement_percentage": round(improvement_pct, 1),
+            "prewarming_effectiveness": "active" if prewarming_active else "inactive"
+        }
+        
+        # Recommendations based on results
+        recommendations = []
+        if prewarming_active and improvement > 0.01:
+            recommendations.append(f"Pre-warming is effective: {improvement:.3f}s improvement in component response times")
+        elif prewarming_active and improvement <= 0:
+            recommendations.append("Pre-warming is active but may not be significantly improving component response times")
+        else:
+            recommendations.append("Start pre-warming system to test potential improvements")
+        
+        if current_component_time < 0.05:
+            recommendations.append("Component response times are excellent - delay likely external")
+        elif current_component_time > 0.2:
+            recommendations.append("Component response times could be improved - check service health")
+        
+        comparison["recommendations"] = recommendations
+        
+        return {
+            "status": "success",
+            "comparison": comparison,
+            "description": "Performance comparison to measure pre-warming effectiveness"
+        }
+        
+    except Exception as e:
+        return {
+            "status": "error",
+            "error": str(e),
+            "description": "Failed to complete performance comparison"
         }
 
 @app.get("/admin/test-timing-metrics")
