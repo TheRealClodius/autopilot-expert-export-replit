@@ -83,11 +83,11 @@ class ClientAgent:
             
             api_duration = (time.time() - api_start) * 1000
             
-            # Log the Gemini API call to LangSmith
+            # Log the Gemini API call to LangSmith (full prompts for debugging)
             await trace_manager.log_llm_call(
                 model="gemini-2.5-flash",
-                prompt=f"{system_prompt[:200]}...\n\n{user_prompt[:300]}...",
-                response=response[:500] + "..." if response and len(response) > 500 else (response or ""),
+                prompt=f"SYSTEM:\n{system_prompt}\n\nUSER:\n{user_prompt}",
+                response=response[:1000] + "..." if response and len(response) > 1000 else (response or ""),
                 duration=api_duration / 1000  # Convert to seconds
             )
             
