@@ -494,6 +494,94 @@ async def api_test():
     
     return {"status": "complete", "api_test_results": results}
 
+@app.get("/admin/pinecone-status")
+async def pinecone_status():
+    """Admin endpoint to check Pinecone index status and contents"""
+    try:
+        from tools.vector_search import VectorSearchTool
+        
+        vector_tool = VectorSearchTool()
+        
+        if not vector_tool.pinecone_available:
+            return {"status": "unavailable", "error": "Pinecone not initialized"}
+        
+        # Get index statistics
+        stats = vector_tool.index.describe_index_stats()
+        
+        # Try a sample query to see if there's any data
+        sample_results = await vector_tool.search("test sample query", top_k=5)
+        
+        return {
+            "status": "available",
+            "index_name": settings.PINECONE_INDEX_NAME,
+            "statistics": {
+                "total_vector_count": stats.total_vector_count if hasattr(stats, 'total_vector_count') else 0,
+                "dimension": stats.dimension if hasattr(stats, 'dimension') else "unknown",
+                "index_fullness": stats.index_fullness if hasattr(stats, 'index_fullness') else 0.0
+            },
+            "sample_query_results": len(sample_results),
+            "has_data": len(sample_results) > 0
+        }
+        
+    except Exception as e:
+        return {"status": "error", "error": str(e)}
+
+@app.post("/admin/ingest-test-document")
+async def ingest_test_document():
+    """Admin endpoint to ingest the Scandinavian furniture test document"""
+    try:
+        from services.document_ingestion import DocumentIngestionService
+        
+        ingestion_service = DocumentIngestionService()
+        
+        # Ingest the test document
+        result = await ingestion_service.ingest_document(
+            file_path="test_data/scandinavian_furniture.md",
+            document_type="test_scandinavian_furniture"
+        )
+        
+        return {"status": "complete", "ingestion_result": result}
+        
+    except Exception as e:
+        return {"status": "error", "error": str(e)}
+
+@app.get("/admin/search-test-content")
+async def search_test_content(query: str = "Scandinavian design principles"):
+    """Admin endpoint to search test content in Pinecone"""
+    try:
+        from services.document_ingestion import DocumentIngestionService
+        
+        ingestion_service = DocumentIngestionService()
+        
+        # Search the test content
+        results = await ingestion_service.search_test_content(query, top_k=5)
+        
+        return {
+            "status": "complete",
+            "query": query,
+            "results_count": len(results),
+            "results": results
+        }
+        
+    except Exception as e:
+        return {"status": "error", "error": str(e)}
+
+@app.delete("/admin/cleanup-test-data")
+async def cleanup_test_data():
+    """Admin endpoint to clean up test data from Pinecone"""
+    try:
+        from services.document_ingestion import DocumentIngestionService
+        
+        ingestion_service = DocumentIngestionService()
+        
+        # Delete test documents
+        result = await ingestion_service.delete_test_documents("test_scandinavian_furniture")
+        
+        return {"status": "complete", "cleanup_result": result}
+        
+    except Exception as e:
+        return {"status": "error", "error": str(e)}
+
 @app.get("/admin/orchestrator-test")
 async def orchestrator_test():
     """Admin endpoint to test orchestrator query analysis specifically"""
