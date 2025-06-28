@@ -140,6 +140,53 @@ class TraceManager:
             logger.error(f"Failed to start conversation session: {e}")
             return None
     
+    async def complete_conversation_session(self, final_response: Optional[str] = None, 
+                                          error: Optional[str] = None) -> bool:
+        """Complete the current conversation session with end_time and final outputs"""
+        if not self.is_enabled() or not self.current_trace_id:
+            return False
+            
+        try:
+            current_time = datetime.now()
+            
+            # Prepare outputs
+            outputs = {
+                "conversation_completed": True,
+                "session_duration_seconds": (
+                    current_time - self.active_sessions[self.current_session_id]['start_time']
+                ).total_seconds() if self.current_session_id in self.active_sessions else 0
+            }
+            
+            if final_response:
+                outputs["final_response"] = final_response
+            if error:
+                outputs["error"] = error
+                outputs["success"] = False
+            else:
+                outputs["success"] = True
+            
+            # Update the conversation trace with completion
+            self.client.update_run(
+                run_id=self.current_trace_id,
+                outputs=outputs,
+                end_time=current_time
+            )
+            
+            logger.info(f"Completed conversation session: {self.current_session_id}")
+            
+            # Clean up session data
+            if self.current_session_id in self.active_sessions:
+                del self.active_sessions[self.current_session_id]
+            
+            self.current_session_id = None
+            self.current_trace_id = None
+            
+            return True
+                
+        except Exception as e:
+            logger.error(f"Failed to complete conversation session: {e}")
+            return False
+    
     async def log_user_message(self, user_id: str, message: str, timestamp: str) -> Optional[str]:
         """Log a user message within the current conversation"""
         if not self.is_enabled() or not self.current_trace_id:
@@ -294,49 +341,7 @@ class TraceManager:
             logger.error(f"Failed to log vector search: {e}")
             return None
     
-    async def complete_conversation_session(self, session_id: str = None, 
-                                          final_response: str = None) -> bool:
-        """Complete the current conversation session"""
-        if not self.is_enabled():
-            return False
-            
-        session_id = session_id or self.current_session_id
-        if not session_id or session_id not in self.active_sessions:
-            return False
-            
-        try:
-            session_data = self.active_sessions[session_id]
-            trace_id = session_data['trace_id']
-            
-            # Complete the conversation trace
-            self.client.create_run(
-                id=trace_id,
-                name=f"slack_conversation_{session_id}",
-                inputs={"session_id": session_id},
-                outputs={
-                    "final_response": final_response,
-                    "session_completed": True,
-                    "duration_seconds": (datetime.now() - session_data['start_time']).total_seconds()
-                },
-                run_type="chain",
-                project_name=self.settings.LANGSMITH_PROJECT,
-                start_time=session_data['start_time'],
-                end_time=datetime.now(),
-                tags=["conversation", "completed"]
-            )
-            
-            # Clean up session
-            del self.active_sessions[session_id]
-            if self.current_session_id == session_id:
-                self.current_session_id = None
-                self.current_trace_id = None
-            
-            logger.info(f"Completed conversation session: {session_id}")
-            return True
-                
-        except Exception as e:
-            logger.error(f"Failed to complete conversation session: {e}")
-            return False
+
 
 
 # Global instance
