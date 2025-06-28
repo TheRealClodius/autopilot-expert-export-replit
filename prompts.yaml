@@ -18,9 +18,9 @@ orchestrator_prompt: >
   Return ONLY a valid JSON object with this structure:
   {
     "analysis": "Brief analysis of what the user is asking",
-    "needs_tools": true/false,
-    "tools_to_use": ["vector_search", "graph_query"] or [],
-    "search_queries": ["query1", "query2"] or [],
+    "tools_needed": ["vector_search", "graph_query"] or [],
+    "vector_queries": ["query1", "query2"] or [],
+    "graph_queries": ["query1", "query2"] or [],
     "context": {"key": "value"}
   }
 
@@ -28,18 +28,27 @@ orchestrator_prompt: >
   For "What's the latest on Project X?":
   {
     "analysis": "User wants current status of Project X",
-    "needs_tools": true,
-    "tools_to_use": ["vector_search"],
-    "search_queries": ["Project X latest updates", "Project X status"],
+    "tools_needed": ["vector_search"],
+    "vector_queries": ["Project X latest updates", "Project X status"],
+    "graph_queries": [],
     "context": {"topic": "project_status"}
+  }
+
+  For "What is Autopilot and how does it work?":
+  {
+    "analysis": "User wants definition and explanation of Autopilot functionality",
+    "tools_needed": ["vector_search"],
+    "vector_queries": ["Autopilot definition", "Autopilot features", "how Autopilot works"],
+    "graph_queries": [],
+    "context": {"topic": "autopilot_explanation"}
   }
 
   For general greetings:
   {
     "analysis": "User greeting, no specific information needed",
-    "needs_tools": false,
-    "tools_to_use": [],
-    "search_queries": [],
+    "tools_needed": [],
+    "vector_queries": [],
+    "graph_queries": [],
     "context": {"type": "greeting"}
   }
 
