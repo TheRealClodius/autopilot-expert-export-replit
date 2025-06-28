@@ -4,9 +4,11 @@ Refactored to use state stack from orchestrator instead of direct memory access.
 """
 
 import logging
+import time
 from typing import Dict, Any, Optional, List
 
 from utils.gemini_client import GeminiClient
+from services.trace_manager import trace_manager
 
 logger = logging.getLogger(__name__)
 
@@ -38,6 +40,7 @@ class ClientAgent:
             Dictionary containing response text and suggestions, or None on Gemini API failure
         """
         try:
+            start_time = time.time()
             logger.info("Client Agent formatting response from orchestrator state stack...")
             
             # A. Get User Query from state stack
@@ -54,6 +57,9 @@ class ClientAgent:
             
             logger.info(f"Calling Gemini 2.5 Flash for query: {user_query[:50]}...")
             
+            # Track API call for LangSmith
+            api_start = time.time()
+            
             # Generate response using Gemini Flash - this MUST respond
             response = await self.gemini_client.generate_response(
                 system_prompt,
@@ -61,6 +67,18 @@ class ClientAgent:
                 model="gemini-2.5-flash",
                 max_tokens=1500,  # Increased from 500 to allow full responses
                 temperature=0.7
+            )
+            
+            api_duration = (time.time() - api_start) * 1000
+            
+            # Log the Gemini API call to LangSmith
+            await trace_manager.log_api_call(
+                api_name="gemini",
+                model_name="gemini-2.5-flash",
+                prompt=f"{system_prompt[:200]}...\n\n{user_prompt[:300]}...",
+                response=response[:500] + "..." if response and len(response) > 500 else (response or ""),
+                duration_ms=api_duration,
+                error=None if response else "No response received"
             )
             
             # If Gemini doesn't respond, that's an ERROR, not a fallback case
@@ -74,10 +92,19 @@ class ClientAgent:
             # Generate suggestions based on the context
             suggestions = await self._generate_suggestions(state_stack)
             
-            return {
+            final_result = {
                 "text": response.strip(),
                 "suggestions": suggestions
             }
+            
+            # Log the client response generation to LangSmith
+            total_duration = (time.time() - start_time) * 1000
+            await trace_manager.log_client_response(
+                final_response=response.strip(),
+                duration_ms=total_duration
+            )
+            
+            return final_result
             
         except Exception as e:
             logger.error(f"CRITICAL ERROR in Client Agent: {e}")

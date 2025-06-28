@@ -205,40 +205,60 @@ class TraceManager:
                 "agent_system": "autopilot-expert-multi-agent"
             }
             
-            # Create the trace
-            trace = self.client.create_run(
-                name=conversation_name,
-                run_type="chain",
-                inputs=inputs,
-                project_name=self.settings.LANGSMITH_PROJECT,
-                tags=["conversation", "multi-agent", "slack"],
-                extra=metadata,
-                start_time=current_time
-            )
+            # Create the trace with improved error handling
+            try:
+                trace = self.client.create_run(
+                    name=conversation_name,
+                    run_type="chain",
+                    inputs=inputs,
+                    project_name=self.settings.LANGSMITH_PROJECT,
+                    tags=["conversation", "multi-agent", "slack"],
+                    extra=metadata,
+                    start_time=current_time
+                )
+                
+                logger.debug(f"LangSmith create_run returned: {trace} (type: {type(trace)})")
+                
+                if trace:
+                    # Handle different response types from LangSmith API
+                    if hasattr(trace, 'id') and trace.id:
+                        trace_id = str(trace.id)
+                    elif isinstance(trace, dict) and trace.get('id'):
+                        trace_id = str(trace['id'])
+                    elif isinstance(trace, str):
+                        trace_id = trace
+                    else:
+                        logger.error(f"LangSmith trace object has no usable ID: {trace}")
+                        trace_id = f"fallback_{session_id}_{int(current_time.timestamp())}"
+                        logger.info(f"Using fallback trace ID: {trace_id}")
+                else:
+                    logger.error("LangSmith create_run returned None")
+                    trace_id = f"fallback_{session_id}_{int(current_time.timestamp())}"
+                    logger.info(f"Using fallback trace ID: {trace_id}")
+                    
+            except Exception as e:
+                logger.error(f"Exception during LangSmith trace creation: {e}")
+                trace_id = f"fallback_{session_id}_{int(current_time.timestamp())}"
+                logger.info(f"Using fallback trace ID due to exception: {trace_id}")
+                trace = None
+                
+            # Store session data regardless of LangSmith success/failure
+            self.active_sessions[session_id] = {
+                'trace_id': trace_id,
+                'trace_object': trace,
+                'start_time': current_time,
+                'last_activity': current_time
+            }
             
-            if trace and hasattr(trace, 'id'):
-                trace_id = str(trace.id)
-                
-                # Store session data
-                self.active_sessions[session_id] = {
-                    'trace_id': trace_id,
-                    'trace_object': trace,
-                    'start_time': current_time,
-                    'last_activity': current_time
-                }
-                
-                self.current_session_id = session_id
-                self.current_trace_id = trace_id
-                
-                logger.info(f"Started new conversation session: {session_id} with trace: {trace_id}")
-                
-                # Log initial user message
-                await self.log_user_message(user_id, message, message_ts)
-                
-                return session_id
-            else:
-                logger.error("Failed to create conversation trace - no ID returned")
-                return None
+            self.current_session_id = session_id
+            self.current_trace_id = trace_id
+            
+            logger.info(f"Started new conversation session: {session_id} with trace: {trace_id}")
+            
+            # Log initial user message
+            await self.log_user_message(user_id, message, message_ts)
+            
+            return session_id
                 
         except Exception as e:
             logger.error(f"Failed to start conversation session: {e}")
