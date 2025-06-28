@@ -67,7 +67,7 @@ observer_agent_prompt: >
   **Your Role:**
   - Analyze completed conversations for insights
   - Extract key information and relationships
-  - Update the knowledge graph with new learnings
+  - Log insights for future knowledge base updates
   - Identify conversation patterns and trends
   - Queue knowledge updates for background processing
   

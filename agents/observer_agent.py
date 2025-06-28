@@ -9,7 +9,7 @@ from typing import Dict, Any, List, Optional
 from datetime import datetime
 
 from utils.gemini_client import GeminiClient
-from tools.graph_query import GraphQueryTool
+
 from services.memory_service import MemoryService
 
 logger = logging.getLogger(__name__)
@@ -22,7 +22,6 @@ class ObserverAgent:
     
     def __init__(self):
         self.gemini_client = GeminiClient()
-        self.graph_tool = GraphQueryTool()
         self.memory_service = MemoryService()
         
     async def observe_conversation(self, observation_data: Dict[str, Any]):
@@ -99,10 +98,8 @@ AI Response: {response}
 
 Information Used:
 Vector Results: {len(gathered_info.get('vector_results', []))} results found
-Graph Results: {len(gathered_info.get('graph_results', []))} relationships found
 
 Sample Vector Content: {str(gathered_info.get('vector_results', [])[:2])}
-Sample Graph Content: {str(gathered_info.get('graph_results', [])[:2])}
 
 Analyze this conversation and extract actionable insights.
 """
@@ -130,45 +127,33 @@ Analyze this conversation and extract actionable insights.
     
     async def _update_knowledge_graph(self, insights: Dict[str, Any]):
         """
-        Update the knowledge graph with new relationships.
+        Log insights from conversation analysis for future knowledge base updates.
         
         Args:
             insights: Extracted insights from conversation analysis
         """
         try:
             new_relationships = insights.get("new_relationships", [])
+            entities_mentioned = insights.get("entities_mentioned", [])
+            knowledge_gaps = insights.get("knowledge_gaps", [])
             
-            if not new_relationships:
-                return
-            
-            logger.info(f"Updating knowledge graph with {len(new_relationships)} new relationships")
-            
-            # Process each relationship
-            for relationship in new_relationships:
-                try:
-                    # Extract relationship components
+            if new_relationships:
+                logger.info(f"Identified {len(new_relationships)} potential relationships for knowledge base")
+                for relationship in new_relationships:
                     source = relationship.get("source")
                     target = relationship.get("target")
-                    relationship_type = relationship.get("type")
-                    properties = relationship.get("properties", {})
-                    
-                    if source and target and relationship_type:
-                        # Add relationship to graph
-                        await self.graph_tool.add_relationship(
-                            source=source,
-                            target=target,
-                            relationship_type=relationship_type,
-                            properties=properties
-                        )
-                        
-                        logger.info(f"Added relationship: {source} -> {relationship_type} -> {target}")
-                    
-                except Exception as e:
-                    logger.error(f"Error adding relationship to graph: {e}")
-                    continue
-                    
+                    rel_type = relationship.get("type")
+                    if source and target and rel_type:
+                        logger.info(f"Relationship insight: {source} -> {rel_type} -> {target}")
+            
+            if entities_mentioned:
+                logger.info(f"Key entities mentioned: {', '.join(entities_mentioned)}")
+            
+            if knowledge_gaps:
+                logger.info(f"Knowledge gaps identified: {', '.join(knowledge_gaps)}")
+                
         except Exception as e:
-            logger.error(f"Error updating knowledge graph: {e}")
+            logger.error(f"Error processing insights: {e}")
     
     async def _queue_knowledge_updates(self, insights: Dict[str, Any]):
         """

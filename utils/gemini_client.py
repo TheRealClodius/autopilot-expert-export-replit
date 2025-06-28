@@ -157,7 +157,7 @@ Return your analysis as JSON with these fields:
 - urgency: string
 - specificity: string
 - confidence: float (0.0 to 1.0)
-- suggested_tools: list of strings (vector_search, graph_query, etc.)
+- suggested_tools: list of strings (vector_search, etc.)
 """
             
             context_str = ""
