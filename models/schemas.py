@@ -32,12 +32,16 @@ class ProcessedMessage(BaseModel):
     user_id: str
     user_name: str
     user_email: Optional[str] = ""
+    user_display_name: Optional[str] = ""
+    user_first_name: Optional[str] = ""
+    user_title: Optional[str] = ""
+    user_department: Optional[str] = ""
     channel_id: str
     channel_name: str
     is_dm: bool = False
     is_mention: bool = False
     thread_ts: Optional[str] = None
-    message_ts: str
+    message_ts: Optional[str] = ""
     thread_context: Optional[str] = None
     
     class Config:

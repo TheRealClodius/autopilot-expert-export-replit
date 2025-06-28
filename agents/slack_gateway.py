@@ -92,17 +92,30 @@ class SlackGateway:
             if thread_ts:
                 thread_context = await self._get_thread_context(channel_id, thread_ts)
             
+            # Extract user profile information
+            profile = user_info.get("profile", {})
+            display_name = profile.get("display_name") or profile.get("real_name") or user_info.get("name", "Unknown")
+            first_name = profile.get("first_name", "")
+            
+            # If first_name is not available, try to extract from display name
+            if not first_name and display_name:
+                first_name = display_name.split()[0] if display_name.split() else display_name
+            
             processed_message = ProcessedMessage(
                 text=clean_text,
                 user_id=user_id,
                 user_name=user_info.get("name", "Unknown"),
-                user_email=user_info.get("profile", {}).get("email", ""),
+                user_email=profile.get("email", ""),
+                user_display_name=display_name,
+                user_first_name=first_name,
+                user_title=profile.get("title", ""),
+                user_department=profile.get("fields", {}).get("department", {}).get("value", ""),
                 channel_id=channel_id,
                 channel_name=channel_info.get("name", "Unknown"),
                 is_dm=is_dm,
                 is_mention=is_mention,
                 thread_ts=thread_ts,
-                message_ts=message_ts,
+                message_ts=message_ts or "",
                 thread_context=thread_context
             )
             

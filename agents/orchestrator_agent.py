@@ -285,6 +285,10 @@ Current Query: "{message.text}"
                 "current_query": {
                     "text": message.text,
                     "user": message.user_name,
+                    "user_first_name": message.user_first_name,
+                    "user_display_name": message.user_display_name,
+                    "user_title": message.user_title,
+                    "user_department": message.user_department,
                     "channel": message.channel_name,
                     "is_dm": message.is_dm,
                     "is_mention": message.is_mention,
