@@ -242,11 +242,26 @@ class ClientAgent:
             
             prompt_parts.append("")
         
-        # B4. Orchestrator Insights
-        orchestrator_insights = state_stack.get("orchestrator_insights", "")
-        if orchestrator_insights and orchestrator_insights.strip():
-            prompt_parts.append("ORCHESTRATOR INSIGHTS:")
-            prompt_parts.append(orchestrator_insights.strip())
+        # B4. Orchestrator Analysis & Insights
+        orchestrator_analysis = state_stack.get("orchestrator_analysis", {})
+        if orchestrator_analysis:
+            prompt_parts.append("ORCHESTRATOR ANALYSIS & INSIGHTS:")
+            
+            # Include the orchestrator's intent analysis
+            intent_analysis = orchestrator_analysis.get("intent", "")
+            if intent_analysis and intent_analysis.strip():
+                prompt_parts.append(f"Intent Analysis: {intent_analysis.strip()}")
+            
+            # Include tools used information
+            tools_used = orchestrator_analysis.get("tools_used", [])
+            if tools_used:
+                prompt_parts.append(f"Tools Used: {', '.join(tools_used)}")
+            
+            # Include search results summary if available
+            search_results = orchestrator_analysis.get("search_results", [])
+            if search_results:
+                prompt_parts.append(f"Search Results Found: {len(search_results)} relevant items")
+            
             prompt_parts.append("")
         
         # Final instruction for the client agent
