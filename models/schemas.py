@@ -9,13 +9,13 @@ from pydantic import BaseModel, Field, validator
 
 class SlackEvent(BaseModel):
     """Schema for incoming Slack event data"""
-    token: str
-    team_id: str
-    api_app_id: str
+    token: Optional[str] = None
+    team_id: Optional[str] = None
+    api_app_id: Optional[str] = None
     event: Dict[str, Any]
     type: str
-    event_id: str
-    event_time: int
+    event_id: Optional[str] = None
+    event_time: Optional[int] = None
     
     class Config:
         extra = "allow"

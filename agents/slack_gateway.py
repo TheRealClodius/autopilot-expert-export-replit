@@ -84,8 +84,7 @@ class SlackGateway:
                 user_id=user_id,
                 message=text,
                 channel_id=channel_id,
-                message_ts=message_ts or "unknown",
-                thread_ts=thread_ts
+                message_ts=message_ts or "unknown"
             )
             
             # Clean the message text (remove mentions)
