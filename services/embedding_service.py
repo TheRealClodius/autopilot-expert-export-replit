@@ -6,7 +6,7 @@ Handles text embedding generation and Pinecone operations using Google Gemini.
 import logging
 from typing import List, Dict, Any, Optional
 import asyncio
-import google.genai as genai
+from google import genai
 from pinecone import Pinecone
 
 from config import settings
@@ -21,6 +21,7 @@ class EmbeddingService:
     
     def __init__(self):
         self.embedding_model = "text-embedding-004"  # Google's latest embedding model
+        self.client = None
         self.pc = None
         self.index = None
         self._initialize_services()
@@ -28,9 +29,9 @@ class EmbeddingService:
     def _initialize_services(self):
         """Initialize Gemini and Pinecone connection"""
         try:
-            # Initialize Gemini API
-            genai.configure(api_key=settings.GEMINI_API_KEY)
-            logger.info(f"Initialized Gemini API for embeddings")
+            # Initialize Gemini client
+            self.client = genai.Client(api_key=settings.GEMINI_API_KEY)
+            logger.info(f"Initialized Gemini client for embeddings")
             
             # Initialize Pinecone
             self.pc = Pinecone(api_key=settings.PINECONE_API_KEY)
@@ -55,17 +56,24 @@ class EmbeddingService:
             if not text or not text.strip():
                 return None
             
-            # Generate embedding using Gemini
-            result = genai.embed_content(
+            # Generate embedding using Gemini client
+            from google.genai import types
+            
+            result = self.client.models.embed_content(
                 model=self.embedding_model,
-                content=text,
-                task_type="retrieval_document"
+                contents=[types.Content(parts=[types.Part(text=text)])]
             )
             
-            if result and 'embedding' in result:
-                return result['embedding']
+            if result and hasattr(result, 'embeddings') and result.embeddings:
+                # Extract first embedding from the batch response
+                embedding = result.embeddings[0]
+                if hasattr(embedding, 'values'):
+                    return embedding.values
+                else:
+                    logger.warning(f"Embedding object has no values: {embedding}")
+                    return None
             else:
-                logger.warning("No embedding returned from Gemini API")
+                logger.warning(f"No embedding returned from Gemini API. Result: {result}")
                 return None
             
         except Exception as e:

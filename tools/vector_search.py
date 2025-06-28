@@ -59,14 +59,19 @@ class VectorSearchTool:
             return []
         
         try:
-            # For now, we'll implement a basic search that queries the index
-            # Note: This requires embeddings to be pre-stored in Pinecone
-            # Since we don't have sentence-transformers, we'll search by metadata only
+            # Generate embedding for the query using our embedding service
+            from services.embedding_service import EmbeddingService
             
-            # Use Pinecone's query functionality with text-based search
-            # This is a simplified approach until we can add embedding generation
+            embedding_service = EmbeddingService()
+            query_embedding = await embedding_service.embed_text(query)
+            
+            if not query_embedding:
+                logger.warning(f"Failed to generate embedding for query: '{query[:50]}...'")
+                return []
+            
+            # Query Pinecone with the generated embedding
             query_response = self.index.query(
-                vector=[0.0] * 384,  # Dummy vector for now
+                vector=query_embedding,
                 top_k=top_k,
                 include_metadata=include_metadata,
                 filter=filters or {}
