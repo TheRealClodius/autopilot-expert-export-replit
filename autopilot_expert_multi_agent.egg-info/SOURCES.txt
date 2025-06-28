@@ -13,6 +13,7 @@ services/data_processor.py
 services/document_ingestion.py
 services/embedding_service.py
 services/memory_service.py
+services/performance_optimizer.py
 services/prewarming_service.py
 services/progress_tracker.py
 services/slack_connector.py

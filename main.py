@@ -22,6 +22,8 @@ from services.memory_service import MemoryService
 from services.trace_manager import trace_manager
 from services.prewarming_service import PrewarmingService
 from services.webhook_cache import WebhookCache
+from services.performance_optimizer import performance_optimizer
+from services.lazy_loader import lazy_loader
 
 # Import Celery only if configured
 try:
@@ -57,9 +59,12 @@ def initialize_services():
     """Initialize services synchronously"""
     global slack_gateway, orchestrator_agent, memory_service, prewarming_service, webhook_cache
     
-    logger.info("Initializing multi-agent system...")
+    logger.info("Initializing multi-agent system with performance optimizations...")
     
     try:
+        # Start lazy loading of heavy modules in background
+        lazy_loader.preload_critical_modules()
+        
         # Initialize services
         memory_service = MemoryService()
         slack_gateway = SlackGateway()
@@ -88,13 +93,15 @@ services_initialized = initialize_services()
 
 # Start pre-warming asynchronously after initial setup
 async def start_prewarming():
-    """Start the pre-warming system after services are initialized"""
+    """Start the pre-warming system and performance optimizations after services are initialized"""
     if prewarming_service and services_initialized:
         try:
+            # Apply async performance optimizations
+            await performance_optimizer.apply_startup_optimizations()
             await prewarming_service.start_prewarming()
-            logger.info("🚀 Pre-warming system started successfully")
+            logger.info("Pre-warming system and performance optimizations started successfully")
         except Exception as e:
-            logger.error(f"❌ Pre-warming startup failed: {e}")
+            logger.error(f"Pre-warming startup failed: {e}")
 
 # Note: Pre-warming will be started via admin endpoint to avoid event loop issues
 

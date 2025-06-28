@@ -11,6 +11,7 @@ Requires-Dist: kombu>=5.5.4
 Requires-Dist: langsmith>=0.4.4
 Requires-Dist: networkx>=3.5
 Requires-Dist: pinecone>=7.3.0
+Requires-Dist: psutil>=7.0.0
 Requires-Dist: pydantic>=2.11.7
 Requires-Dist: pydantic-settings>=2.10.1
 Requires-Dist: pyyaml>=6.0
