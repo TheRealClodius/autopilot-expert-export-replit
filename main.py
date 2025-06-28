@@ -507,11 +507,11 @@ async def orchestrator_test():
         memory_service = MemoryService()
         orchestrator = OrchestratorAgent(memory_service)
         
-        # Create a test message
+        # Create a test message that should trigger vector search
         test_message = ProcessedMessage(
             channel_id="C087QKECFKQ",
             user_id="U12345TEST",
-            text="What is Autopilot and how does it work?",
+            text="What's the latest update on the UiPath integration project?",
             message_ts="1640995200.001500",
             thread_ts=None,
             user_name="test_user",
