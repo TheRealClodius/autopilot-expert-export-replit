@@ -23,12 +23,7 @@ orchestrator_prompt: >
   {
     "analysis": "Insightful interpretation of user's deeper intent",
     "tools_needed": ["vector_search"] or [],
-    "vector_queries": ["strategically relevant query suggestions"],
-   "context": {
-      "intent": "underlying intent behind the user's query",
-     "response_approach": "suggested angle to enrich the response,         potentially surprising or uniquely valuable",
-      "tone_guidance": "Concise advice on response style (e.g., playful,   insightful, practical)"
-    }
+    "vector_queries": ["strategically relevant query suggestions"]
   }
 
 # The prompt for the final client-facing agent.

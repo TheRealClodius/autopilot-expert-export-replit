@@ -309,7 +309,7 @@ Current Query: "{message.text}"
                     "vector_search_results": gathered_information.get("vector_results", []),
                     "execution_plan": execution_plan,
                     "orchestrator_insights": execution_plan.get("analysis", ""),
-                    "response_approach": execution_plan.get("context", {}).get("response_approach", ""),
+
                     "tools_used": execution_plan.get("tools_needed", [])
                 },
                 "metadata": {
