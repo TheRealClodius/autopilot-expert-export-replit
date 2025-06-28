@@ -373,7 +373,8 @@ Current Query: "{message.text}"
                     "tools_used": execution_plan.get("tools_needed", []),
                     "search_results": gathered_information.get("vector_results", [])[:3] if gathered_information.get("vector_results") else []  # Limit to top 3 results
                 },
-                "response_thread_ts": message.thread_ts or message.message_ts
+                "response_thread_ts": message.thread_ts or message.message_ts,
+                "trace_id": self.trace_manager.current_trace_id if hasattr(self, 'trace_manager') and self.trace_manager else None
             }
             
             logger.info(f"Built state stack with {len(user_queries)} user queries, {len(agent_responses)} agent responses, {len(gathered_information.get('vector_results', []))} vector results")
@@ -392,7 +393,8 @@ Current Query: "{message.text}"
                     "tools_used": [],
                     "search_results": []
                 },
-                "response_thread_ts": message.thread_ts or message.message_ts
+                "response_thread_ts": message.thread_ts or message.message_ts,
+                "trace_id": self.trace_manager.current_trace_id if hasattr(self, 'trace_manager') and self.trace_manager else None
             }
 
     async def _trigger_observation(self, message: ProcessedMessage, response: str, gathered_info: Dict[str, Any]):

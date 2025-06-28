@@ -46,9 +46,19 @@ class ClientAgent:
             # DEBUG: Check state stack structure
             logger.info(f"DEBUG: State stack keys: {list(state_stack.keys())}")
             
-            # Get trace manager for LangSmith integration
+            # Get trace manager for LangSmith integration 
+            # Use existing trace context from state stack or create new one
             from services.trace_manager import TraceManager
             trace_manager = TraceManager()
+            
+            # Check if we have an existing conversation trace to join
+            existing_trace_id = state_stack.get("trace_id")
+            if existing_trace_id:
+                trace_manager.current_trace_id = existing_trace_id
+                logger.info(f"DEBUG: Using existing trace ID: {existing_trace_id}")
+            else:
+                logger.info("DEBUG: No existing trace ID found, creating new context")
+            
             logger.info("DEBUG: TraceManager initialized")
             
             # A. Get User Query from state stack
