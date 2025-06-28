@@ -67,7 +67,11 @@ class TraceManager:
                 api_url=self.settings.LANGSMITH_ENDPOINT
             )
             
-            # Test basic connectivity
+            # Enable LangSmith client 
+            self.enabled = True
+            logger.info("LangSmith client initialized successfully")
+            
+            # Test basic connectivity (non-blocking)
             try:
                 # Simple test to verify client works
                 test_run = self.client.create_run(
@@ -78,8 +82,7 @@ class TraceManager:
                 )
                 
                 if test_run:
-                    self.enabled = True
-                    logger.info("LangSmith client initialized and tested successfully")
+                    logger.info("LangSmith connectivity test passed")
                     # Clean up test run
                     try:
                         self.client.update_run(
@@ -90,11 +93,11 @@ class TraceManager:
                     except:
                         pass  # Don't fail if cleanup fails
                 else:
-                    logger.warning("LangSmith client created but test run failed")
+                    logger.warning("LangSmith connectivity test returned None but client is enabled")
                     
             except Exception as e:
-                logger.warning(f"LangSmith client created but connectivity test failed: {e}")
-                self.enabled = True  # Still try to use it
+                logger.warning(f"LangSmith connectivity test failed but client is enabled: {e}")
+                # Keep enabled - connectivity issues shouldn't disable tracing
                 
         except Exception as e:
             logger.error(f"Failed to initialize LangSmith client: {e}")

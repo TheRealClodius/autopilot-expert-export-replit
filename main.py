@@ -1063,7 +1063,7 @@ async def test_langsmith_tracing():
         
         # Test trace creation
         try:
-            trace_id = await trace_manager.start_conversation_trace(
+            session_id = await trace_manager.start_conversation_session(
                 user_id="test_user",
                 message="Test message for LangSmith integration",
                 channel_id="test_channel",
@@ -1072,7 +1072,7 @@ async def test_langsmith_tracing():
             
             if trace_id:
                 # Test agent step logging
-                await trace_manager.log_agent_step(
+                await trace_manager.log_orchestrator_analysis(
                     agent_name="test_agent",
                     action="test_action",
                     inputs={"test": "input"},
@@ -1090,7 +1090,7 @@ async def test_langsmith_tracing():
                 )
                 
                 # Complete the trace
-                await trace_manager.complete_conversation_trace(
+                await trace_manager.complete_conversation_turn(
                     final_response="Test response completed",
                     total_duration_ms=300.0,
                     success=True

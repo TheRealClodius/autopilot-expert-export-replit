@@ -82,10 +82,8 @@ class OrchestratorAgent:
             # Log orchestrator analysis in LangSmith
             await trace_manager.log_orchestrator_analysis(
                 query=message.text,
-                execution_plan=execution_plan,
+                execution_plan=str(execution_plan),
                 duration_ms=(time.time() - plan_start) * 1000
-                inputs={"query": message.text},
-                outputs={"execution_plan": execution_plan}
             )
             
             if not execution_plan:
@@ -173,13 +171,8 @@ class OrchestratorAgent:
             
         except Exception as e:
             logger.error(f"Error in orchestrator processing: {e}")
-            # Complete trace with error
-            await trace_manager.complete_conversation_trace(
-                final_response="",
-                total_duration_ms=(time.time() - start_time) * 1000,
-                success=False,
-                error=e
-            )
+            # Complete conversation turn with error
+            await trace_manager.complete_conversation_turn(success=False, error=str(e))
             # Emit error progress if tracker is available
             if self.progress_tracker:
                 await emit_error(self.progress_tracker, "processing_error", "internal system issue")

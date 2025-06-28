@@ -98,8 +98,7 @@ class VectorSearchTool:
             await trace_manager.log_vector_search(
                 query=query,
                 results=results,
-                search_duration_ms=search_duration_ms,
-                metadata={"filters": filters, "top_k": top_k}
+                duration_ms=search_duration_ms
             )
             
             logger.info(f"Vector search returned {len(results)} results for query: '{query[:50]}...'")
