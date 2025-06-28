@@ -43,16 +43,27 @@ class ClientAgent:
             start_time = time.time()
             logger.info("Client Agent formatting response from orchestrator state stack...")
             
+            # DEBUG: Check state stack structure
+            logger.info(f"DEBUG: State stack keys: {list(state_stack.keys())}")
+            
             # Get trace manager for LangSmith integration
             from services.trace_manager import TraceManager
             trace_manager = TraceManager()
+            logger.info("DEBUG: TraceManager initialized")
             
             # A. Get User Query from state stack
             user_query = state_stack.get("query", "")
-            if not user_query:
+            current_query = state_stack.get("current_query", "")
+            logger.info(f"DEBUG: query='{user_query}', current_query='{current_query}'")
+            
+            if not user_query and not current_query:
                 logger.error("No user query found in state stack")
                 return None
             
+            # Use whichever query exists
+            final_query = user_query or current_query
+            
+            logger.info(f"DEBUG: About to create client agent trace for query: {user_query[:50]}...")
             # Start client agent trace span
             client_trace_id = await trace_manager.log_agent_operation(
                 agent_name="client_agent",
@@ -60,6 +71,7 @@ class ClientAgent:
                 input_data=f"Query: {user_query[:100]}...",
                 metadata={"model": "gemini-2.5-flash", "agent_type": "personality_formatting"}
             )
+            logger.info(f"DEBUG: Client agent trace ID: {client_trace_id}")
             
             # B. Prepare complete state stack context for Gemini
             user_prompt = self._format_state_stack_context(state_stack)
