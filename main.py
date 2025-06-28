@@ -1070,13 +1070,13 @@ async def test_langsmith_tracing():
                 message_ts="test_timestamp"
             )
             
-            if trace_id:
-                # Test agent step logging
+            if session_id:
+                # Test orchestrator analysis logging  
                 await trace_manager.log_orchestrator_analysis(
-                    agent_name="test_agent",
-                    action="test_action",
-                    inputs={"test": "input"},
-                    outputs={"test": "output"}
+                    query="test query",
+                    execution_plan="test execution plan",
+                    reasoning="test reasoning",
+                    duration_ms=150.0
                 )
                 
                 # Test API call logging
@@ -1090,16 +1090,12 @@ async def test_langsmith_tracing():
                 )
                 
                 # Complete the trace
-                await trace_manager.complete_conversation_turn(
-                    final_response="Test response completed",
-                    total_duration_ms=300.0,
-                    success=True
-                )
+                await trace_manager.complete_conversation_turn(success=True)
                 
                 test_results["trace_test"] = {
                     "status": "success",
-                    "trace_id": trace_id,
-                    "operations_logged": ["conversation_start", "agent_step", "api_call", "conversation_complete"]
+                    "session_id": session_id,
+                    "operations_logged": ["conversation_start", "orchestrator_analysis", "api_call", "conversation_complete"]
                 }
             else:
                 test_results["trace_test"] = {

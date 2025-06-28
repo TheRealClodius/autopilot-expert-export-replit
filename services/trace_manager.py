@@ -271,21 +271,27 @@ class TraceManager:
             return None
             
         try:
-            run = self.client.create_run(
-                name="user_message",
-                run_type="chain",
-                parent_run_id=self.current_trace_id,
-                inputs={
+            # Only use parent_run_id if we have a valid LangSmith trace ID (not fallback)
+            run_params = {
+                "name": "user_message",
+                "run_type": "chain",
+                "inputs": {
                     "user_id": user_id,
                     "message": message,
                     "timestamp": timestamp
                 },
-                project_name=self.settings.LANGSMITH_PROJECT,
-                tags=["user-input", "message"],
-                start_time=datetime.now()
-            )
+                "project_name": self.settings.LANGSMITH_PROJECT,
+                "tags": ["user-input", "message"],
+                "start_time": datetime.now()
+            }
             
-            if run:
+            # Only add parent_run_id if we have a valid trace (not fallback)
+            if not self.current_trace_id.startswith('fallback_'):
+                run_params["parent_run_id"] = self.current_trace_id
+            
+            run = self.client.create_run(**run_params)
+            
+            if run and hasattr(run, 'id'):
                 # Complete immediately
                 self.client.update_run(
                     run_id=run.id,
@@ -323,19 +329,24 @@ class TraceManager:
                 "duration_ms": duration_ms
             }
             
-            run = self.client.create_run(
-                name="orchestrator_analysis",
-                run_type="chain",
-                parent_run_id=self.current_trace_id,
-                inputs=inputs,
-                outputs=outputs,
-                project_name=self.settings.LANGSMITH_PROJECT,
-                tags=["orchestrator", "analysis", "planning"],
-                start_time=start_time,
-                end_time=datetime.now()
-            )
+            run_params = {
+                "name": "orchestrator_analysis",
+                "run_type": "chain",
+                "inputs": inputs,
+                "outputs": outputs,
+                "project_name": self.settings.LANGSMITH_PROJECT,
+                "tags": ["orchestrator", "analysis", "planning"],
+                "start_time": start_time,
+                "end_time": datetime.now()
+            }
             
-            if run:
+            # Only add parent_run_id if we have a valid trace (not fallback)
+            if not self.current_trace_id.startswith('fallback_'):
+                run_params["parent_run_id"] = self.current_trace_id
+            
+            run = self.client.create_run(**run_params)
+            
+            if run and hasattr(run, 'id'):
                 logger.debug(f"Logged orchestrator analysis: {run.id}")
                 return str(run.id)
                 
@@ -368,17 +379,22 @@ class TraceManager:
                 "duration_ms": duration_ms
             }
             
-            run = self.client.create_run(
-                name="vector_search",
-                run_type="retriever",
-                parent_run_id=self.current_trace_id,
-                inputs=inputs,
-                outputs=outputs,
-                project_name=self.settings.LANGSMITH_PROJECT,
-                tags=["vector-search", "retrieval", "pinecone"],
-                start_time=start_time,
-                end_time=datetime.now()
-            )
+            run_params = {
+                "name": "vector_search",
+                "run_type": "retriever",
+                "inputs": inputs,
+                "outputs": outputs,
+                "project_name": self.settings.LANGSMITH_PROJECT,
+                "tags": ["vector-search", "retrieval", "pinecone"],
+                "start_time": start_time,
+                "end_time": datetime.now()
+            }
+            
+            # Only add parent_run_id if we have a valid trace (not fallback)
+            if not self.current_trace_id.startswith('fallback_'):
+                run_params["parent_run_id"] = self.current_trace_id
+            
+            run = self.client.create_run(**run_params)
             
             if run:
                 logger.debug(f"Logged vector search: {run.id}")
@@ -410,17 +426,22 @@ class TraceManager:
                 "duration_ms": duration_ms
             }
             
-            run = self.client.create_run(
-                name="client_response",
-                run_type="chain",
-                parent_run_id=self.current_trace_id,
-                inputs=inputs,
-                outputs=outputs,
-                project_name=self.settings.LANGSMITH_PROJECT,
-                tags=["client-agent", "response", "final"],
-                start_time=start_time,
-                end_time=datetime.now()
-            )
+            run_params = {
+                "name": "client_response",
+                "run_type": "chain",
+                "inputs": inputs,
+                "outputs": outputs,
+                "project_name": self.settings.LANGSMITH_PROJECT,
+                "tags": ["client-agent", "response", "final"],
+                "start_time": start_time,
+                "end_time": datetime.now()
+            }
+            
+            # Only add parent_run_id if we have a valid trace (not fallback)
+            if not self.current_trace_id.startswith('fallback_'):
+                run_params["parent_run_id"] = self.current_trace_id
+            
+            run = self.client.create_run(**run_params)
             
             if run:
                 logger.debug(f"Logged client response: {run.id}")
@@ -462,17 +483,22 @@ class TraceManager:
                     "duration_ms": duration_ms
                 }
             
-            run = self.client.create_run(
-                name=f"{api_name}_api_call",
-                run_type="llm",
-                parent_run_id=self.current_trace_id,
-                inputs=inputs,
-                outputs=outputs,
-                project_name=self.settings.LANGSMITH_PROJECT,
-                tags=[api_name, model_name, "api-call"],
-                start_time=start_time,
-                end_time=datetime.now()
-            )
+            run_params = {
+                "name": f"{api_name}_api_call",
+                "run_type": "llm",
+                "inputs": inputs,
+                "outputs": outputs,
+                "project_name": self.settings.LANGSMITH_PROJECT,
+                "tags": [api_name, model_name, "api-call"],
+                "start_time": start_time,
+                "end_time": datetime.now()
+            }
+            
+            # Only add parent_run_id if we have a valid trace (not fallback)
+            if not self.current_trace_id.startswith('fallback_'):
+                run_params["parent_run_id"] = self.current_trace_id
+            
+            run = self.client.create_run(**run_params)
             
             if run:
                 logger.debug(f"Logged API call: {api_name} - {run.id}")
