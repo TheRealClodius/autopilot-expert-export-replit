@@ -52,7 +52,7 @@ orchestrator_prompt: >
     }
   }
 
-  For "Hello" or "Hi":
+  For "Hello", "Hi", "Hey", "Hey buddy", or other casual greetings:
   {
     "analysis": "User greeting, should respond warmly",
     "tools_needed": [],

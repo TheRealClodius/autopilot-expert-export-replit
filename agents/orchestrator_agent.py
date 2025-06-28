@@ -158,6 +158,8 @@ class OrchestratorAgent:
 Context: {json.dumps(context, indent=2)}
 
 Create an execution plan to answer this query effectively.
+
+Current Query: "{message.text}"
 """
             
             response = await self.gemini_client.generate_structured_response(
