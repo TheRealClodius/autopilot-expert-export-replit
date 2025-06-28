@@ -47,50 +47,52 @@ class ProgressEvent:
     def to_natural_language(self) -> str:
         """Convert progress event to natural language message"""
         
-        # Base action phrases for different event types
+        # Contextual and explicit action phrases (no emojis)
         action_phrases = {
             ProgressEventType.THINKING: {
-                "analyzing": "Analyzing your request",
-                "planning": "Planning my approach",
-                "understanding": "Understanding what you need",
-                "preparing": "Getting ready to help"
+                "analyzing": "Analyzing your request to understand what you need",
+                "planning": "Planning the best approach to answer your question",
+                "understanding": "Understanding the context and requirements",
+                "preparing": "Preparing to gather the information you need"
             },
             ProgressEventType.SEARCHING: {
-                "vector_search": "Searching through knowledge base",
+                "vector_search": "Searching through internal knowledge base",
                 "perplexity_search": "Searching the real-time web",
                 "document_search": "Looking through project documentation",
-                "memory_search": "Checking conversation history",
-                "knowledge_lookup": "Finding relevant information"
+                "memory_search": "Reviewing conversation history for context",
+                "knowledge_lookup": "Looking up relevant information in our knowledge base"
             },
             ProgressEventType.PROCESSING: {
-                "analyzing_results": "Analyzing what I found",
-                "filtering_results": "Filtering through search results",
-                "gathering_info": "Gathering relevant information",
-                "synthesizing": "Putting the pieces together"
+                "analyzing_results": "Analyzing the search results I found",
+                "filtering_results": "Filtering through search results for relevance",
+                "gathering_info": "Gathering and organizing relevant information",
+                "synthesizing": "Synthesizing information from multiple sources",
+                "compiling": "Compiling the most relevant findings"
             },
             ProgressEventType.GENERATING: {
-                "response_generation": "Crafting your response",
-                "answer_preparation": "Preparing your answer",
-                "formatting": "Formatting the final response",
-                "finalizing": "Putting finishing touches on response"
+                "response_generation": "Crafting a comprehensive response based on my findings",
+                "answer_preparation": "Preparing your answer with the gathered information",
+                "formatting": "Formatting the response for clarity",
+                "finalizing": "Finalizing your response with all relevant details"
             },
             ProgressEventType.ERROR: {
-                "api_error": "Hit a snag with external service",
-                "search_error": "Encountered issue while searching",
-                "processing_error": "Ran into processing difficulty",
-                "connection_error": "Network hiccup detected"
+                "api_error": "Encountered an issue with external service",
+                "search_error": "Hit an issue while searching for information",
+                "processing_error": "Ran into difficulty processing the results",
+                "connection_error": "Experiencing connectivity issues",
+                "timeout_error": "Request took longer than expected"
             },
             ProgressEventType.WARNING: {
-                "limited_results": "Found limited results, broadening search",
-                "api_limit": "Rate limit reached, adjusting approach",
-                "partial_failure": "Some services unavailable, working around it",
-                "fallback": "Primary method unavailable, trying alternative"
+                "limited_results": "Found limited results, expanding search scope",
+                "api_timeout": "Search is taking longer than expected",
+                "partial_failure": "Some sources unavailable, using available alternatives",
+                "fallback": "Primary method unavailable, switching to backup approach"
             },
             ProgressEventType.RETRY: {
-                "retry_search": "Trying search again with different approach",
-                "retry_api": "Retrying API call after brief pause",
-                "retry_processing": "Attempting processing again",
-                "retry_generation": "Regenerating response with new strategy"
+                "retry_search": "Retrying search with refined parameters",
+                "retry_api": "Retrying the request after a brief pause",
+                "retry_processing": "Attempting to process results again",
+                "retry_generation": "Regenerating response with alternative approach"
             }
         }
         
@@ -98,37 +100,32 @@ class ProgressEvent:
         type_phrases = action_phrases.get(self.event_type, {})
         base_phrase = type_phrases.get(self.action, self.action.replace("_", " ").title())
         
-        # Add context if provided
+        # Build contextual and explicit message
         if self.context:
             if self.event_type == ProgressEventType.ERROR:
                 message = f"{base_phrase}: {self.context}"
             elif self.event_type == ProgressEventType.WARNING:
                 message = f"{base_phrase} ({self.context})"
             else:
-                message = f"{base_phrase}"
-                # Add context for non-error messages
+                # Create more explicit and contextual messages
                 if "search" in self.action.lower():
-                    message += f" for {self.context}"
-                elif self.context not in base_phrase:
-                    message += f" - {self.context}"
+                    if "perplexity" in self.action:
+                        message = f"Searching for information about {self.context} on the web"
+                    elif "vector" in self.action:
+                        message = f"Looking internally for information about {self.context}"
+                    else:
+                        message = f"{base_phrase} for {self.context}"
+                elif "analyzing" in self.action.lower():
+                    message = f"Analyzing {self.context}"
+                elif "processing" in self.action.lower() or "compiling" in self.action.lower():
+                    message = f"{base_phrase} about {self.context}"
+                else:
+                    message = f"{base_phrase} - {self.context}"
         else:
             message = base_phrase
         
-        # Add appropriate emoji based on event type
-        emoji_map = {
-            ProgressEventType.THINKING: "🤔",
-            ProgressEventType.SEARCHING: "🔍",
-            ProgressEventType.PROCESSING: "⚙️",
-            ProgressEventType.GENERATING: "✨",
-            ProgressEventType.COMPLETING: "✅",
-            ProgressEventType.ERROR: "⚠️",
-            ProgressEventType.WARNING: "⚡",
-            ProgressEventType.RETRY: "🔄",
-            ProgressEventType.SUCCESS: "✅"
-        }
-        
-        emoji = emoji_map.get(self.event_type, "💭")
-        return f"{emoji} {message}..."
+        # Format with italic text for Slack (no emojis)
+        return f"_{message}_"
 
 
 class ProgressTracker:

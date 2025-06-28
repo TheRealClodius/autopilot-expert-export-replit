@@ -53,9 +53,10 @@ class OrchestratorAgent:
         try:
             logger.info(f"Orchestrator processing query: {message.text[:100]}...")
             
-            # Emit initial thinking progress
+            # Emit initial thinking progress with query context
             if self.progress_tracker:
-                await emit_thinking(self.progress_tracker, "analyzing", "your request")
+                query_preview = message.text[:50] + "..." if len(message.text) > 50 else message.text
+                await emit_thinking(self.progress_tracker, "analyzing", f"'{query_preview}'")
             
             # Store raw message in short-term memory (10 message sliding window)
             # Use consistent thread identifier: for new mentions use message_ts, for thread replies use thread_ts
@@ -75,9 +76,9 @@ class OrchestratorAgent:
             )
             
             plan_start = time.time()
-            # Emit planning progress
+            # Emit planning progress with context about what we're planning
             if self.progress_tracker:
-                await emit_thinking(self.progress_tracker, "planning", "approach to your question")
+                await emit_thinking(self.progress_tracker, "planning", "the best way to answer your question")
             
             # Analyze query and create execution plan with tracing
             execution_plan = await self._analyze_query_and_plan(message)
@@ -123,7 +124,7 @@ class OrchestratorAgent:
             
             # Emit final generation progress
             if self.progress_tracker:
-                await emit_generating(self.progress_tracker, "response_generation", "your answer")
+                await emit_generating(self.progress_tracker, "response_generation", "comprehensive response based on findings")
             
             # Generate final response through Client Agent with complete state
             response = await self.client_agent.generate_response(state_stack)
@@ -290,10 +291,10 @@ Current Query: "{message.text}"
                 if perplexity_queries:
                     logger.info(f"Executing {len(perplexity_queries)} Perplexity searches")
                     for i, query in enumerate(perplexity_queries):
-                        # Emit specific search progress
+                        # Emit specific search progress with clear context
                         if self.progress_tracker:
-                            search_context = f"real-time web search for '{query[:30]}...'" if len(query) > 30 else f"real-time web search for '{query}'"
-                            await emit_searching(self.progress_tracker, "perplexity_search", search_context)
+                            search_topic = query[:40] + "..." if len(query) > 40 else query
+                            await emit_searching(self.progress_tracker, "perplexity_search", search_topic)
                         
                         try:
                             result = await self.perplexity_tool.search(
@@ -328,10 +329,10 @@ Current Query: "{message.text}"
                 if vector_queries:
                     logger.info(f"Executing {len(vector_queries)} vector searches")
                     for i, query in enumerate(vector_queries):
-                        # Emit specific search progress
+                        # Emit specific search progress with clear context
                         if self.progress_tracker:
-                            search_context = f"'{query[:30]}...'" if len(query) > 30 else f"'{query}'"
-                            await emit_searching(self.progress_tracker, "vector_search", search_context)
+                            search_topic = query[:40] + "..." if len(query) > 40 else query
+                            await emit_searching(self.progress_tracker, "vector_search", search_topic)
                         
                         try:
                             results = await self.vector_tool.search(
