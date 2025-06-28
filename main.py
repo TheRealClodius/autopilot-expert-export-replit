@@ -6,6 +6,7 @@ Updated: Vector search and embedding system fully functional.
 
 import asyncio
 import logging
+import time
 from contextlib import asynccontextmanager
 from datetime import datetime
 from fastapi import FastAPI, HTTPException, Request, BackgroundTasks
@@ -120,6 +121,21 @@ async def slack_events(request: Request, background_tasks: BackgroundTasks):
 async def process_slack_message(event_data: SlackEvent):
     """Process incoming Slack message through the agent pipeline"""
     try:
+        # TIMING MEASUREMENT: Message Reception Time
+        import time
+        message_received_time = time.time()
+        user_message_ts = event_data.event.get('ts', '')
+        user_message_text = event_data.event.get('text', '')[:100]
+        reception_delay = 0.0  # Initialize for safety
+        
+        # Convert Slack timestamp to actual time for delay calculation
+        try:
+            slack_message_time = float(user_message_ts)
+            reception_delay = message_received_time - slack_message_time
+            logger.info(f"⏱️  MESSAGE TIMING: User sent '{user_message_text}' at {slack_message_time}, system received at {message_received_time:.3f} (reception delay: {reception_delay:.3f}s)")
+        except (ValueError, TypeError):
+            logger.info(f"⏱️  MESSAGE TIMING: Message '{user_message_text}' received by system at {message_received_time:.3f}")
+        
         logger.info(f"Processing message from user {event_data.event.get('user')} in channel {event_data.event.get('channel')}")
         
         # Check if services are initialized
@@ -127,15 +143,47 @@ async def process_slack_message(event_data: SlackEvent):
             logger.error("Services not properly initialized")
             return
         
+        # TIMING MEASUREMENT: Gateway Processing Start
+        gateway_start_time = time.time()
+        logger.info(f"⏱️  GATEWAY TIMING: Starting message processing at {gateway_start_time:.3f} (pipeline delay: {gateway_start_time - message_received_time:.3f}s)")
+        
         # Pass to Slack Gateway for initial processing
         processed_message = await slack_gateway.process_message(event_data)
         
+        # TIMING MEASUREMENT: Gateway Processing Complete
+        gateway_complete_time = time.time()
+        logger.info(f"⏱️  GATEWAY TIMING: Message processing complete at {gateway_complete_time:.3f} (processing took: {gateway_complete_time - gateway_start_time:.3f}s)")
+        
         if processed_message:
+            # TIMING MEASUREMENT: Progress Updater Creation Start
+            progress_start_time = time.time()
+            logger.info(f"⏱️  PROGRESS TIMING: Creating progress updater at {progress_start_time:.3f}")
+            
             # Create progress updater for real-time Slack message updates
             progress_updater = await slack_gateway.create_progress_updater(
                 processed_message.channel_id,
                 processed_message.thread_ts
             )
+            
+            # TIMING MEASUREMENT: First Visual Trace Sent (Starting up...)
+            first_trace_time = time.time()
+            total_delay = first_trace_time - message_received_time
+            progress_creation_delay = first_trace_time - progress_start_time
+            logger.info(f"⏱️  FIRST TRACE TIMING: 'Starting up...' message sent at {first_trace_time:.3f}")
+            logger.info(f"⏱️  TOTAL USER-TO-TRACE DELAY: {total_delay:.3f}s (creation took: {progress_creation_delay:.3f}s)")
+            
+            # PERFORMANCE ANALYSIS: Break down the delay components
+            if user_message_ts:
+                try:
+                    slack_time = float(user_message_ts)
+                    logger.info(f"📊 DELAY BREAKDOWN:")
+                    logger.info(f"    Network/Webhook delay: {reception_delay:.3f}s")
+                    logger.info(f"    Pipeline setup delay: {gateway_start_time - message_received_time:.3f}s") 
+                    logger.info(f"    Gateway processing: {gateway_complete_time - gateway_start_time:.3f}s")
+                    logger.info(f"    Progress creation: {progress_creation_delay:.3f}s")
+                    logger.info(f"    TOTAL: {total_delay:.3f}s")
+                except ValueError:
+                    pass
             
             if progress_updater:
                 # Import progress tracker locally to avoid circular imports
@@ -1374,6 +1422,118 @@ async def test_state_stack():
         return {
             "status": "error",
             "message": str(e)
+        }
+
+@app.get("/admin/test-timing-metrics")
+async def test_timing_metrics():
+    """Admin endpoint to test timing metrics between user message and first visual trace"""
+    try:
+        import time
+        from models.schemas import ProcessedMessage
+        
+        # Capture timing events
+        timing_events = []
+        
+        async def capture_timing_event(message: str):
+            """Capture timing events with precise timestamps"""
+            timestamp = time.time()
+            timing_events.append((timestamp, message))
+        
+        # Initialize services for testing
+        from services.progress_tracker import ProgressTracker
+        from agents.orchestrator_agent import OrchestratorAgent
+        
+        # Create test message simulating user input
+        test_message = ProcessedMessage(
+            text="What are the latest features in UiPath Autopilot?",
+            user_id="U_TIMING_TEST",
+            user_name="TimingTestUser", 
+            user_first_name="Timing",
+            user_display_name="Timing Test User",
+            user_title="Product Manager",
+            user_department="Product",
+            channel_id="C_TIMING_TEST",
+            channel_name="timing-test-channel",
+            message_ts=str(time.time()),
+            thread_ts=None,
+            is_dm=False,
+            thread_context=None
+        )
+        
+        # SIMULATE USER MESSAGE TIMING
+        simulated_user_send_time = time.time()
+        
+        # Create progress tracker with timing capture
+        tracker = ProgressTracker(update_callback=capture_timing_event)
+        orchestrator_with_timing = OrchestratorAgent(memory_service, tracker)
+        
+        # Start processing with timing measurements
+        start_time = time.time()
+        response = await orchestrator_with_timing.process_query(test_message)
+        end_time = time.time()
+        
+        total_duration = end_time - start_time
+        
+        # Analyze timing results
+        timing_analysis = {
+            "test_message": test_message.text,
+            "simulated_user_send_time": simulated_user_send_time,
+            "processing_start_time": start_time,
+            "processing_end_time": end_time,
+            "total_processing_duration": round(total_duration, 3),
+            "total_progress_events": len(timing_events),
+            "response_generated": bool(response)
+        }
+        
+        if timing_events:
+            first_event_time = timing_events[0][0]
+            first_trace_delay = first_event_time - start_time
+            timing_analysis["first_trace_delay"] = round(first_trace_delay, 3)
+            
+            # Performance assessment
+            if first_trace_delay < 0.1:
+                assessment = "EXCELLENT"
+            elif first_trace_delay < 0.5:
+                assessment = "GOOD" 
+            elif first_trace_delay < 1.0:
+                assessment = "ACCEPTABLE"
+            elif first_trace_delay < 2.0:
+                assessment = "SLOW"
+            else:
+                assessment = "VERY SLOW"
+            
+            timing_analysis["performance_assessment"] = assessment
+            timing_analysis["timing_events"] = [
+                {
+                    "relative_time": round(timestamp - start_time, 3),
+                    "message": message
+                }
+                for timestamp, message in timing_events
+            ]
+        else:
+            timing_analysis["first_trace_delay"] = None
+            timing_analysis["performance_assessment"] = "NO_TRACES"
+            timing_analysis["timing_events"] = []
+        
+        # Add response details
+        if response:
+            timing_analysis["response"] = {
+                "text_length": len(response.get("text", "")),
+                "has_suggestions": bool(response.get("suggestions")),
+                "preview": response.get("text", "")[:100]
+            }
+        
+        return {
+            "status": "success",
+            "timing_analysis": timing_analysis,
+            "description": "Timing metrics test completed - measures delay from processing start to first visual trace"
+        }
+        
+    except Exception as e:
+        return {
+            "status": "error",
+            "error": str(e),
+            "description": "Failed to complete timing metrics test"
         }
 
 @app.get("/admin/test-analysis-traces")

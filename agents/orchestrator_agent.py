@@ -56,7 +56,12 @@ class OrchestratorAgent:
             # Emit initial thinking progress with query context
             if self.progress_tracker:
                 query_preview = message.text[:50] + "..." if len(message.text) > 50 else message.text
+                first_progress_time = time.time()
+                logger.info(f"⏱️  FIRST PROGRESS TRACE: About to emit '_Analyzing {query_preview}_' at {first_progress_time:.3f}")
                 await emit_thinking(self.progress_tracker, "analyzing", f"'{query_preview}'")
+                post_progress_time = time.time()
+                progress_emit_duration = post_progress_time - first_progress_time
+                logger.info(f"⏱️  FIRST PROGRESS TRACE: Progress trace emitted at {post_progress_time:.3f} (emit took: {progress_emit_duration:.3f}s)")
             
             # Store raw message in short-term memory (10 message sliding window)
             # Use consistent thread identifier: for new mentions use message_ts, for thread replies use thread_ts

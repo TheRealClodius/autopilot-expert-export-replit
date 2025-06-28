@@ -315,6 +315,11 @@ class SlackGateway:
             Progress update callback function or None if initial message fails
         """
         try:
+            import time
+            # TIMING MEASUREMENT: Pre-Slack API Call
+            pre_api_time = time.time()
+            logger.info(f"⏱️  SLACK API TIMING: About to send 'Starting up...' message at {pre_api_time:.3f}")
+            
             # Send initial thinking message
             response = self.client.chat_postMessage(
                 channel=channel_id,
@@ -324,18 +329,37 @@ class SlackGateway:
                 unfurl_media=False
             )
             
+            # TIMING MEASUREMENT: Post-Slack API Call
+            post_api_time = time.time()
+            api_duration = post_api_time - pre_api_time
+            logger.info(f"⏱️  SLACK API TIMING: 'Starting up...' message API call completed at {post_api_time:.3f} (API call took: {api_duration:.3f}s)")
+            
             if not response["ok"]:
                 logger.error(f"Failed to send initial progress message: {response.get('error')}")
                 return None
             
             message_ts = response["ts"]
-            logger.info(f"Created progress message {message_ts} in {channel_id}")
+            logger.info(f"⏱️  FIRST VISUAL TRACE: 'Starting up...' message successfully posted with timestamp {message_ts} in {channel_id}")
+            
+            # Track subsequent progress updates
+            update_count = 0
             
             # Return update callback function
             async def update_progress(progress_text: str) -> None:
                 """Update the progress message with new text"""
+                nonlocal update_count
+                update_count += 1
+                
                 try:
+                    update_start = time.time()
+                    logger.info(f"⏱️  PROGRESS UPDATE #{update_count}: Updating to '{progress_text[:50]}...' at {update_start:.3f}")
+                    
                     await self.update_message(channel_id, message_ts, progress_text)
+                    
+                    update_complete = time.time()
+                    update_duration = update_complete - update_start
+                    logger.info(f"⏱️  PROGRESS UPDATE #{update_count}: Update completed at {update_complete:.3f} (took: {update_duration:.3f}s)")
+                    
                 except Exception as e:
                     logger.error(f"Failed to update progress message: {e}")
             
