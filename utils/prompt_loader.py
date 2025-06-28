@@ -1,11 +1,13 @@
 """
 Prompt Loader - Centralized prompt management for all agents.
 Loads prompts from prompts.yaml file for easy modification and version control.
+Includes intelligent caching system with file modification time tracking.
 """
 
 import logging
+import os
 from pathlib import Path
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 
 # Try to import yaml, but handle gracefully if not available
 try:
@@ -18,16 +20,46 @@ except ImportError:
 logger = logging.getLogger(__name__)
 
 class PromptLoader:
-    """Loads and manages system prompts from YAML configuration file."""
+    """Loads and manages system prompts from YAML configuration file with intelligent caching."""
     
     def __init__(self, prompts_file: str = "prompts.yaml"):
         self.prompts_file = Path(prompts_file)
         self._prompts = {}
+        self._cache = {}
+        self._file_mtime: Optional[float] = None
+        self._cache_valid = False
         self._load_prompts()
     
-    def _load_prompts(self):
-        """Load prompts from YAML file."""
+    def _check_file_changes(self) -> bool:
+        """Check if the prompts file has been modified since last load."""
+        if not self.prompts_file.exists():
+            return False
+            
         try:
+            current_mtime = os.path.getmtime(self.prompts_file)
+            if self._file_mtime is None or current_mtime != self._file_mtime:
+                self._file_mtime = current_mtime
+                return True
+            return False
+        except OSError:
+            return False
+    
+    def _invalidate_cache(self):
+        """Invalidate the prompt cache."""
+        self._cache.clear()
+        self._cache_valid = False
+        logger.debug("Prompt cache invalidated")
+    
+    def _load_prompts(self):
+        """Load prompts from YAML file with caching."""
+        try:
+            # Check if file has changed
+            file_changed = self._check_file_changes()
+            
+            if not file_changed and self._cache_valid and self._prompts:
+                logger.debug("Using cached prompts (no file changes)")
+                return
+            
             if not YAML_AVAILABLE or yaml is None:
                 logger.warning("PyYAML not available, using fallback prompts")
                 self._load_fallback_prompts()
@@ -36,7 +68,15 @@ class PromptLoader:
             if self.prompts_file.exists():
                 with open(self.prompts_file, 'r', encoding='utf-8') as f:
                     self._prompts = yaml.safe_load(f)
-                logger.info(f"Loaded prompts from {self.prompts_file}")
+                
+                # Update cache validity - only invalidate individual prompt cache if file changed
+                if file_changed:
+                    self._invalidate_cache()  # Clear old cached individual prompts
+                    logger.info(f"Reloaded prompts from {self.prompts_file} (file changed)")
+                else:
+                    logger.debug(f"Prompts loaded from {self.prompts_file} (cached)")
+                
+                self._cache_valid = True
             else:
                 logger.warning(f"Prompts file {self.prompts_file} not found, using fallback prompts")
                 self._load_fallback_prompts()
@@ -147,24 +187,47 @@ Your response should feel natural, like a person talking, not a database regurgi
             "description": "Multi-agent system prompts for Slack assistant with Autopilot expertise (fallback)"
         }
     
+    def _get_cached_prompt(self, prompt_key: str, default: str) -> str:
+        """Get a prompt with caching."""
+        # Check cache first for maximum performance
+        if prompt_key in self._cache and self._cache_valid:
+            return self._cache[prompt_key]
+        
+        # Ensure prompts are loaded and up to date
+        self._load_prompts()
+        
+        # Check cache again after potential reload
+        if prompt_key in self._cache:
+            return self._cache[prompt_key]
+        
+        # Load from prompts and cache it
+        prompt = self._prompts.get(prompt_key, default)
+        self._cache[prompt_key] = prompt
+        logger.debug(f"Cached new prompt: {prompt_key}")
+        
+        return prompt
+    
     def get_orchestrator_prompt(self) -> str:
-        """Get the orchestrator agent prompt."""
-        return self._prompts.get("orchestrator_prompt", "You are an orchestrator agent.")
+        """Get the orchestrator agent prompt (cached)."""
+        return self._get_cached_prompt("orchestrator_prompt", "You are an orchestrator agent.")
     
     def get_client_agent_prompt(self) -> str:
-        """Get the client agent prompt."""
-        return self._prompts.get("client_agent_prompt", "You are a helpful AI assistant.")
+        """Get the client agent prompt (cached)."""
+        return self._get_cached_prompt("client_agent_prompt", "You are a helpful AI assistant.")
     
     # NOTE: Slack Gateway prompt removed - it's a pure interface layer
     
     def get_observer_agent_prompt(self) -> str:
-        """Get the observer agent prompt."""
-        return self._prompts.get("observer_agent_prompt", "You are an observer agent.")
+        """Get the observer agent prompt (cached)."""
+        return self._get_cached_prompt("observer_agent_prompt", "You are an observer agent.")
     
     def reload_prompts(self):
         """Reload prompts from file (useful for runtime updates)."""
+        self._invalidate_cache()
+        self._cache_valid = False
+        self._file_mtime = None  # Force reload on next access
         self._load_prompts()
-        logger.info("Prompts reloaded")
+        logger.info("Prompts reloaded and cache cleared")
     
     def get_all_prompts(self) -> Dict[str, Any]:
         """Get all loaded prompts."""
@@ -176,7 +239,18 @@ Your response should feel natural, like a person talking, not a database regurgi
             "version": self._prompts.get("version", "unknown"),
             "last_updated": self._prompts.get("last_updated", "unknown"),
             "description": self._prompts.get("description", ""),
-            "total_prompts": len([k for k in self._prompts.keys() if k.endswith("_prompt")])
+            "total_prompts": len([k for k in self._prompts.keys() if k.endswith("_prompt")]),
+            "cache_info": self.get_cache_stats()
+        }
+    
+    def get_cache_stats(self) -> Dict[str, Any]:
+        """Get cache statistics."""
+        return {
+            "cached_prompts": len(self._cache),
+            "cache_valid": self._cache_valid,
+            "file_exists": self.prompts_file.exists(),
+            "last_modified": self._file_mtime,
+            "cache_keys": list(self._cache.keys())
         }
 
 # Global prompt loader instance
