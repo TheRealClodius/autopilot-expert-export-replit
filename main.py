@@ -1,6 +1,7 @@
 """
 Main FastAPI application entry point for the multi-agent Slack system.
 Handles incoming Slack webhooks and orchestrates agent responses.
+Updated: Vector search and embedding system fully functional.
 """
 
 import asyncio
