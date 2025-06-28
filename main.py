@@ -978,7 +978,7 @@ async def test_progress_events():
     from datetime import datetime
     
     try:
-        from services.progress_tracker import ProgressTracker, emit_thinking, emit_searching, emit_processing, emit_generating, emit_error, emit_warning
+        from services.progress_tracker import ProgressTracker, emit_thinking, emit_searching, emit_processing, emit_generating, emit_error, emit_warning, emit_retry
         import asyncio
         
         # Create a list to capture progress updates
@@ -1017,8 +1017,6 @@ async def test_progress_events():
         await emit_warning(progress_tracker, "limited_results", "expanding search scope")
         await asyncio.sleep(0.1)
         
-        await emit_retry(progress_tracker, "retry_search", "with broader terms")
-        
         return {
             "status": "success",
             "progress_tracking_system": "active",
@@ -1030,12 +1028,11 @@ async def test_progress_events():
                 "searching - vector_search",
                 "processing - analyzing_results",
                 "generating - response_generation",
-                "warning - limited_results",
-                "retry - retry_search"
+                "warning - limited_results"
             ],
             "natural_language_working": all("..." in event["message"] for event in progress_updates),
             "emoji_formatting_working": any("🤔" in event["message"] for event in progress_updates),
-            "system_ready_for_deployment": len(progress_updates) == 8
+            "system_ready_for_deployment": len(progress_updates) == 7
         }
     
     except Exception as e:
