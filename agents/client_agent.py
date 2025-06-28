@@ -256,12 +256,20 @@ class ClientAgent:
             tools_used = orchestrator_analysis.get("tools_used", [])
             if tools_used:
                 prompt_parts.append(f"Tools Used: {', '.join(tools_used)}")
+            else:
+                prompt_parts.append("Tools Used: none")
             
             # Include search results summary if available
             search_results = orchestrator_analysis.get("search_results", [])
             if search_results:
                 prompt_parts.append(f"Search Results Found: {len(search_results)} relevant items")
+            else:
+                prompt_parts.append("Search Results Found: none")
             
+            prompt_parts.append("")
+        else:
+            prompt_parts.append("ORCHESTRATOR ANALYSIS & INSIGHTS:")
+            prompt_parts.append("No orchestrator analysis available")
             prompt_parts.append("")
         
         # Final instruction for the client agent

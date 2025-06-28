@@ -1151,6 +1151,54 @@ async def test_langsmith_tracing():
             "langsmith_available": False
         }
 
+@app.get("/admin/test-state-stack")
+async def test_state_stack():
+    """Admin endpoint to test state stack content and debug analysis flow"""
+    try:
+        from models.schemas import ProcessedMessage
+        from datetime import datetime
+        
+        # Create test message
+        test_message = ProcessedMessage(
+            text="Hello my dude",
+            user_id="U_TEST_USER",
+            user_name="TestUser",
+            user_first_name="Test",
+            user_display_name="Test User",
+            user_title="Software Engineer",
+            user_department="Engineering",
+            channel_id="C_TEST_CHANNEL",
+            channel_name="test-channel",
+            message_ts=str(int(datetime.now().timestamp())),
+            thread_ts=None,
+            is_dm=False,
+            thread_context=None
+        )
+        
+        # Process through orchestrator
+        logger.info("Testing state stack creation...")
+        response = await orchestrator_agent.process_query(test_message)
+        
+        if response:
+            return {
+                "status": "success",
+                "response_received": True,
+                "response_text": response.get("text", "")[:200] + "...",
+                "message": "State stack test completed - check logs for debug info"
+            }
+        else:
+            return {
+                "status": "failed",
+                "message": "No response generated"
+            }
+            
+    except Exception as e:
+        logger.error(f"State stack test error: {e}")
+        return {
+            "status": "error",
+            "message": str(e)
+        }
+
 if __name__ == "__main__":
     # Get port from environment for Cloud Run deployment
     port = int(os.environ.get("PORT", 5000))
