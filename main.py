@@ -971,6 +971,81 @@ async def list_workspace_channels():
         logger.error(f"Error listing workspace channels: {e}")
         return {"status": "error", "error": str(e)}
 
+@app.get("/admin/test-progress-events")
+async def test_progress_events():
+    """Admin endpoint to test progress event generation (lightweight version)"""
+    import time
+    from datetime import datetime
+    
+    try:
+        from services.progress_tracker import ProgressTracker, emit_thinking, emit_searching, emit_processing, emit_generating, emit_error, emit_warning
+        import asyncio
+        
+        # Create a list to capture progress updates
+        progress_updates = []
+        
+        async def mock_progress_updater(message: str):
+            """Mock progress updater that captures messages"""
+            progress_updates.append({
+                "timestamp": datetime.now().isoformat(),
+                "message": message
+            })
+        
+        # Initialize progress tracker with mock updater
+        progress_tracker = ProgressTracker(update_callback=mock_progress_updater)
+        
+        # Simulate the orchestrator progress events
+        await emit_thinking(progress_tracker, "analyzing", "your test request")
+        await asyncio.sleep(0.1)
+        
+        await emit_thinking(progress_tracker, "planning", "approach to answer")
+        await asyncio.sleep(0.1)
+        
+        await emit_searching(progress_tracker, "vector_search", "knowledge base")
+        await asyncio.sleep(0.1)
+        
+        await emit_searching(progress_tracker, "vector_search", "'integration status'")
+        await asyncio.sleep(0.1)
+        
+        await emit_processing(progress_tracker, "analyzing_results", "search results")
+        await asyncio.sleep(0.1)
+        
+        await emit_generating(progress_tracker, "response_generation", "your answer")
+        await asyncio.sleep(0.1)
+        
+        # Test error and warning events
+        await emit_warning(progress_tracker, "limited_results", "expanding search scope")
+        await asyncio.sleep(0.1)
+        
+        await emit_retry(progress_tracker, "retry_search", "with broader terms")
+        
+        return {
+            "status": "success",
+            "progress_tracking_system": "active",
+            "total_progress_events": len(progress_updates),
+            "progress_events": progress_updates,
+            "event_types_tested": [
+                "thinking - analyzing",
+                "thinking - planning", 
+                "searching - vector_search",
+                "processing - analyzing_results",
+                "generating - response_generation",
+                "warning - limited_results",
+                "retry - retry_search"
+            ],
+            "natural_language_working": all("..." in event["message"] for event in progress_updates),
+            "emoji_formatting_working": any("🤔" in event["message"] for event in progress_updates),
+            "system_ready_for_deployment": len(progress_updates) == 8
+        }
+    
+    except Exception as e:
+        logger.error(f"Error testing progress events: {e}")
+        return {
+            "status": "error",
+            "error": str(e),
+            "progress_tracking_working": False
+        }
+
 if __name__ == "__main__":
     # Get port from environment for Cloud Run deployment
     port = int(os.environ.get("PORT", 5000))

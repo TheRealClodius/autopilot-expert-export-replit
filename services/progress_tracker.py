@@ -7,7 +7,7 @@ natural language formatting and error handling integration.
 
 import asyncio
 import logging
-from typing import Optional, Callable, Dict, Any
+from typing import Optional, Callable, Dict, Any, Union, Awaitable
 from datetime import datetime
 from enum import Enum
 
@@ -136,7 +136,7 @@ class ProgressTracker:
     and real-time update capabilities.
     """
     
-    def __init__(self, update_callback: Optional[Callable[[str], None]] = None):
+    def __init__(self, update_callback: Optional[Union[Callable[[str], None], Callable[[str], Awaitable[None]]]] = None):
         """
         Initialize progress tracker.
         
