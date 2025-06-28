@@ -57,6 +57,7 @@ class ProgressEvent:
             },
             ProgressEventType.SEARCHING: {
                 "vector_search": "Searching through knowledge base",
+                "perplexity_search": "Searching the real-time web",
                 "document_search": "Looking through project documentation",
                 "memory_search": "Checking conversation history",
                 "knowledge_lookup": "Finding relevant information"
