@@ -21,6 +21,7 @@ from models.schemas import SlackEvent, SlackChallenge
 from services.memory_service import MemoryService
 from services.trace_manager import trace_manager
 from services.prewarming_service import PrewarmingService
+from services.webhook_cache import WebhookCache
 
 # Import Celery only if configured
 try:
@@ -42,6 +43,7 @@ slack_gateway = None
 orchestrator_agent = None
 memory_service = None
 prewarming_service = None
+webhook_cache = None
 
 # Initialize FastAPI without complex lifespan manager
 app = FastAPI(
@@ -53,7 +55,7 @@ app = FastAPI(
 # Initialize services immediately for faster startup
 def initialize_services():
     """Initialize services synchronously"""
-    global slack_gateway, orchestrator_agent, memory_service, prewarming_service
+    global slack_gateway, orchestrator_agent, memory_service, prewarming_service, webhook_cache
     
     logger.info("Initializing multi-agent system...")
     
@@ -62,6 +64,9 @@ def initialize_services():
         memory_service = MemoryService()
         slack_gateway = SlackGateway()
         orchestrator_agent = OrchestratorAgent(memory_service)
+        
+        # Initialize webhook cache
+        webhook_cache = WebhookCache(memory_service=memory_service)
         
         # Initialize pre-warming service with all components
         # Note: We'll pass the services and let pre-warming access tools through them
@@ -143,6 +148,26 @@ async def slack_events(request: Request, background_tasks: BackgroundTasks):
             if (event_data.event.get("bot_id") or 
                 event_data.event.get("user") == settings.SLACK_BOT_USER_ID):
                 return {"status": "ignored"}
+            
+            # WEBHOOK CACHE: Check for duplicate or cached response
+            cache_check_start = time.time()
+            
+            # Check for duplicate requests first
+            if webhook_cache:
+                is_duplicate = await webhook_cache.is_duplicate_request(body)
+                if is_duplicate:
+                    logger.info("🔄 Duplicate webhook detected - skipping processing")
+                    return {"status": "duplicate_ignored"}
+                
+                # Check for cached response
+                cached_response = await webhook_cache.get_cached_response(body)
+                if cached_response:
+                    cache_check_time = time.time() - cache_check_start
+                    logger.info(f"⚡ Webhook cache HIT - returning cached response ({cache_check_time:.3f}s)")
+                    return cached_response
+            
+            cache_check_time = time.time() - cache_check_start
+            logger.info(f"⏱️  WEBHOOK CACHE: Cache check completed in {cache_check_time:.3f}s")
             
             # TIMING MEASUREMENT: About to Queue Background Task
             task_queue_time = time.time()
@@ -267,11 +292,23 @@ async def process_slack_message(event_data: SlackEvent):
                 # Forward to Orchestrator Agent for processing with progress tracking
                 response = await orchestrator_with_progress.process_query(processed_message)
                 
+                # Calculate total processing time for caching
+                total_processing_time = time.time() - background_task_start_time
+                
                 # Update the progress message with final response
                 if response:
                     final_response_text = response.get("text", "Sorry, I couldn't generate a response.")
                     await progress_updater(final_response_text)
                     logger.info("Successfully processed and updated Slack message with progress tracking")
+                    
+                    # WEBHOOK CACHE: Store successful response for future use
+                    if webhook_cache and webhook_cache.should_cache_response(event_data.dict(), {"status": "success", "response": response}):
+                        await webhook_cache.cache_response(
+                            event_data.dict(), 
+                            {"status": "success", "response": response},
+                            total_processing_time
+                        )
+                        logger.info(f"💾 Cached successful webhook response (processing: {total_processing_time:.3f}s)")
                     
                     # Complete the LangSmith conversation session
                     await trace_manager.complete_conversation_session(
@@ -1809,6 +1846,133 @@ async def performance_comparison():
             "status": "error",
             "error": str(e),
             "description": "Failed to complete performance comparison"
+        }
+
+@app.get("/admin/webhook-cache-stats")
+async def get_webhook_cache_stats():
+    """Admin endpoint to get webhook cache statistics"""
+    try:
+        if not webhook_cache:
+            return {
+                "status": "error",
+                "message": "Webhook cache not initialized"
+            }
+        
+        stats = webhook_cache.get_cache_stats()
+        
+        return {
+            "status": "success",
+            "cache_stats": stats,
+            "description": "Current webhook cache performance and configuration"
+        }
+        
+    except Exception as e:
+        return {
+            "status": "error",
+            "error": str(e),
+            "description": "Failed to get webhook cache statistics"
+        }
+
+@app.post("/admin/clear-webhook-cache")
+async def clear_webhook_cache():
+    """Admin endpoint to clear webhook cache"""
+    try:
+        if not webhook_cache:
+            return {
+                "status": "error",
+                "message": "Webhook cache not initialized"
+            }
+        
+        result = await webhook_cache.clear_cache()
+        
+        return {
+            "status": "success",
+            "clear_result": result,
+            "description": "Webhook cache cleared successfully"
+        }
+        
+    except Exception as e:
+        return {
+            "status": "error",
+            "error": str(e),
+            "description": "Failed to clear webhook cache"
+        }
+
+@app.get("/admin/webhook-cache-test")
+async def test_webhook_cache():
+    """Admin endpoint to test webhook cache functionality"""
+    try:
+        if not webhook_cache:
+            return {
+                "status": "error",
+                "message": "Webhook cache not initialized"
+            }
+        
+        import time
+        
+        # Create test webhook data
+        test_event = {
+            "type": "event_callback",
+            "event": {
+                "type": "message",
+                "user": "U_TEST_USER",
+                "text": f"Test cache message {int(time.time())}",
+                "channel": "C_TEST_CHANNEL",
+                "ts": str(time.time())
+            }
+        }
+        
+        test_response = {
+            "status": "success",
+            "response": {
+                "text": "Test cached response",
+                "timestamp": time.time()
+            }
+        }
+        
+        # Test cache storage
+        storage_start = time.time()
+        await webhook_cache.cache_response(test_event, test_response, 0.5)
+        storage_time = time.time() - storage_start
+        
+        # Test cache retrieval
+        retrieval_start = time.time()
+        cached_result = await webhook_cache.get_cached_response(test_event)
+        retrieval_time = time.time() - retrieval_start
+        
+        # Test duplicate detection
+        duplicate_start = time.time()
+        is_duplicate = await webhook_cache.is_duplicate_request(test_event)
+        duplicate_time = time.time() - duplicate_start
+        
+        cache_stats = webhook_cache.get_cache_stats()
+        
+        return {
+            "status": "success",
+            "test_results": {
+                "cache_storage": {
+                    "time": round(storage_time, 3),
+                    "success": True
+                },
+                "cache_retrieval": {
+                    "time": round(retrieval_time, 3),
+                    "success": cached_result is not None,
+                    "cache_hit": cached_result is not None
+                },
+                "duplicate_detection": {
+                    "time": round(duplicate_time, 3),
+                    "is_duplicate": is_duplicate
+                },
+                "cache_stats": cache_stats
+            },
+            "description": "Webhook cache functionality test completed"
+        }
+        
+    except Exception as e:
+        return {
+            "status": "error",
+            "error": str(e),
+            "description": "Failed to test webhook cache"
         }
 
 @app.get("/admin/test-timing-metrics")
