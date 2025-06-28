@@ -28,6 +28,8 @@ class TraceManager:
         self.client = None
         self.current_trace = None
         self.current_run = None
+        # Track conversation sessions for grouping related messages
+        self.conversation_sessions = {}
         self._initialize_client()
         
     def _initialize_client(self):
@@ -39,29 +41,7 @@ class TraceManager:
                     api_url=self.settings.LANGSMITH_ENDPOINT
                 )
                 logger.info("LangSmith client initialized successfully")
-                
-                # Test basic connectivity
-                try:
-                    # Try to create a minimal test run to verify API connectivity
-                    test_run = self.client.create_run(
-                        name="connectivity_test",
-                        run_type="chain",
-                        inputs={"test": "connectivity"},
-                        project_name=self.settings.LANGSMITH_PROJECT
-                    )
-                    if test_run and hasattr(test_run, 'id'):
-                        logger.info("LangSmith API connectivity verified")
-                        # Clean up test run
-                        self.client.update_run(
-                            run_id=test_run.id,
-                            outputs={"status": "test_complete"},
-                            end_time=datetime.now()
-                        )
-                    else:
-                        logger.warning("LangSmith API test returned None - tracing may be limited")
-                except Exception as test_error:
-                    logger.warning(f"LangSmith connectivity test failed: {test_error}")
-                    # Keep client but note the issue
+                logger.info("LangSmith client ready - will test connectivity on first trace")
                     
             else:
                 logger.info("No LangSmith API key provided, tracing disabled")
@@ -73,6 +53,31 @@ class TraceManager:
         """Check if LangSmith tracing is enabled and working"""
         return self.client is not None
     
+    def _get_conversation_session_id(self, channel_id: str, thread_ts: Optional[str] = None, user_id: str = None) -> str:
+        """
+        Generate a consistent conversation session ID for grouping related messages.
+        
+        Args:
+            channel_id: Slack channel ID
+            thread_ts: Thread timestamp if this is a thread conversation
+            user_id: User ID for DM conversations
+            
+        Returns:
+            Conversation session identifier
+        """
+        # For threaded conversations, use the thread timestamp
+        if thread_ts:
+            return f"thread_{channel_id}_{thread_ts}"
+        # For DM conversations, use user_id
+        elif channel_id.startswith('D') and user_id:
+            return f"dm_{user_id}"
+        # For channel conversations, create session based on recent activity window
+        else:
+            # Use a time window to group channel messages (30 minutes)
+            import time
+            time_window = int(time.time() // 1800)  # 30-minute windows
+            return f"channel_{channel_id}_{time_window}"
+
     async def start_conversation_trace(
         self,
         user_id: str,
@@ -82,7 +87,8 @@ class TraceManager:
         thread_ts: Optional[str] = None
     ) -> Optional[str]:
         """
-        Start a new conversation trace for a Slack message.
+        Start or continue a conversation trace for a Slack message.
+        Groups related messages under the same conversation session.
         
         Args:
             user_id: Slack user ID who sent the message
@@ -98,40 +104,70 @@ class TraceManager:
             return None
             
         try:
-            # Create trace metadata
+            # Get conversation session ID for grouping
+            session_id = self._get_conversation_session_id(channel_id, thread_ts, user_id)
+            
+            # Check if we already have an active trace for this conversation
+            if session_id in self.conversation_sessions:
+                # Continue existing conversation trace
+                existing_trace_id = self.conversation_sessions[session_id]
+                self.current_trace = type('TraceObj', (), {'id': existing_trace_id})()
+                logger.info(f"Continuing conversation trace: {existing_trace_id} for session: {session_id}")
+                
+                # Create a new message turn within the existing conversation
+                await self.log_agent_step(
+                    agent_name="user",
+                    action="new_message",
+                    inputs={
+                        "message": message,
+                        "user_id": user_id,
+                        "timestamp": message_ts
+                    },
+                    metadata={
+                        "message_type": "user_input",
+                        "channel_id": channel_id,
+                        "thread_ts": thread_ts
+                    }
+                )
+                
+                return existing_trace_id
+            
+            # Create new conversation trace
             metadata = {
                 "user_id": user_id,
                 "channel_id": channel_id,
                 "message_ts": message_ts,
                 "thread_ts": thread_ts,
+                "session_id": session_id,
                 "agent_system": "autopilot-expert-multi-agent",
                 "timestamp": datetime.now().isoformat()
             }
             
-            # Start the trace with corrected LangSmith API format
+            # Create a conversation-level trace name
+            conversation_name = f"conversation_{session_id.replace('.', '_')}"
+            
             trace_data = {
-                "name": f"slack_conversation_{message_ts.replace('.', '_')}",
-                "run_type": "chain",  # Required parameter for LangSmith
+                "name": conversation_name,
+                "run_type": "chain",
                 "inputs": {
-                    "user_message": message,
+                    "initial_message": message,
                     "user_id": user_id,
-                    "channel_context": channel_id
+                    "channel_context": channel_id,
+                    "session_type": "thread" if thread_ts else ("dm" if channel_id.startswith('D') else "channel")
                 },
-                "tags": ["slack", "multi-agent", "conversation"],
-                "extra": metadata,  # Use extra instead of metadata
+                "tags": ["slack", "multi-agent", "conversation-session"],
+                "extra": metadata,
                 "start_time": datetime.now()
             }
             
-            logger.debug(f"Creating LangSmith trace with data: {trace_data}")
+            logger.debug(f"Creating new conversation trace: {conversation_name}")
             
-            # Test if client is properly initialized
             if not self.client:
                 logger.error("LangSmith client is None")
                 return None
                 
-            # Try the API call with better error handling
+            # Create the conversation trace with minimal required parameters
             try:
-                # Simplified LangSmith call - let's test basic connectivity first
                 self.current_trace = self.client.create_run(
                     name=trace_data["name"],
                     run_type=trace_data["run_type"],
@@ -140,30 +176,40 @@ class TraceManager:
                 )
                 
                 if self.current_trace and hasattr(self.current_trace, 'id'):
-                    logger.info(f"Started LangSmith trace: {self.current_trace.id}")
-                    return str(self.current_trace.id)
+                    trace_id = str(self.current_trace.id)
+                    # Store the session for future messages
+                    self.conversation_sessions[session_id] = trace_id
+                    logger.info(f"Started new conversation trace: {trace_id} for session: {session_id}")
+                    
+                    # Log the initial user message as the first step
+                    await self.log_agent_step(
+                        agent_name="user",
+                        action="conversation_start",
+                        inputs={
+                            "message": message,
+                            "user_id": user_id,
+                            "timestamp": message_ts
+                        },
+                        metadata={
+                            "message_type": "conversation_start",
+                            "channel_id": channel_id,
+                            "thread_ts": thread_ts
+                        }
+                    )
+                    
+                    return trace_id
                 else:
                     logger.error(f"create_run returned invalid object: {type(self.current_trace)}")
-                    logger.error(f"Trace object: {self.current_trace}")
-                    # Let's also check if the client has basic connectivity
-                    try:
-                        # Test a simple operation to check connectivity
-                        logger.error(f"Testing client connectivity...")
-                        # For now, just return None and log that LangSmith is having issues
-                        logger.warning("LangSmith connectivity issue detected, continuing without tracing")
-                    except Exception as conn_test:
-                        logger.error(f"Client connectivity test failed: {conn_test}")
                     return None
+                    
             except Exception as api_error:
                 logger.error(f"LangSmith API error: {api_error}")
-                logger.error(f"API error type: {type(api_error)}")
                 import traceback
                 logger.error(f"Full error traceback: {traceback.format_exc()}")
                 return None
             
         except Exception as e:
             logger.error(f"Failed to start conversation trace: {e}")
-            logger.error(f"Trace data was: {trace_data if 'trace_data' in locals() else 'Not created'}")
             import traceback
             logger.error(f"Full traceback: {traceback.format_exc()}")
             return None
@@ -384,45 +430,82 @@ class TraceManager:
         error: Optional[Exception] = None
     ) -> None:
         """
-        Complete the current conversation trace with final results.
+        Complete the current conversation message turn (not the entire conversation).
+        Conversations remain active for future message turns.
         
         Args:
-            final_response: The final response sent to the user
-            total_duration_ms: Total conversation processing time
-            success: Whether the conversation was successful
-            error: Any final error that occurred
+            final_response: The final response sent to the user for this turn
+            total_duration_ms: Total processing time for this message turn
+            success: Whether this message turn was successful
+            error: Any error that occurred during this turn
         """
         if not self.is_enabled() or not self.current_trace:
             return
             
         try:
-            outputs = {
-                "final_response": final_response,
-                "success": success,
-                "total_duration_ms": total_duration_ms
-            }
-            
-            update_data = {
-                "outputs": outputs,
-                "end_time": datetime.now()
-            }
-            
-            if error:
-                update_data["error"] = str(error)
-                
-            self.client.update_run(
-                run_id=self.current_trace.id,
-                **update_data
+            # Log the agent's final response as a step in the conversation
+            await self.log_agent_step(
+                agent_name="assistant",
+                action="response_complete",
+                inputs={"processing_time_ms": total_duration_ms},
+                outputs={
+                    "final_response": final_response,
+                    "success": success,
+                    "turn_duration_ms": total_duration_ms
+                },
+                metadata={
+                    "turn_type": "assistant_response",
+                    "success": success,
+                    "error": str(error) if error else None
+                }
             )
             
-            logger.info(f"Completed conversation trace: {self.current_trace.id}")
+            logger.info(f"Completed conversation turn in trace: {self.current_trace.id}")
+            
+            # Don't end the conversation trace - keep it active for future turns
+            # Only reset current_run, not current_trace or session
+            self.current_run = None
             
         except Exception as e:
-            logger.error(f"Failed to complete conversation trace: {e}")
-        finally:
-            # Reset current trace
-            self.current_trace = None
-            self.current_run = None
+            logger.error(f"Failed to complete conversation turn: {e}")
+
+    def cleanup_expired_sessions(self, max_age_hours: int = 2) -> None:
+        """
+        Clean up conversation sessions older than specified age.
+        
+        Args:
+            max_age_hours: Maximum age in hours before session cleanup
+        """
+        try:
+            import time
+            current_time = time.time()
+            expired_sessions = []
+            
+            # For now, implement simple time-based cleanup
+            # In production, you might want more sophisticated session tracking
+            for session_id in list(self.conversation_sessions.keys()):
+                # Extract time component from session_id for time-based sessions
+                if "channel_" in session_id:
+                    try:
+                        # Extract time window from channel session IDs
+                        time_window = int(session_id.split('_')[-1])
+                        session_time = time_window * 1800  # Convert back to timestamp
+                        if current_time - session_time > (max_age_hours * 3600):
+                            expired_sessions.append(session_id)
+                    except (ValueError, IndexError):
+                        # If we can't parse the time, keep the session
+                        continue
+                        
+            # Remove expired sessions
+            for session_id in expired_sessions:
+                del self.conversation_sessions[session_id]
+                logger.debug(f"Cleaned up expired conversation session: {session_id}")
+                
+            if expired_sessions:
+                logger.info(f"Cleaned up {len(expired_sessions)} expired conversation sessions")
+                
+        except Exception as e:
+            logger.error(f"Error during session cleanup: {e}")
     
     @asynccontextmanager
     async def trace_agent_operation(
