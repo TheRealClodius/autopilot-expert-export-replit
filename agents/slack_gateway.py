@@ -10,6 +10,7 @@ from slack_sdk.errors import SlackApiError
 
 from config import settings
 from models.schemas import SlackEvent, ProcessedMessage
+from services.trace_manager import trace_manager
 
 logger = logging.getLogger(__name__)
 
@@ -77,6 +78,15 @@ class SlackGateway:
             
             if not should_respond:
                 return None
+            
+            # Start LangSmith conversation trace
+            trace_id = await trace_manager.start_conversation_trace(
+                user_id=user_id,
+                message=text,
+                channel_id=channel_id,
+                message_ts=message_ts,
+                thread_ts=thread_ts
+            )
             
             # Clean the message text (remove mentions)
             clean_text = self._clean_message_text(text)

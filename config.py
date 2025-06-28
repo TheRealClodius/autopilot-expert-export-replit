@@ -48,6 +48,11 @@ class Settings(BaseSettings):
     MAX_RETRIES: int = int(os.getenv("MAX_RETRIES", "3"))
     REQUEST_TIMEOUT: int = int(os.getenv("REQUEST_TIMEOUT", "30"))
     
+    # LangSmith Configuration
+    LANGSMITH_API_KEY: str = os.getenv("LANGSMITH_API_KEY", "")
+    LANGSMITH_PROJECT: str = os.getenv("LANGSMITH_PROJECT", "autopilot-expert-multi-agent")
+    LANGSMITH_ENDPOINT: str = os.getenv("LANGSMITH_ENDPOINT", "https://api.smith.langchain.com")
+    
     def get_monitored_channels(self) -> List[str]:
         """Get list of channels to monitor for data ingestion"""
         if not self.SLACK_CHANNELS_TO_MONITOR:
