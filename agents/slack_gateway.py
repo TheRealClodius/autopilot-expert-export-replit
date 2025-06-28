@@ -4,7 +4,7 @@ Acts as the interface between Slack and the internal agent system.
 """
 
 import logging
-from typing import Optional, Dict, Any, List
+from typing import Optional, Dict, Any, List, Callable, Awaitable
 from slack_sdk import WebClient
 from slack_sdk.errors import SlackApiError
 
@@ -293,6 +293,48 @@ class SlackGateway:
         except Exception as e:
             logger.error(f"Error updating message: {e}")
             return False
+    
+    async def create_progress_updater(self, channel_id: str, thread_ts: Optional[str] = None) -> Optional[Callable[[str], Awaitable[None]]]:
+        """
+        Create a progress update callback function for real-time message updates.
+        
+        Args:
+            channel_id: Slack channel ID
+            thread_ts: Thread timestamp if replying in thread
+            
+        Returns:
+            Progress update callback function or None if initial message fails
+        """
+        try:
+            # Send initial thinking message
+            response = self.client.chat_postMessage(
+                channel=channel_id,
+                text="💭 Starting up...",
+                thread_ts=thread_ts,
+                unfurl_links=False,
+                unfurl_media=False
+            )
+            
+            if not response["ok"]:
+                logger.error(f"Failed to send initial progress message: {response.get('error')}")
+                return None
+            
+            message_ts = response["ts"]
+            logger.info(f"Created progress message {message_ts} in {channel_id}")
+            
+            # Return update callback function
+            async def update_progress(progress_text: str) -> None:
+                """Update the progress message with new text"""
+                try:
+                    await self.update_message(channel_id, message_ts, progress_text)
+                except Exception as e:
+                    logger.error(f"Failed to update progress message: {e}")
+            
+            return update_progress
+            
+        except Exception as e:
+            logger.error(f"Error creating progress updater: {e}")
+            return None
 
     async def send_error_response(self, channel_id: str, error_message: str, thread_ts: Optional[str] = None) -> bool:
         """Send error message to Slack"""
