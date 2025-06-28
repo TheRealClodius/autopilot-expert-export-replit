@@ -686,7 +686,7 @@ class MemoryService:
             }
             
             # Store for 24 hours
-            return await self.store_cached_data(thread_key, participation_data, ttl=86400)
+            return await self.store_data(thread_key, participation_data, ttl=86400)
             
         except Exception as e:
             logger.error(f"Error tracking thread participation: {e}")
@@ -696,7 +696,7 @@ class MemoryService:
         """Get thread participation data"""
         try:
             thread_key = f"thread_participation:{channel_id}:{thread_ts}"
-            return await self.get_cached_data(thread_key)
+            return await self.get_data(thread_key)
         except Exception as e:
             logger.error(f"Error getting thread participation: {e}")
             return None
