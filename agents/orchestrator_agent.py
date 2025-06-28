@@ -123,6 +123,7 @@ class OrchestratorAgent:
                 await emit_generating(self.progress_tracker, "response_generation", "your answer")
             
             # Generate final response through Client Agent with complete state
+            logger.info(f"DEBUG: State stack type: {type(state_stack)}, value: {str(state_stack)[:200]}...")
             response = await self.client_agent.generate_response(state_stack)
             logger.info(f"Response generation took {time.time() - response_start:.2f}s")
             
