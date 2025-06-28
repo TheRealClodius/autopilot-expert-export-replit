@@ -20,6 +20,7 @@ from config import settings
 from models.schemas import SlackEvent, SlackChallenge
 from services.memory_service import MemoryService
 from services.trace_manager import trace_manager
+from services.prewarming_service import PrewarmingService
 
 # Import Celery only if configured
 try:
@@ -40,6 +41,7 @@ logger = logging.getLogger(__name__)
 slack_gateway = None
 orchestrator_agent = None
 memory_service = None
+prewarming_service = None
 
 # Initialize FastAPI without complex lifespan manager
 app = FastAPI(
@@ -51,7 +53,7 @@ app = FastAPI(
 # Initialize services immediately for faster startup
 def initialize_services():
     """Initialize services synchronously"""
-    global slack_gateway, orchestrator_agent, memory_service
+    global slack_gateway, orchestrator_agent, memory_service, prewarming_service
     
     logger.info("Initializing multi-agent system...")
     
@@ -61,14 +63,38 @@ def initialize_services():
         slack_gateway = SlackGateway()
         orchestrator_agent = OrchestratorAgent(memory_service)
         
+        # Initialize pre-warming service with all components
+        # Note: We'll pass the services and let pre-warming access tools through them
+        prewarming_service = PrewarmingService(
+            slack_client=slack_gateway.client if slack_gateway else None,
+            memory_service=memory_service,
+            vector_search=None,  # Will be accessed through orchestrator
+            perplexity_search=None  # Will be accessed through orchestrator
+        )
+        
         logger.info("Multi-agent system initialized successfully")
         return True
     except Exception as e:
         logger.error(f"Failed to initialize services: {e}")
         return False
 
-# Initialize on startup
+# Initialize services on startup
 services_initialized = initialize_services()
+
+# Start pre-warming asynchronously after initial setup
+async def start_prewarming():
+    """Start the pre-warming system after services are initialized"""
+    if prewarming_service and services_initialized:
+        try:
+            await prewarming_service.start_prewarming()
+            logger.info("🚀 Pre-warming system started successfully")
+        except Exception as e:
+            logger.error(f"❌ Pre-warming startup failed: {e}")
+
+# Schedule pre-warming to start immediately 
+import asyncio
+if services_initialized:
+    asyncio.create_task(start_prewarming())
 
 @app.get("/")
 def root():
