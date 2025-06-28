@@ -219,12 +219,25 @@ Create an execution plan to answer this query effectively.
 Current Query: "{message.text}"
 """
             
+            # Track LLM call timing for LangSmith
+            llm_start = time.time()
+            
             response = await self.gemini_client.generate_structured_response(
                 system_prompt,
                 user_prompt,
                 response_format="json",
                 model=self.gemini_client.pro_model  # Orchestrator uses Pro model for complex planning
             )
+            
+            # Log LLM call to LangSmith
+            llm_duration = time.time() - llm_start
+            if response:
+                await trace_manager.log_llm_call(
+                    model=self.gemini_client.pro_model,
+                    prompt=f"SYSTEM: {system_prompt}\n\nUSER: {user_prompt}",
+                    response=response,
+                    duration=llm_duration
+                )
             
             if response:
                 try:
