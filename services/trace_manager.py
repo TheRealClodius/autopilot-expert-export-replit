@@ -42,13 +42,10 @@ class TraceManager:
         self.client = None
         self.enabled = False
         
-        # Track active conversation sessions by channel/user
-        self.active_conversations = {}  # {channel_id: {trace_id, session_id, last_activity}}
+        # Track active conversation sessions
+        self.active_sessions = {}
         self.current_session_id = None
         self.current_trace_id = None
-        
-        # Conversation timeout (30 minutes of inactivity = new conversation)
-        self.conversation_timeout = 30 * 60  # 30 minutes
         
         self._initialize_client()
     
@@ -92,33 +89,15 @@ class TraceManager:
     
     async def start_conversation_session(self, user_id: str, message: str, 
                                        channel_id: str, message_ts: str) -> Optional[str]:
-        """Start or continue conversation session with proper LangSmith trace"""
+        """Start a new conversation session with proper LangSmith trace"""
         if not self.is_enabled():
             return None
             
         try:
-            current_time = datetime.now()
-            
-            # Check if we have an active conversation for this channel
-            existing_conversation = self.active_conversations.get(channel_id)
-            
-            if existing_conversation:
-                # Check if conversation is still active (within timeout)
-                time_since_activity = current_time.timestamp() - existing_conversation['last_activity']
-                
-                if time_since_activity < self.conversation_timeout:
-                    # Continue existing conversation
-                    logger.info(f"Continuing existing conversation for channel {channel_id}")
-                    existing_conversation['last_activity'] = current_time.timestamp()
-                    self.current_session_id = existing_conversation['session_id']
-                    self.current_trace_id = existing_conversation['trace_id']
-                    
-                    logger.info(f"Continued conversation session: {self.current_session_id} with trace: {self.current_trace_id}")
-                    return self.current_trace_id
-            
-            # Create new conversation session
+            # Generate session ID and conversation trace ID
             session_id = f"conversation_{channel_id}_{int(time.time())}"
             conversation_trace_id = str(uuid.uuid4())
+            current_time = datetime.now()
             
             # Create conversation trace in LangSmith
             self.client.create_run(
@@ -140,12 +119,11 @@ class TraceManager:
                 }
             )
             
-            # Store conversation data
-            self.active_conversations[channel_id] = {
+            # Store session data
+            self.active_sessions[session_id] = {
                 'trace_id': conversation_trace_id,
-                'session_id': session_id,
-                'start_time': current_time.timestamp(),
-                'last_activity': current_time.timestamp()
+                'start_time': current_time,
+                'last_activity': current_time
             }
             
             self.current_session_id = session_id
@@ -156,7 +134,7 @@ class TraceManager:
             # Log initial user message
             await self.log_user_message(user_id, message, message_ts)
             
-            return conversation_trace_id
+            return session_id
                 
         except Exception as e:
             logger.error(f"Failed to start conversation session: {e}")
@@ -171,19 +149,12 @@ class TraceManager:
         try:
             current_time = datetime.now()
             
-            # Prepare outputs  
-            # Find the conversation by trace_id
-            conversation_data = None
-            for channel_id, conv_data in self.active_conversations.items():
-                if conv_data['trace_id'] == self.current_trace_id:
-                    conversation_data = conv_data
-                    break
-            
+            # Prepare outputs
             outputs = {
                 "conversation_completed": True,
                 "session_duration_seconds": (
-                    current_time.timestamp() - conversation_data['start_time']
-                ) if conversation_data else 0
+                    current_time - self.active_sessions[self.current_session_id]['start_time']
+                ).total_seconds() if self.current_session_id in self.active_sessions else 0
             }
             
             if final_response:
@@ -203,16 +174,9 @@ class TraceManager:
             
             logger.info(f"Completed conversation session: {self.current_session_id}")
             
-            # Clean up conversation data
-            # Find and remove the conversation
-            channel_to_remove = None
-            for channel_id, conv_data in self.active_conversations.items():
-                if conv_data['trace_id'] == self.current_trace_id:
-                    channel_to_remove = channel_id
-                    break
-            
-            if channel_to_remove:
-                del self.active_conversations[channel_to_remove]
+            # Clean up session data
+            if self.current_session_id in self.active_sessions:
+                del self.active_sessions[self.current_session_id]
             
             self.current_session_id = None
             self.current_trace_id = None
