@@ -5,6 +5,7 @@ Uses Gemini 2.5 Pro for query analysis and tool orchestration.
 
 import json
 import logging
+import time
 from typing import Dict, Any, List, Optional
 from datetime import datetime
 
@@ -83,7 +84,7 @@ class OrchestratorAgent:
             await trace_manager.log_orchestrator_analysis(
                 query=message.text,
                 execution_plan=str(execution_plan),
-                duration_ms=(time.time() - plan_start) * 1000
+                duration=time.time() - plan_start
             )
             
             if not execution_plan:
@@ -141,11 +142,7 @@ class OrchestratorAgent:
                 total_time = time.time() - start_time
                 logger.info(f"Total processing time: {total_time:.2f}s")
                 
-                # Log client response to LangSmith
-                await trace_manager.log_client_response(
-                    final_response=response_text,
-                    duration_ms=total_time * 1000
-                )
+                # Note: Response will be logged when conversation completes
                 
                 # Determine thread_ts for response
                 # If user mentioned bot in channel (not in existing thread), start new thread

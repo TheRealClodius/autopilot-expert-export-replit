@@ -1080,22 +1080,20 @@ async def test_langsmith_tracing():
                 await trace_manager.log_orchestrator_analysis(
                     query="test query",
                     execution_plan="test execution plan",
-                    reasoning="test reasoning",
-                    duration_ms=150.0
+                    duration=0.15
                 )
                 
-                # Test API call logging
-                await trace_manager.log_api_call(
-                    api_name="test_api",
-                    model_name="test_model",
+                # Test LLM call logging
+                await trace_manager.log_llm_call(
+                    model="gemini-2.5-pro",
                     prompt="test prompt",
                     response="test response",
-                    tokens_used=50,
-                    duration_ms=150.0
+                    duration=0.15,
+                    tokens_used=50
                 )
                 
                 # Complete the trace
-                await trace_manager.complete_conversation_turn(success=True)
+                await trace_manager.complete_conversation_session(final_response="test completed")
                 
                 test_results["trace_test"] = {
                     "status": "success",
