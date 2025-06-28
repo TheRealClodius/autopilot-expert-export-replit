@@ -235,7 +235,7 @@ async def process_slack_message(event_data: SlackEvent):
         
         # TIMING MEASUREMENT: Gateway Processing Start
         gateway_start_time = time.time()
-        logger.info(f"⏱️  GATEWAY TIMING: Starting message processing at {gateway_start_time:.3f} (pipeline delay: {gateway_start_time - message_received_time:.3f}s)")
+        logger.info(f"⏱️  GATEWAY TIMING: Starting message processing at {gateway_start_time:.3f} (pipeline delay: {gateway_start_time - background_task_start_time:.3f}s)")
         
         # Pass to Slack Gateway for initial processing
         processed_message = await slack_gateway.process_message(event_data)
@@ -257,7 +257,7 @@ async def process_slack_message(event_data: SlackEvent):
             
             # TIMING MEASUREMENT: First Visual Trace Sent (Starting up...)
             first_trace_time = time.time()
-            total_delay = first_trace_time - message_received_time
+            total_delay = first_trace_time - background_task_start_time
             progress_creation_delay = first_trace_time - progress_start_time
             logger.info(f"⏱️  FIRST TRACE TIMING: 'Starting up...' message sent at {first_trace_time:.3f}")
             logger.info(f"⏱️  TOTAL USER-TO-TRACE DELAY: {total_delay:.3f}s (creation took: {progress_creation_delay:.3f}s)")
@@ -266,9 +266,10 @@ async def process_slack_message(event_data: SlackEvent):
             if user_message_ts:
                 try:
                     slack_time = float(user_message_ts)
+                    webhook_delivery_delay = webhook_received_time - slack_time
                     logger.info(f"📊 DELAY BREAKDOWN:")
-                    logger.info(f"    Network/Webhook delay: {reception_delay:.3f}s")
-                    logger.info(f"    Pipeline setup delay: {gateway_start_time - message_received_time:.3f}s") 
+                    logger.info(f"    Network/Webhook delay: {webhook_delivery_delay:.3f}s")
+                    logger.info(f"    Pipeline setup delay: {gateway_start_time - background_task_start_time:.3f}s") 
                     logger.info(f"    Gateway processing: {gateway_complete_time - gateway_start_time:.3f}s")
                     logger.info(f"    Progress creation: {progress_creation_delay:.3f}s")
                     logger.info(f"    TOTAL: {total_delay:.3f}s")
