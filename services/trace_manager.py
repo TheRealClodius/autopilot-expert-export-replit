@@ -67,38 +67,30 @@ class TraceManager:
                 api_url=self.settings.LANGSMITH_ENDPOINT
             )
             
-            # Test connectivity first before enabling
+            # Test connectivity by checking project access
             logger.info("Testing LangSmith connectivity...")
             try:
-                # Test if we can create a run
-                test_run = self.client.create_run(
+                # Test if we can access the project
+                project = self.client.read_project(project_name=self.settings.LANGSMITH_PROJECT)
+                logger.info(f"LangSmith project access confirmed: {project.name}")
+                
+                # LangSmith create_run returns None by design (fire-and-forget), so test with a simple run
+                self.client.create_run(
                     name="connectivity_test",
-                    run_type="chain",
                     inputs={"test": "connection"},
+                    run_type="chain",
                     project_name=self.settings.LANGSMITH_PROJECT
                 )
                 
-                if test_run and hasattr(test_run, 'id'):
-                    logger.info(f"LangSmith connectivity test passed - run ID: {test_run.id}")
-                    self.enabled = True
-                    
-                    # Clean up test run
-                    try:
-                        self.client.update_run(
-                            run_id=test_run.id,
-                            outputs={"status": "connection_verified"},
-                            end_time=datetime.now()
-                        )
-                        logger.info("LangSmith client fully functional")
-                    except Exception as cleanup_error:
-                        logger.warning(f"Test run cleanup failed: {cleanup_error}")
-                        # Still consider it working if creation succeeded
+                # If no exception was raised, it's working
+                self.enabled = True
+                logger.info("LangSmith client fully functional (create_run successful)")
                         
-                else:
-                    logger.warning("LangSmith create_run returned None - API authentication or project access issue")
-                    logger.warning("Tracing will operate in fallback mode with local logging only")
-                    self.enabled = False
-                    self.client = None
+            except Exception as e:
+                logger.warning(f"LangSmith connectivity test failed: {e}")
+                logger.warning("Tracing will operate in fallback mode with local logging only")
+                self.enabled = False
+                self.client = None
                     
             except Exception as e:
                 logger.warning(f"LangSmith connectivity test failed: {e}")
