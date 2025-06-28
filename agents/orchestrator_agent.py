@@ -47,7 +47,9 @@ class OrchestratorAgent:
             logger.info(f"Orchestrator processing query: {message.text[:100]}...")
             
             # Store raw message in short-term memory (10 message sliding window)
-            conversation_key = f"conv:{message.channel_id}:{message.thread_ts or message.message_ts}"
+            # Use consistent thread identifier: for new mentions use message_ts, for thread replies use thread_ts
+            thread_identifier = message.thread_ts or message.message_ts
+            conversation_key = f"conv:{message.channel_id}:{thread_identifier}"
             await self.memory_service.store_raw_message(
                 conversation_key,
                 message.dict(),
@@ -110,9 +112,14 @@ class OrchestratorAgent:
                 total_time = time.time() - start_time
                 logger.info(f"Total processing time: {total_time:.2f}s")
                 
+                # Determine thread_ts for response
+                # If user mentioned bot in channel (not in existing thread), start new thread
+                # If user replied in existing thread, continue same thread
+                response_thread_ts = message.thread_ts or message.message_ts
+                
                 result = {
                     "channel_id": message.channel_id,
-                    "thread_ts": message.thread_ts,
+                    "thread_ts": response_thread_ts,
                     "text": response_text,
                     "timestamp": datetime.now().isoformat()
                 }

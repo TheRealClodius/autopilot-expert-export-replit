@@ -19,6 +19,8 @@ class ClientAgent:
     
     def __init__(self):
         self.gemini_client = GeminiClient()
+        from services.memory_service import MemoryService
+        self.memory_service = MemoryService()
         
     async def generate_response(
         self, 
@@ -40,14 +42,20 @@ class ClientAgent:
         try:
             logger.info("Client Agent generating response...")
             
+            # Get recent conversation history for thread continuity
+            thread_identifier = message.thread_ts or message.message_ts
+            conversation_key = f"conv:{message.channel_id}:{thread_identifier}"
+            recent_messages = await self.memory_service.get_recent_messages(conversation_key, limit=5)
+            
             # Prepare system prompt for persona-based response
             system_prompt = self._get_persona_prompt(message)
             
-            # Prepare user prompt with gathered information
+            # Prepare user prompt with gathered information and conversation history
             user_prompt = self._format_information_for_response(
                 message, 
                 gathered_info, 
-                context
+                context,
+                recent_messages
             )
             
             # Generate response using Gemini Flash (faster model)
@@ -96,7 +104,8 @@ class ClientAgent:
         self, 
         message: ProcessedMessage,
         gathered_info: Dict[str, Any],
-        context: Dict[str, Any]
+        context: Dict[str, Any],
+        recent_messages: Optional[List[Dict[str, Any]]] = None
     ) -> str:
         """
         Format the gathered information for response generation.
@@ -105,6 +114,7 @@ class ClientAgent:
             message: Original processed message
             gathered_info: Information from vector search and graph queries
             context: Additional context
+            recent_messages: Recent conversation history for thread continuity
             
         Returns:
             Formatted prompt for response generation
@@ -120,6 +130,14 @@ class ClientAgent:
         # Add thread context if available
         if message.thread_context:
             prompt_parts.append(f"Thread Context:\n{message.thread_context}")
+        
+        # Add recent conversation history for thread continuity
+        if recent_messages and len(recent_messages) > 0:
+            prompt_parts.append("=== RECENT CONVERSATION HISTORY ===")
+            for msg in recent_messages[-5:]:  # Show last 5 messages in chronological order
+                user_name = msg.get("user_name", "Unknown")
+                text = msg.get("text", "")
+                prompt_parts.append(f"{user_name}: {text}")
         
         # Add vector search results
         vector_results = gathered_info.get("vector_results", [])
