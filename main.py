@@ -112,23 +112,29 @@ async def health_check():
 async def slack_events(request: Request, background_tasks: BackgroundTasks):
     """
     Handle incoming Slack events including messages from channels, threads, and DMs.
-    This is the main entry point for Slack interactions.
+    5-Step Timing Framework Implementation:
+    Step 2: Slack → Your app (Events API HTTP POST) - 300ms-3s 
+    Step 3: Cold-start / framework routing / auth - 50ms-4s
+    Step 4: Your code before "Analyzing..." - X
+    Step 5: Slack → user - 100-300ms
     """
     try:
-        # TIMING MEASUREMENT: Webhook Reception
+        # ⏱️ STEP 2: Slack → Your app (HTTP POST received)
         webhook_received_time = time.time()
-        logger.info(f"⏱️  WEBHOOK TIMING: Slack webhook received at {webhook_received_time:.3f}")
+        logger.info(f"📥 STEP 2: Slack webhook received at {webhook_received_time:.6f}")
+        
+        # ⏱️ STEP 3A: Framework routing/parsing starts
+        routing_start = time.time()
+        logger.info(f"🔄 STEP 3A: Framework routing start at {routing_start:.6f} (step2→3 delay: {routing_start - webhook_received_time:.6f}s)")
         
         body = await request.json()
         
-        # TIMING MEASUREMENT: JSON Parsing Complete
+        # ⏱️ STEP 3B: JSON parsing complete
         json_parsed_time = time.time()
-        json_parse_duration = json_parsed_time - webhook_received_time
-        logger.info(f"⏱️  WEBHOOK TIMING: JSON parsed at {json_parsed_time:.3f} (parsing took: {json_parse_duration:.3f}s)")
+        logger.info(f"📋 STEP 3B: JSON parsing complete at {json_parsed_time:.6f} (parsing: {json_parsed_time - routing_start:.6f}s)")
         
         # Handle Slack URL verification challenge
         if body.get("type") == "url_verification":
-            # Return challenge as plain text according to Slack documentation
             challenge_value = body.get("challenge")
             if challenge_value:
                 return PlainTextResponse(challenge_value)
@@ -139,10 +145,19 @@ async def slack_events(request: Request, background_tasks: BackgroundTasks):
         if body.get("type") == "event_callback":
             event_data = SlackEvent(**body)
             
-            # TIMING MEASUREMENT: Event Data Validation Complete  
+            # ⏱️ STEP 3C: Event validation complete  
             validation_complete_time = time.time()
-            validation_duration = validation_complete_time - json_parsed_time
-            logger.info(f"⏱️  WEBHOOK TIMING: Event validation complete at {validation_complete_time:.3f} (validation took: {validation_duration:.3f}s)")
+            logger.info(f"✅ STEP 3C: Event validation complete at {validation_complete_time:.6f} (validation: {validation_complete_time - json_parsed_time:.6f}s)")
+            
+            # Extract Slack timestamp for Step 2 analysis
+            slack_timestamp = event_data.event.get("ts")
+            if slack_timestamp:
+                try:
+                    slack_time = float(slack_timestamp)
+                    slack_to_webhook_delay = webhook_received_time - slack_time
+                    logger.info(f"📊 STEP 2 ANALYSIS: Slack edge→webhook delay: {slack_to_webhook_delay:.6f}s")
+                except ValueError:
+                    logger.warning("Could not parse Slack timestamp for Step 2 analysis")
             
             # Filter out bot messages and messages from the autopilot bot itself
             if (event_data.event.get("bot_id") or 
@@ -169,19 +184,21 @@ async def slack_events(request: Request, background_tasks: BackgroundTasks):
             cache_check_time = time.time() - cache_check_start
             logger.info(f"⏱️  WEBHOOK CACHE: Cache check completed in {cache_check_time:.3f}s")
             
-            # TIMING MEASUREMENT: About to Queue Background Task
+            # ⏱️ STEP 3D: About to queue background task
             task_queue_time = time.time()
-            total_webhook_processing = task_queue_time - webhook_received_time
+            total_step3_time = task_queue_time - webhook_received_time
             user_message_ts = event_data.event.get('ts', '')
             user_text = event_data.event.get('text', '')[:50]
             
-            logger.info(f"⏱️  WEBHOOK TIMING: About to queue background task at {task_queue_time:.3f}")
-            logger.info(f"⏱️  WEBHOOK PROCESSING TOTAL: {total_webhook_processing:.3f}s for message '{user_text}'")
+            logger.info(f"🚀 STEP 3D: Queueing background task at {task_queue_time:.6f}")
+            logger.info(f"📊 STEP 3 TOTAL: Framework overhead = {total_step3_time:.6f}s for '{user_text}'")
             
-            # Store webhook timing for correlation with later processing
+            # Store all timing data for Steps 4-5 analysis
             event_data.event['webhook_received_time'] = webhook_received_time
+            event_data.event['task_queue_time'] = task_queue_time
+            event_data.event['slack_timestamp'] = slack_timestamp
             
-            # Process the message in background
+            # Process the message in background (Steps 4-5 will be measured there)
             background_tasks.add_task(process_slack_message, event_data)
             
             # TIMING MEASUREMENT: Background Task Queued
@@ -198,56 +215,56 @@ async def slack_events(request: Request, background_tasks: BackgroundTasks):
         raise HTTPException(status_code=500, detail="Internal server error")
 
 async def process_slack_message(event_data: SlackEvent):
-    """Process incoming Slack message through the agent pipeline"""
+    """
+    Process incoming Slack message through the agent pipeline
+    Implements Steps 4-5 of the 5-Step Timing Framework
+    """
     try:
-        # TIMING MEASUREMENT: Background Task Execution Start
         import time
-        background_task_start_time = time.time()
+        
+        # ⏱️ STEP 4 START: Your code before "Analyzing..." 
+        step4_start = time.time()
         user_message_ts = event_data.event.get('ts', '')
-        user_message_text = event_data.event.get('text', '')[:100]
-        webhook_received_time = event_data.event.get('webhook_received_time', background_task_start_time)
+        user_message_text = event_data.event.get('text', '')[:50]
+        webhook_received_time = event_data.event.get('webhook_received_time', step4_start)
+        task_queue_time = event_data.event.get('task_queue_time', step4_start)
+        slack_timestamp = event_data.event.get('slack_timestamp')
         
-        # Calculate delays from different reference points
-        background_task_delay = background_task_start_time - webhook_received_time
+        logger.info(f"⚡ STEP 4 START: Background processing begins at {step4_start:.6f} for '{user_message_text}'")
         
-        logger.info(f"⏱️  BACKGROUND TASK TIMING: Started processing '{user_message_text}' at {background_task_start_time:.3f}")
-        logger.info(f"⏱️  BACKGROUND TASK DELAY: {background_task_delay:.3f}s from webhook reception to background task start")
+        # Calculate cumulative delays from Steps 2-3
+        if webhook_received_time != step4_start:
+            step3_to_step4_delay = step4_start - task_queue_time
+            logger.info(f"📊 STEP 3→4 DELAY: Background task queue delay = {step3_to_step4_delay:.6f}s")
         
-        # Convert Slack timestamp to actual time for total delay calculation
-        try:
-            slack_message_time = float(user_message_ts)
-            total_delay_from_user = background_task_start_time - slack_message_time
-            webhook_delivery_delay = webhook_received_time - slack_message_time
-            logger.info(f"⏱️  USER MESSAGE TIMING: User sent message at {slack_message_time}, webhook received at {webhook_received_time:.3f}")
-            logger.info(f"⏱️  TOTAL DELAY BREAKDOWN:")
-            logger.info(f"    Webhook delivery delay: {webhook_delivery_delay:.3f}s")
-            logger.info(f"    Background task queue delay: {background_task_delay:.3f}s") 
-            logger.info(f"    TOTAL USER-TO-PROCESSING: {total_delay_from_user:.3f}s")
-        except (ValueError, TypeError):
-            logger.info(f"⏱️  MESSAGE TIMING: Background task processing started at {background_task_start_time:.3f}")
+        # Step 2 analysis: Slack edge → webhook delay
+        if slack_timestamp:
+            try:
+                slack_time = float(slack_timestamp)
+                step2_total_delay = webhook_received_time - slack_time
+                logger.info(f"📊 STEP 2 TOTAL: Slack edge→webhook = {step2_total_delay:.6f}s")
+            except ValueError:
+                pass
         
-        logger.info(f"Processing message from user {event_data.event.get('user')} in channel {event_data.event.get('channel')}")
-        
-        # Check if services are initialized
+        # Check services
         if not slack_gateway or not orchestrator_agent:
-            logger.error("Services not properly initialized")
+            logger.error("❌ STEP 4 ERROR: Services not initialized")
             return
         
-        # TIMING MEASUREMENT: Gateway Processing Start
-        gateway_start_time = time.time()
-        logger.info(f"⏱️  GATEWAY TIMING: Starting message processing at {gateway_start_time:.3f} (pipeline delay: {gateway_start_time - background_task_start_time:.3f}s)")
+        # ⏱️ STEP 4A: Gateway processing
+        gateway_start = time.time()
+        logger.info(f"🔄 STEP 4A: Gateway processing starts at {gateway_start:.6f}")
         
-        # Pass to Slack Gateway for initial processing
         processed_message = await slack_gateway.process_message(event_data)
         
-        # TIMING MEASUREMENT: Gateway Processing Complete
-        gateway_complete_time = time.time()
-        logger.info(f"⏱️  GATEWAY TIMING: Message processing complete at {gateway_complete_time:.3f} (processing took: {gateway_complete_time - gateway_start_time:.3f}s)")
+        gateway_complete = time.time()
+        gateway_duration = gateway_complete - gateway_start
+        logger.info(f"✅ STEP 4A: Gateway complete at {gateway_complete:.6f} (took {gateway_duration:.6f}s)")
         
         if processed_message:
-            # TIMING MEASUREMENT: Progress Updater Creation Start
-            progress_start_time = time.time()
-            logger.info(f"⏱️  PROGRESS TIMING: Creating progress updater at {progress_start_time:.3f}")
+            # ⏱️ STEP 4B: Progress updater creation (preparing to send "Analyzing...")
+            step4b_start = time.time()
+            logger.info(f"🔧 STEP 4B: Creating progress updater at {step4b_start:.6f}")
             
             # Create progress updater for real-time Slack message updates
             progress_updater = await slack_gateway.create_progress_updater(
@@ -255,24 +272,44 @@ async def process_slack_message(event_data: SlackEvent):
                 processed_message.thread_ts
             )
             
-            # TIMING MEASUREMENT: First Visual Trace Sent (Starting up...)
-            first_trace_time = time.time()
-            total_delay = first_trace_time - background_task_start_time
-            progress_creation_delay = first_trace_time - progress_start_time
-            logger.info(f"⏱️  FIRST TRACE TIMING: 'Starting up...' message sent at {first_trace_time:.3f}")
-            logger.info(f"⏱️  TOTAL USER-TO-TRACE DELAY: {total_delay:.3f}s (creation took: {progress_creation_delay:.3f}s)")
+            step4b_complete = time.time()
+            step4b_duration = step4b_complete - step4b_start
+            logger.info(f"✅ STEP 4B: Progress updater ready at {step4b_complete:.6f} (took {step4b_duration:.6f}s)")
             
-            # PERFORMANCE ANALYSIS: Break down the delay components
-            if user_message_ts:
+            # ⏱️ STEP 4C: Just before sending "Analyzing..." message 
+            step4c_analyzing_start = time.time()
+            logger.info(f"📤 STEP 4C: About to send 'Analyzing...' at {step4c_analyzing_start:.6f}")
+            
+            # Calculate total Step 4 duration (your code before "Analyzing...")
+            total_step4_duration = step4c_analyzing_start - step4_start
+            logger.info(f"📊 STEP 4 TOTAL: Your code duration = {total_step4_duration:.6f}s")
+            
+            # ⏱️ STEP 5 START: Send "Analyzing..." message to Slack
+            step5_slack_call_start = time.time()
+            
+            # Send initial "Analyzing..." message with embedded timestamp for Step 5 measurement
+            analyzing_timestamp = step5_slack_call_start
+            analyzing_message = f"_Analyzing your request..._ 🕐{analyzing_timestamp:.6f}"
+            
+            await progress_updater(analyzing_message)
+            
+            step5_slack_call_complete = time.time()
+            step5_api_duration = step5_slack_call_complete - step5_slack_call_start
+            logger.info(f"✅ STEP 5: Slack API call complete at {step5_slack_call_complete:.6f} (API took {step5_api_duration:.6f}s)")
+            
+            # 🎯 TOTAL DELAY ANALYSIS: User message → First visible "Analyzing..." 
+            if slack_timestamp:
                 try:
-                    slack_time = float(user_message_ts)
-                    webhook_delivery_delay = webhook_received_time - slack_time
-                    logger.info(f"📊 DELAY BREAKDOWN:")
-                    logger.info(f"    Network/Webhook delay: {webhook_delivery_delay:.3f}s")
-                    logger.info(f"    Pipeline setup delay: {gateway_start_time - background_task_start_time:.3f}s") 
-                    logger.info(f"    Gateway processing: {gateway_complete_time - gateway_start_time:.3f}s")
-                    logger.info(f"    Progress creation: {progress_creation_delay:.3f}s")
-                    logger.info(f"    TOTAL: {total_delay:.3f}s")
+                    slack_time = float(slack_timestamp)
+                    total_user_to_analyzing = step5_slack_call_complete - slack_time
+                    logger.info(f"🎯 TOTAL USER→ANALYZING DELAY: {total_user_to_analyzing:.6f}s")
+                    logger.info(f"📊 COMPLETE BREAKDOWN:")
+                    logger.info(f"    Step 2 (Slack→Webhook): {webhook_received_time - slack_time:.6f}s")
+                    logger.info(f"    Step 3 (Framework): {task_queue_time - webhook_received_time:.6f}s")
+                    logger.info(f"    Step 3→4 (Queue): {step4_start - task_queue_time:.6f}s")
+                    logger.info(f"    Step 4 (Your code): {total_step4_duration:.6f}s")
+                    logger.info(f"    Step 5 (Slack API): {step5_api_duration:.6f}s")
+                    logger.info(f"    🎯 TOTAL: {total_user_to_analyzing:.6f}s")
                 except ValueError:
                     pass
             
