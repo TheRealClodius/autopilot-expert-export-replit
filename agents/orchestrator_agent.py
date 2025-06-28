@@ -75,9 +75,22 @@ class OrchestratorAgent:
             if self.progress_tracker:
                 await emit_thinking(self.progress_tracker, "planning", "approach to your question")
             
-            # Analyze query and create execution plan
+            # Analyze query and create execution plan with tracing
+            await trace_manager.log_agent_step(
+                agent_name="orchestrator",
+                action="analyze_query_start",
+                inputs={"query": message.text, "user_id": message.user_id}
+            )
+            
             execution_plan = await self._analyze_query_and_plan(message)
             logger.info(f"Query analysis took {time.time() - plan_start:.2f}s")
+            
+            await trace_manager.log_agent_step(
+                agent_name="orchestrator", 
+                action="analyze_query_complete",
+                inputs={"query": message.text},
+                outputs={"execution_plan": execution_plan}
+            )
             
             if not execution_plan:
                 # Let the orchestrator plan freely without constraints

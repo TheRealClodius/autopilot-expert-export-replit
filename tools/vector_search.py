@@ -4,8 +4,10 @@ Uses Pinecone for storing and searching conversation embeddings.
 """
 
 import logging
+import time
 from typing import List, Dict, Any, Optional
 from config import settings
+from services.trace_manager import trace_manager
 
 logger = logging.getLogger(__name__)
 
@@ -59,6 +61,8 @@ class VectorSearchTool:
             return []
         
         try:
+            start_time = time.time()
+            
             # Generate embedding for the query using our embedding service
             from services.embedding_service import EmbeddingService
             
@@ -77,6 +81,8 @@ class VectorSearchTool:
                 filter=filters or {}
             )
             
+            search_duration_ms = (time.time() - start_time) * 1000
+            
             results = []
             if query_response and hasattr(query_response, 'matches'):
                 for match in query_response.matches:
@@ -87,6 +93,14 @@ class VectorSearchTool:
                         "metadata": match.metadata or {}
                     }
                     results.append(result)
+            
+            # Log vector search trace
+            await trace_manager.log_vector_search(
+                query=query,
+                results=results,
+                search_duration_ms=search_duration_ms,
+                metadata={"filters": filters, "top_k": top_k}
+            )
             
             logger.info(f"Vector search returned {len(results)} results for query: '{query[:50]}...'")
             return results

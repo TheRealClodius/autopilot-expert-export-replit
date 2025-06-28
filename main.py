@@ -18,6 +18,7 @@ from agents.orchestrator_agent import OrchestratorAgent
 from config import settings
 from models.schemas import SlackEvent, SlackChallenge
 from services.memory_service import MemoryService
+from services.trace_manager import trace_manager
 
 # Import Celery only if configured
 try:
@@ -1041,6 +1042,86 @@ async def test_progress_events():
             "status": "error",
             "error": str(e),
             "progress_tracking_working": False
+        }
+
+@app.get("/admin/langsmith-test")
+async def test_langsmith_tracing():
+    """Admin endpoint to test LangSmith tracing integration"""
+    try:
+        test_results = {
+            "langsmith_enabled": trace_manager.is_enabled(),
+            "api_key_configured": bool(settings.LANGSMITH_API_KEY),
+            "project_name": settings.LANGSMITH_PROJECT,
+            "endpoint": settings.LANGSMITH_ENDPOINT,
+            "trace_test": None
+        }
+        
+        if not trace_manager.is_enabled():
+            test_results["status"] = "disabled"
+            test_results["message"] = "LangSmith tracing is disabled - no API key provided"
+            return test_results
+        
+        # Test trace creation
+        try:
+            trace_id = await trace_manager.start_conversation_trace(
+                user_id="test_user",
+                message="Test message for LangSmith integration",
+                channel_id="test_channel",
+                message_ts="test_timestamp"
+            )
+            
+            if trace_id:
+                # Test agent step logging
+                await trace_manager.log_agent_step(
+                    agent_name="test_agent",
+                    action="test_action",
+                    inputs={"test": "input"},
+                    outputs={"test": "output"}
+                )
+                
+                # Test API call logging
+                await trace_manager.log_api_call(
+                    api_name="test_api",
+                    model_name="test_model",
+                    prompt="test prompt",
+                    response="test response",
+                    tokens_used=50,
+                    duration_ms=150.0
+                )
+                
+                # Complete the trace
+                await trace_manager.complete_conversation_trace(
+                    final_response="Test response completed",
+                    total_duration_ms=300.0,
+                    success=True
+                )
+                
+                test_results["trace_test"] = {
+                    "status": "success",
+                    "trace_id": trace_id,
+                    "operations_logged": ["conversation_start", "agent_step", "api_call", "conversation_complete"]
+                }
+            else:
+                test_results["trace_test"] = {
+                    "status": "failed",
+                    "error": "Failed to create trace"
+                }
+                
+        except Exception as trace_error:
+            test_results["trace_test"] = {
+                "status": "error",
+                "error": str(trace_error)
+            }
+        
+        test_results["status"] = "success" if test_results["trace_test"]["status"] == "success" else "partial"
+        return test_results
+        
+    except Exception as e:
+        logger.error(f"Error testing LangSmith integration: {e}")
+        return {
+            "status": "error",
+            "error": str(e),
+            "langsmith_available": False
         }
 
 if __name__ == "__main__":
