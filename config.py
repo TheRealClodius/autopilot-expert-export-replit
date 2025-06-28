@@ -24,7 +24,7 @@ class Settings(BaseSettings):
     # Pinecone Configuration
     PINECONE_API_KEY: str = os.getenv("PINECONE_API_KEY", "")
     PINECONE_ENVIRONMENT: str = os.getenv("PINECONE_ENVIRONMENT", "")
-    PINECONE_INDEX_NAME: str = os.getenv("PINECONE_INDEX_NAME", "autopilot-knowledge")
+    PINECONE_INDEX_NAME: str = os.getenv("PINECONE_INDEX_NAME", "uipath-slack-chatter")
     
     # Redis Configuration (optional - fallback to in-memory cache if not available)
     REDIS_URL: str = os.getenv("REDIS_URL", "")

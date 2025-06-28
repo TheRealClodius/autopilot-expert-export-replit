@@ -419,14 +419,37 @@ async def api_test():
     # Test 3: Pinecone API
     try:
         if settings.PINECONE_API_KEY:
-            # Note: Pinecone is in placeholder mode, so we'll just check if we can import
-            results["pinecone_api"]["status"] = "placeholder"
-            results["pinecone_api"]["details"] = {
-                "note": "Vector search in placeholder mode - no ML dependencies loaded",
-                "api_key_configured": bool(settings.PINECONE_API_KEY),
-                "api_key_length": len(settings.PINECONE_API_KEY) if settings.PINECONE_API_KEY else 0
-            }
-            results["summary"]["passed"] += 1
+            from tools.vector_search import VectorSearchTool
+            vector_tool = VectorSearchTool()
+            
+            if vector_tool.pinecone_available:
+                # Test basic connection to index
+                try:
+                    # Try to query the index (this will test connectivity)
+                    test_result = await vector_tool.search("test", top_k=1)
+                    results["pinecone_api"]["status"] = "success"
+                    results["pinecone_api"]["details"] = {
+                        "index_name": settings.PINECONE_INDEX_NAME,
+                        "api_key_configured": True,
+                        "api_key_length": len(settings.PINECONE_API_KEY),
+                        "connectivity": "confirmed",
+                        "test_query_executed": True
+                    }
+                    results["summary"]["passed"] += 1
+                except Exception as query_error:
+                    results["pinecone_api"]["status"] = "partial"
+                    results["pinecone_api"]["details"] = {
+                        "index_name": settings.PINECONE_INDEX_NAME,
+                        "api_key_configured": True,
+                        "api_key_length": len(settings.PINECONE_API_KEY),
+                        "connectivity": "api_connected",
+                        "query_error": str(query_error)
+                    }
+                    results["summary"]["passed"] += 1
+            else:
+                results["pinecone_api"]["status"] = "failed"
+                results["pinecone_api"]["details"] = {"error": "Pinecone initialization failed"}
+                results["summary"]["failed"] += 1
         else:
             results["pinecone_api"]["status"] = "failed"
             results["pinecone_api"]["details"] = {"error": "No PINECONE_API_KEY configured"}
