@@ -84,10 +84,9 @@ class TraceManager:
                 "timestamp": datetime.now().isoformat()
             }
             
-            # Start the trace
+            # Start the trace with corrected LangSmith API format
             trace_data = {
-                "name": f"slack_conversation_{message_ts}",
-                "project_name": self.settings.LANGSMITH_PROJECT,
+                "name": f"slack_conversation_{message_ts.replace('.', '_')}",
                 "run_type": "chain",  # Required parameter for LangSmith
                 "inputs": {
                     "user_message": message,
@@ -95,15 +94,49 @@ class TraceManager:
                     "channel_context": channel_id
                 },
                 "tags": ["slack", "multi-agent", "conversation"],
-                "metadata": metadata
+                "extra": metadata,  # Use extra instead of metadata
+                "start_time": datetime.now()
             }
             
-            self.current_trace = self.client.create_run(**trace_data)
-            logger.info(f"Started LangSmith trace: {self.current_trace.id}")
-            return str(self.current_trace.id)
+            logger.debug(f"Creating LangSmith trace with data: {trace_data}")
+            
+            # Test if client is properly initialized
+            if not self.client:
+                logger.error("LangSmith client is None")
+                return None
+                
+            # Try the API call with better error handling
+            try:
+                # LangSmith standalone client format
+                self.current_trace = self.client.create_run(
+                    name=trace_data["name"],
+                    run_type=trace_data["run_type"],
+                    inputs=trace_data["inputs"],
+                    tags=trace_data["tags"],
+                    extra=trace_data["extra"],
+                    start_time=trace_data["start_time"],
+                    project_name=self.settings.LANGSMITH_PROJECT  # Pass separately
+                )
+                
+                if self.current_trace and hasattr(self.current_trace, 'id'):
+                    logger.info(f"Started LangSmith trace: {self.current_trace.id}")
+                    return str(self.current_trace.id)
+                else:
+                    logger.error(f"create_run returned invalid object: {type(self.current_trace)}")
+                    logger.error(f"Trace object: {self.current_trace}")
+                    return None
+            except Exception as api_error:
+                logger.error(f"LangSmith API error: {api_error}")
+                logger.error(f"API error type: {type(api_error)}")
+                import traceback
+                logger.error(f"Full error traceback: {traceback.format_exc()}")
+                return None
             
         except Exception as e:
             logger.error(f"Failed to start conversation trace: {e}")
+            logger.error(f"Trace data was: {trace_data if 'trace_data' in locals() else 'Not created'}")
+            import traceback
+            logger.error(f"Full traceback: {traceback.format_exc()}")
             return None
     
     async def log_agent_step(
