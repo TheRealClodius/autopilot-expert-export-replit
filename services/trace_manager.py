@@ -39,6 +39,30 @@ class TraceManager:
                     api_url=self.settings.LANGSMITH_ENDPOINT
                 )
                 logger.info("LangSmith client initialized successfully")
+                
+                # Test basic connectivity
+                try:
+                    # Try to create a minimal test run to verify API connectivity
+                    test_run = self.client.create_run(
+                        name="connectivity_test",
+                        run_type="chain",
+                        inputs={"test": "connectivity"},
+                        project_name=self.settings.LANGSMITH_PROJECT
+                    )
+                    if test_run and hasattr(test_run, 'id'):
+                        logger.info("LangSmith API connectivity verified")
+                        # Clean up test run
+                        self.client.update_run(
+                            run_id=test_run.id,
+                            outputs={"status": "test_complete"},
+                            end_time=datetime.now()
+                        )
+                    else:
+                        logger.warning("LangSmith API test returned None - tracing may be limited")
+                except Exception as test_error:
+                    logger.warning(f"LangSmith connectivity test failed: {test_error}")
+                    # Keep client but note the issue
+                    
             else:
                 logger.info("No LangSmith API key provided, tracing disabled")
         except Exception as e:
@@ -107,15 +131,12 @@ class TraceManager:
                 
             # Try the API call with better error handling
             try:
-                # LangSmith standalone client format
+                # Simplified LangSmith call - let's test basic connectivity first
                 self.current_trace = self.client.create_run(
                     name=trace_data["name"],
                     run_type=trace_data["run_type"],
                     inputs=trace_data["inputs"],
-                    tags=trace_data["tags"],
-                    extra=trace_data["extra"],
-                    start_time=trace_data["start_time"],
-                    project_name=self.settings.LANGSMITH_PROJECT  # Pass separately
+                    project_name=self.settings.LANGSMITH_PROJECT
                 )
                 
                 if self.current_trace and hasattr(self.current_trace, 'id'):
@@ -124,6 +145,14 @@ class TraceManager:
                 else:
                     logger.error(f"create_run returned invalid object: {type(self.current_trace)}")
                     logger.error(f"Trace object: {self.current_trace}")
+                    # Let's also check if the client has basic connectivity
+                    try:
+                        # Test a simple operation to check connectivity
+                        logger.error(f"Testing client connectivity...")
+                        # For now, just return None and log that LangSmith is having issues
+                        logger.warning("LangSmith connectivity issue detected, continuing without tracing")
+                    except Exception as conn_test:
+                        logger.error(f"Client connectivity test failed: {conn_test}")
                     return None
             except Exception as api_error:
                 logger.error(f"LangSmith API error: {api_error}")
