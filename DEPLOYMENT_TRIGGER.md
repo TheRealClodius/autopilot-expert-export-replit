@@ -44,13 +44,20 @@ return {
 ## Files Changed
 - `agents/orchestrator_agent.py` (2 lines added - fixes state stack mismatch)
 - `agents/client_agent.py` (2 lines changed - fixes response truncation)
-- `prompts.yaml` (1 line added - adds conciseness guidance)
+- `prompts.yaml` (2 lines added - adds conciseness + Slack formatting guidance)
+- `utils/gemini_client.py` (request queue system added - prevents rate limiting)
 - `replit.md` (documentation updated)
 
 ## Additional Fix - Response Truncation
 - **Issue**: Responses cut off mid-sentence due to 500 token limit
 - **Fix**: Increased max_tokens from 500 to 1,500 and character limit from 2,000 to 4,000
 - **Result**: Full responses will no longer be truncated prematurely
+
+## Additional Fix - Request Queue System  
+- **Issue**: Potential rate limiting after 4 rapid message exchanges causing "Sorry, I couldn't process your request"
+- **Fix**: Implemented async request queue in Gemini client with 0.1s delays between calls
+- **Result**: Sequential processing prevents rate limits, even with rapid user interactions
+- **Benefits**: Maintains response order, isolates failures, automatic retry capability
 
 ## Verification
 The fix has been verified locally - the client agent now successfully finds the query in the state stack.
