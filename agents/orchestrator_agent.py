@@ -281,6 +281,7 @@ Current Query: "{message.text}"
             
             # Build complete state stack
             state_stack = {
+                "query": message.text,  # Client agent expects "query" key with text directly
                 "current_query": {
                     "text": message.text,
                     "user": message.user_name,
@@ -321,6 +322,7 @@ Current Query: "{message.text}"
             logger.error(f"Error building state stack: {e}")
             # Return minimal state stack on error
             return {
+                "query": message.text,  # Client agent expects "query" key
                 "current_query": {
                     "text": message.text,
                     "user": message.user_name,
