@@ -2294,7 +2294,7 @@ async def get_performance_status():
             "lazy_loader": lazy_loader_stats,
             "system_info": {
                 "services_initialized": services_initialized,
-                "prewarming_active": prewarming_service.is_running() if prewarming_service else False
+                "prewarming_service_available": prewarming_service is not None
             }
         }
     except Exception as e:
