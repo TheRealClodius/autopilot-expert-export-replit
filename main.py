@@ -1057,8 +1057,13 @@ async def test_langsmith_tracing():
         }
         
         if not trace_manager.is_enabled():
-            test_results["status"] = "disabled"
-            test_results["message"] = "LangSmith tracing is disabled - no API key provided"
+            if settings.LANGSMITH_API_KEY:
+                test_results["status"] = "disabled"
+                test_results["message"] = "LangSmith tracing is disabled due to API authentication/project access issues"
+                test_results["solution"] = "The API key may need write permissions or the project may not exist. Try creating the project in LangSmith UI first."
+            else:
+                test_results["status"] = "disabled"
+                test_results["message"] = "LangSmith tracing is disabled - no API key configured"
             return test_results
         
         # Test trace creation
