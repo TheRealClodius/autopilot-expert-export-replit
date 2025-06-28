@@ -221,29 +221,26 @@ class ClientAgent:
                     prompt_parts.append(f"  {role.upper()}: {text}")
             prompt_parts.append("")
         
-        # B3. Collated Answers from Orchestrator
-        gathered_info = state_stack.get("gathered_information", {})
-        if gathered_info:
+        # B3. Collated Answers from Orchestrator (Search Results)
+        orchestrator_analysis = state_stack.get("orchestrator_analysis", {})
+        search_results = orchestrator_analysis.get("search_results", [])
+        
+        if search_results:
             prompt_parts.append("COLLATED ANSWERS FROM ORCHESTRATOR:")
-            
-            # Vector search results
-            vector_results = gathered_info.get("vector_search_results", [])
-            if vector_results:
-                prompt_parts.append("Vector Search Results:")
-                for i, result in enumerate(vector_results[:3], 1):  # Top 3 results
-                    content = result.get("content", "")
-                    if content:
-                        prompt_parts.append(f"  {i}. {content[:200]}...")
-            
-            # Other relevant context
-            relevant_context = gathered_info.get("relevant_context", "")
-            if relevant_context:
-                prompt_parts.append(f"Additional Context: {relevant_context}")
-            
+            prompt_parts.append("Vector Search Results:")
+            for i, result in enumerate(search_results[:3], 1):  # Top 3 results
+                content = result.get("content", "")
+                source = result.get("source", "")
+                score = result.get("score", 0.0)
+                if content:
+                    prompt_parts.append(f"  {i}. {content[:300]}...")
+                    if source:
+                        prompt_parts.append(f"     Source: {source}")
+                    if score:
+                        prompt_parts.append(f"     Relevance: {score:.2f}")
             prompt_parts.append("")
         
         # B4. Orchestrator Analysis & Insights
-        orchestrator_analysis = state_stack.get("orchestrator_analysis", {})
         if orchestrator_analysis:
             prompt_parts.append("ORCHESTRATOR ANALYSIS & INSIGHTS:")
             
@@ -260,7 +257,6 @@ class ClientAgent:
                 prompt_parts.append("Tools Used: none")
             
             # Include search results summary if available
-            search_results = orchestrator_analysis.get("search_results", [])
             if search_results:
                 prompt_parts.append(f"Search Results Found: {len(search_results)} relevant items")
             else:

@@ -1267,6 +1267,81 @@ async def test_analysis_traces():
             "message": str(e)
         }
 
+@app.get("/admin/test-tool-results-flow")
+async def test_tool_results_flow():
+    """Admin endpoint to test tool results flow from orchestrator to client agent"""
+    try:
+        from agents.orchestrator_agent import OrchestratorAgent
+        from models.schemas import ProcessedMessage
+        from services.memory_service import MemoryService
+        
+        # Initialize components
+        memory_service = MemoryService()
+        orchestrator = OrchestratorAgent(memory_service)
+        
+        # Create test message that should trigger vector search
+        test_message = ProcessedMessage(
+            channel_id="C087QKECFKQ",
+            user_id="U12345TEST",
+            text="Autopilot is an AI, right?",
+            message_ts="1640995200.001500",
+            thread_ts=None,
+            user_name="test_user",
+            user_first_name="Test",
+            user_display_name="Test User",
+            user_title="Software Engineer",
+            user_department="Engineering",
+            channel_name="general",
+            is_dm=False,
+            thread_context=""
+        )
+        
+        # Test step by step
+        execution_plan = await orchestrator._analyze_query_and_plan(test_message)
+        if not execution_plan:
+            return {"status": "error", "message": "No execution plan generated"}
+        
+        gathered_info = await orchestrator._execute_plan(execution_plan, test_message)
+        vector_results = gathered_info.get("vector_results", [])
+        
+        state_stack = await orchestrator._build_state_stack(test_message, gathered_info, execution_plan)
+        orchestrator_analysis = state_stack.get("orchestrator_analysis", {})
+        search_results_in_state = orchestrator_analysis.get("search_results", [])
+        
+        # Test client agent formatting
+        client_agent = orchestrator.client_agent
+        formatted_context = client_agent._format_state_stack_context(state_stack)
+        
+        # Check if search results are visible in formatted context
+        search_results_visible = "Vector Search Results:" in formatted_context
+        
+        return {
+            "status": "success",
+            "tool_execution": {
+                "execution_plan_created": bool(execution_plan),
+                "tools_needed": execution_plan.get("tools_needed", []),
+                "vector_queries": execution_plan.get("vector_queries", []),
+                "vector_results_found": len(vector_results),
+                "vector_results_preview": [r.get("content", "")[:100] for r in vector_results[:2]]
+            },
+            "state_stack": {
+                "search_results_in_orchestrator_analysis": len(search_results_in_state),
+                "first_result_preview": search_results_in_state[0].get("content", "")[:100] if search_results_in_state else None
+            },
+            "client_agent": {
+                "search_results_visible_in_context": search_results_visible,
+                "context_preview": formatted_context[:500] + "..." if len(formatted_context) > 500 else formatted_context
+            },
+            "fix_status": "WORKING" if (len(vector_results) > 0 and len(search_results_in_state) > 0 and search_results_visible) else "BROKEN"
+        }
+        
+    except Exception as e:
+        return {
+            "status": "error",
+            "error": str(e),
+            "note": "Check server logs for detailed error information"
+        }
+
 if __name__ == "__main__":
     # Get port from environment for Cloud Run deployment
     port = int(os.environ.get("PORT", 5000))
