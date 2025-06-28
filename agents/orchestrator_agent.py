@@ -10,7 +10,6 @@ from datetime import datetime
 
 from utils.gemini_client import GeminiClient
 from tools.vector_search import VectorSearchTool
-from tools.graph_query import GraphQueryTool
 from agents.client_agent import ClientAgent
 from agents.observer_agent import ObserverAgent
 from services.memory_service import MemoryService
@@ -27,7 +26,6 @@ class OrchestratorAgent:
     def __init__(self, memory_service: MemoryService):
         self.gemini_client = GeminiClient()
         self.vector_tool = VectorSearchTool()
-        self.graph_tool = GraphQueryTool()
         self.client_agent = ClientAgent()
         self.observer_agent = ObserverAgent()
         self.memory_service = memory_service
@@ -209,9 +207,9 @@ Current Query: "{message.text}"
             message: Original processed message
             
         Returns:
-            Dictionary containing gathered information from all tools
+            Dictionary containing gathered information from vector search
         """
-        gathered_info = {"vector_results": [], "graph_results": []}
+        gathered_info = {"vector_results": []}
         
         try:
             tools_needed = plan.get("tools_needed", [])
@@ -230,72 +228,14 @@ Current Query: "{message.text}"
                         if results:
                             gathered_info["vector_results"].extend(results)
             
-            # Execute graph queries if needed
-            if "graph_query" in tools_needed:
-                graph_queries = plan.get("graph_queries", [])
-                if graph_queries:
-                    logger.info(f"Executing {len(graph_queries)} graph queries")
-                    for query in graph_queries:
-                        results = await self.graph_tool.query(query)
-                        if results:
-                            gathered_info["graph_results"].extend(results)
-            
-            # Skip additional searches for faster response time
-            # TODO: Re-enable when vector search is properly configured
-            logger.info("Skipping additional searches for performance")
-            
-            logger.info(f"Gathered {len(gathered_info['vector_results'])} vector results and {len(gathered_info['graph_results'])} graph results")
+            logger.info(f"Gathered {len(gathered_info['vector_results'])} vector results")
             return gathered_info
             
         except Exception as e:
             logger.error(f"Error executing plan: {e}")
             return gathered_info
     
-    async def _generate_additional_searches(self, current_info: Dict[str, Any], original_query: str) -> List[str]:
-        """
-        Generate additional search queries based on current findings.
-        
-        Args:
-            current_info: Information gathered so far
-            original_query: The original user query
-            
-        Returns:
-            List of additional search queries
-        """
-        try:
-            # Extract key entities and concepts from current results
-            entities = set()
-            
-            # Extract from vector results
-            for result in current_info.get("vector_results", []):
-                content = result.get("content", "")
-                # Simple entity extraction (could be enhanced with NER)
-                words = content.split()
-                for word in words:
-                    if word.isupper() and len(word) > 2:  # Likely acronyms/project names
-                        entities.add(word)
-            
-            # Extract from graph results  
-            for result in current_info.get("graph_results", []):
-                if "name" in result:
-                    entities.add(result["name"])
-                if "owner" in result:
-                    entities.add(result["owner"])
-            
-            # Generate additional queries
-            additional_queries = []
-            for entity in list(entities)[:3]:  # Limit to top 3 entities
-                additional_queries.extend([
-                    f"Latest updates on {entity}",
-                    f"{entity} dependencies and relationships",
-                    f"Who owns {entity} project"
-                ])
-            
-            return additional_queries[:5]  # Limit total additional queries
-            
-        except Exception as e:
-            logger.error(f"Error generating additional searches: {e}")
-            return []
+
     
     async def _trigger_observation(self, message: ProcessedMessage, response: str, gathered_info: Dict[str, Any]):
         """

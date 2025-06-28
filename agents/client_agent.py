@@ -138,13 +138,6 @@ class ClientAgent:
                 
                 prompt_parts.append(f"{i}. {content}{source_info}")
         
-        # Add graph query results
-        graph_results = gathered_info.get("graph_results", [])
-        if graph_results:
-            prompt_parts.append("=== RELATIONSHIPS AND DEPENDENCIES ===")
-            for i, result in enumerate(graph_results[:3], 1):  # Limit to top 3
-                prompt_parts.append(f"{i}. {result}")
-        
         # Add execution context
         if context.get("analysis"):
             prompt_parts.append(f"Analysis Context: {context['analysis']}")

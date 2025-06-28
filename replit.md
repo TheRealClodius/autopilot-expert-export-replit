@@ -25,7 +25,6 @@ The architecture supports both real-time message processing and background knowl
 
 ### Tools
 - `tools/vector_search.py` - Pinecone vector database search capabilities
-- `tools/graph_query.py` - NetworkX-based relationship and dependency queries
 
 ### Services
 - `services/memory_service.py` - Redis-based memory management for conversations and context
@@ -41,12 +40,12 @@ The architecture supports both real-time message processing and background knowl
 
 1. **Message Reception**: Slack Gateway receives messages via webhook
 2. **Query Analysis**: Orchestrator Agent analyzes query and creates execution plan
-3. **Information Gathering**: Vector search and graph query tools retrieve relevant information
+3. **Information Gathering**: Vector search tool retrieves relevant information from Pinecone knowledge base
 4. **Response Generation**: Client Agent generates persona-based response using Gemini Flash
-5. **Learning**: Observer Agent analyzes conversations to update knowledge graph
+5. **Learning**: Observer Agent analyzes conversations for insights
 6. **Background Updates**: Daily ingestion worker processes new Slack data
 
-The system uses a two-step approach: first gathering information through vector search, then performing graph queries for relationships and ownership data.
+The system uses vector search to retrieve relevant information from the knowledge base, then generates responses using AI expertise and gathered context.
 
 ## External Dependencies
 
@@ -157,14 +156,15 @@ The system uses environment variables for configuration management and supports 
 - **Enhanced Logging**: Added detailed error logging to identify API failure root causes
 - **Result**: Agent now provides helpful responses even during API issues instead of generic "trouble understanding" messages
 
-✅ **June 28, 2025 - MAJOR LIBERATION: Removed All Restrictive Orchestrator Fallback Conditions**
+✅ **June 28, 2025 - MAJOR SIMPLIFICATION: Removed Graph Tool and Liberated Orchestrator**
+- **Graph Tool Removal**: Eliminated unused NetworkX graph query tool to simplify architecture
 - **Complete Fallback Removal**: Eliminated all "I'm having trouble understanding" response mechanisms
 - **Orchestrator Freedom**: Removed `_generate_fallback_response()`, `_generate_error_response()`, and restrictive `_create_minimal_plan()` methods
-- **Enhanced Planning**: When analysis fails, system creates open execution plans with full tool access instead of minimal constraints
-- **Client Agent Liberation**: Removed limiting guidelines, added multiple retry approaches, enhanced free-form response capabilities
+- **Simplified Data Flow**: System now uses only vector search for knowledge retrieval
+- **Client Agent Liberation**: Removed limiting guidelines, enhanced free-form response capabilities
 - **Instruction Updates**: Changed from limitation-focused to capability-focused response guidelines
-- **New Behavior**: System now uses full AI knowledge and capabilities, provides helpful responses using general expertise when specific data unavailable
-- **Result**: Orchestrator can now plan freely using Gemini 2.5 Pro's full capabilities without artificial constraints
+- **New Behavior**: System uses full AI knowledge and vector search results without artificial constraints
+- **Result**: Orchestrator can now plan freely using Gemini 2.5 Pro's full capabilities with simplified tool set
 
 ✅ **June 27, 2025 - Fixed Channel Mention Response Issue**
 - Fixed bot not responding when tagged in channels (@botname)
