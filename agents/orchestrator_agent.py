@@ -126,22 +126,12 @@ class OrchestratorAgent:
                 
                 return result
             
-            # If no response generated, let the client agent handle it freely
-            logger.warning("No response generated, allowing free-form processing")
-            return await self.client_agent.generate_response(
-                message, 
-                {"vector_results": [], "graph_results": []}, 
-                {"intent": "free_response", "response_approach": "Use full AI knowledge and capabilities"}
-            )
+            logger.warning("No response generated")
+            return None
             
         except Exception as e:
             logger.error(f"Error in orchestrator processing: {e}")
-            # Even on errors, let the AI handle it naturally instead of generic error messages
-            return await self.client_agent.generate_response(
-                message, 
-                {"vector_results": [], "graph_results": []}, 
-                {"intent": "error_recovery", "response_approach": "Handle the query using available knowledge despite technical issues"}
-            )
+            return None
     
     async def _analyze_query_and_plan(self, message: ProcessedMessage) -> Optional[Dict[str, Any]]:
         """
