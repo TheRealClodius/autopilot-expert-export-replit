@@ -87,7 +87,16 @@ async def slack_events(request: Request, background_tasks: BackgroundTasks):
     This is the main entry point for Slack interactions.
     """
     try:
+        # TIMING MEASUREMENT: Webhook Reception
+        webhook_received_time = time.time()
+        logger.info(f"⏱️  WEBHOOK TIMING: Slack webhook received at {webhook_received_time:.3f}")
+        
         body = await request.json()
+        
+        # TIMING MEASUREMENT: JSON Parsing Complete
+        json_parsed_time = time.time()
+        json_parse_duration = json_parsed_time - webhook_received_time
+        logger.info(f"⏱️  WEBHOOK TIMING: JSON parsed at {json_parsed_time:.3f} (parsing took: {json_parse_duration:.3f}s)")
         
         # Handle Slack URL verification challenge
         if body.get("type") == "url_verification":
@@ -102,13 +111,35 @@ async def slack_events(request: Request, background_tasks: BackgroundTasks):
         if body.get("type") == "event_callback":
             event_data = SlackEvent(**body)
             
+            # TIMING MEASUREMENT: Event Data Validation Complete  
+            validation_complete_time = time.time()
+            validation_duration = validation_complete_time - json_parsed_time
+            logger.info(f"⏱️  WEBHOOK TIMING: Event validation complete at {validation_complete_time:.3f} (validation took: {validation_duration:.3f}s)")
+            
             # Filter out bot messages and messages from the autopilot bot itself
             if (event_data.event.get("bot_id") or 
                 event_data.event.get("user") == settings.SLACK_BOT_USER_ID):
                 return {"status": "ignored"}
             
+            # TIMING MEASUREMENT: About to Queue Background Task
+            task_queue_time = time.time()
+            total_webhook_processing = task_queue_time - webhook_received_time
+            user_message_ts = event_data.event.get('ts', '')
+            user_text = event_data.event.get('text', '')[:50]
+            
+            logger.info(f"⏱️  WEBHOOK TIMING: About to queue background task at {task_queue_time:.3f}")
+            logger.info(f"⏱️  WEBHOOK PROCESSING TOTAL: {total_webhook_processing:.3f}s for message '{user_text}'")
+            
+            # Store webhook timing for correlation with later processing
+            event_data.event['webhook_received_time'] = webhook_received_time
+            
             # Process the message in background
             background_tasks.add_task(process_slack_message, event_data)
+            
+            # TIMING MEASUREMENT: Background Task Queued
+            task_queued_time = time.time()
+            queue_duration = task_queued_time - task_queue_time
+            logger.info(f"⏱️  WEBHOOK TIMING: Background task queued at {task_queued_time:.3f} (queueing took: {queue_duration:.3f}s)")
             
             return {"status": "accepted"}
         
@@ -121,20 +152,31 @@ async def slack_events(request: Request, background_tasks: BackgroundTasks):
 async def process_slack_message(event_data: SlackEvent):
     """Process incoming Slack message through the agent pipeline"""
     try:
-        # TIMING MEASUREMENT: Message Reception Time
+        # TIMING MEASUREMENT: Background Task Execution Start
         import time
-        message_received_time = time.time()
+        background_task_start_time = time.time()
         user_message_ts = event_data.event.get('ts', '')
         user_message_text = event_data.event.get('text', '')[:100]
-        reception_delay = 0.0  # Initialize for safety
+        webhook_received_time = event_data.event.get('webhook_received_time', background_task_start_time)
         
-        # Convert Slack timestamp to actual time for delay calculation
+        # Calculate delays from different reference points
+        background_task_delay = background_task_start_time - webhook_received_time
+        
+        logger.info(f"⏱️  BACKGROUND TASK TIMING: Started processing '{user_message_text}' at {background_task_start_time:.3f}")
+        logger.info(f"⏱️  BACKGROUND TASK DELAY: {background_task_delay:.3f}s from webhook reception to background task start")
+        
+        # Convert Slack timestamp to actual time for total delay calculation
         try:
             slack_message_time = float(user_message_ts)
-            reception_delay = message_received_time - slack_message_time
-            logger.info(f"⏱️  MESSAGE TIMING: User sent '{user_message_text}' at {slack_message_time}, system received at {message_received_time:.3f} (reception delay: {reception_delay:.3f}s)")
+            total_delay_from_user = background_task_start_time - slack_message_time
+            webhook_delivery_delay = webhook_received_time - slack_message_time
+            logger.info(f"⏱️  USER MESSAGE TIMING: User sent message at {slack_message_time}, webhook received at {webhook_received_time:.3f}")
+            logger.info(f"⏱️  TOTAL DELAY BREAKDOWN:")
+            logger.info(f"    Webhook delivery delay: {webhook_delivery_delay:.3f}s")
+            logger.info(f"    Background task queue delay: {background_task_delay:.3f}s") 
+            logger.info(f"    TOTAL USER-TO-PROCESSING: {total_delay_from_user:.3f}s")
         except (ValueError, TypeError):
-            logger.info(f"⏱️  MESSAGE TIMING: Message '{user_message_text}' received by system at {message_received_time:.3f}")
+            logger.info(f"⏱️  MESSAGE TIMING: Background task processing started at {background_task_start_time:.3f}")
         
         logger.info(f"Processing message from user {event_data.event.get('user')} in channel {event_data.event.get('channel')}")
         
@@ -1422,6 +1464,142 @@ async def test_state_stack():
         return {
             "status": "error",
             "message": str(e)
+        }
+
+@app.get("/admin/diagnose-8s-delay")
+async def diagnose_8s_delay():
+    """Admin endpoint to diagnose the 8-second delay to 'Starting up...' message"""
+    try:
+        import time
+        
+        # Test each component that could cause delay
+        diagnosis = {
+            "test_timestamp": time.time(),
+            "system_status": "running",
+            "component_timings": {},
+            "bottleneck_analysis": []
+        }
+        
+        # Test 1: Service Initialization Times
+        init_start = time.time()
+        try:
+            if slack_gateway:
+                diagnosis["component_timings"]["slack_gateway_available"] = True
+            if orchestrator_agent:  
+                diagnosis["component_timings"]["orchestrator_available"] = True
+            if memory_service:
+                diagnosis["component_timings"]["memory_service_available"] = True
+        except Exception as e:
+            diagnosis["component_timings"]["service_check_error"] = str(e)
+        
+        init_time = time.time() - init_start
+        diagnosis["component_timings"]["service_availability_check"] = round(init_time, 3)
+        
+        # Test 2: Slack API Response Time
+        slack_api_start = time.time()
+        try:
+            if slack_gateway and slack_gateway.client:
+                # Test a simple API call
+                response = slack_gateway.client.auth_test()
+                slack_api_time = time.time() - slack_api_start
+                diagnosis["component_timings"]["slack_api_response"] = round(slack_api_time, 3)
+                diagnosis["component_timings"]["slack_api_success"] = response.get("ok", False)
+            else:
+                diagnosis["component_timings"]["slack_api_response"] = "client_unavailable"
+        except Exception as e:
+            slack_api_time = time.time() - slack_api_start
+            diagnosis["component_timings"]["slack_api_response"] = round(slack_api_time, 3)
+            diagnosis["component_timings"]["slack_api_error"] = str(e)
+        
+        # Test 3: Memory Service Response Time
+        memory_start = time.time()
+        try:
+            if memory_service:
+                test_key = f"test_timing_{int(time.time())}"
+                await memory_service.store_conversation_context(test_key, {"test": "data"}, ttl=60)
+                memory_time = time.time() - memory_start
+                diagnosis["component_timings"]["memory_service_response"] = round(memory_time, 3)
+        except Exception as e:
+            memory_time = time.time() - memory_start
+            diagnosis["component_timings"]["memory_service_response"] = round(memory_time, 3)
+            diagnosis["component_timings"]["memory_service_error"] = str(e)
+        
+        # Test 4: Progress Updater Creation Time (simulated)
+        progress_start = time.time()
+        try:
+            if slack_gateway:
+                # Simulate the progress updater creation steps without actually posting
+                test_channel = "C_DIAGNOSTIC_TEST"
+                # This simulates the setup but doesn't make API calls
+                progress_time = time.time() - progress_start
+                diagnosis["component_timings"]["progress_updater_setup"] = round(progress_time, 3)
+        except Exception as e:
+            progress_time = time.time() - progress_start
+            diagnosis["component_timings"]["progress_updater_setup"] = round(progress_time, 3)
+            diagnosis["component_timings"]["progress_updater_error"] = str(e)
+        
+        # Analyze bottlenecks
+        timings = diagnosis["component_timings"]
+        
+        if timings.get("slack_api_response", 0) > 2.0:
+            diagnosis["bottleneck_analysis"].append({
+                "component": "Slack API",
+                "delay": timings.get("slack_api_response"),
+                "severity": "HIGH",
+                "description": "Slack API calls are taking longer than 2 seconds"
+            })
+        
+        if timings.get("memory_service_response", 0) > 1.0:
+            diagnosis["bottleneck_analysis"].append({
+                "component": "Memory Service", 
+                "delay": timings.get("memory_service_response"),
+                "severity": "MEDIUM",
+                "description": "Memory service operations are slow"
+            })
+        
+        # Recommendations for 8s delay
+        total_measured_time = sum([
+            timings.get("service_availability_check", 0),
+            timings.get("slack_api_response", 0), 
+            timings.get("memory_service_response", 0),
+            timings.get("progress_updater_setup", 0)
+        ])
+        
+        diagnosis["total_measured_component_time"] = round(total_measured_time, 3)
+        diagnosis["unmeasured_delay"] = round(8.0 - total_measured_time, 3)
+        
+        if diagnosis["unmeasured_delay"] > 5.0:
+            diagnosis["bottleneck_analysis"].append({
+                "component": "Unknown/External",
+                "delay": diagnosis["unmeasured_delay"],
+                "severity": "CRITICAL", 
+                "description": "Most delay is happening outside measured components - likely webhook delivery, cold starts, or resource constraints"
+            })
+        
+        # Specific recommendations
+        diagnosis["recommendations"] = []
+        
+        if timings.get("slack_api_response", 0) > 1.0:
+            diagnosis["recommendations"].append("Consider implementing Slack API caching or connection pooling")
+        
+        if diagnosis["unmeasured_delay"] > 3.0:
+            diagnosis["recommendations"].append("Check deployment environment for cold starts, resource constraints, or network latency")
+            diagnosis["recommendations"].append("Consider pre-warming strategies or connection keepalives")
+        
+        if len(diagnosis["bottleneck_analysis"]) == 0:
+            diagnosis["recommendations"].append("All measured components are fast - delay likely in webhook delivery or deployment environment")
+        
+        return {
+            "status": "success",
+            "diagnosis": diagnosis,
+            "description": "Comprehensive analysis of potential causes for 8-second delay to 'Starting up...' message"
+        }
+        
+    except Exception as e:
+        return {
+            "status": "error",
+            "error": str(e),
+            "description": "Failed to complete 8-second delay diagnosis"
         }
 
 @app.get("/admin/test-timing-metrics")
