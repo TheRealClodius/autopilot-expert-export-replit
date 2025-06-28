@@ -298,6 +298,10 @@ Current Query: "{message.text}"
                                     "search_time": result.get("search_time", 0),
                                     "model_used": result.get("model_used", "unknown")
                                 })
+                                # Emit success for found results
+                                if self.progress_tracker:
+                                    citations_count = len(result.get("citations", []))
+                                    await emit_processing(self.progress_tracker, "analyzing_results", f"web findings ({citations_count} sources)")
                             elif self.progress_tracker:
                                 # Emit warning if no results found
                                 await emit_warning(self.progress_tracker, "limited_results", f"no web results for '{query[:20]}...'")

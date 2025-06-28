@@ -1072,6 +1072,83 @@ async def test_progress_events():
             "progress_tracking_working": False
         }
 
+@app.get("/admin/perplexity-slack-test")
+async def test_perplexity_slack_integration():
+    """Admin endpoint to test complete Perplexity Slack integration including progress tracking"""
+    try:
+        from services.progress_tracker import ProgressTracker
+        import time
+        
+        # Capture Slack-style progress messages
+        slack_messages = []
+        
+        async def mock_slack_updater(message: str):
+            """Mock Slack progress updater"""
+            timestamp = datetime.now().strftime("%H:%M:%S")
+            slack_messages.append(f"[{timestamp}] {message}")
+        
+        # Test with progress tracking
+        progress_tracker = ProgressTracker(update_callback=mock_slack_updater)
+        memory_service = MemoryService()
+        orchestrator = OrchestratorAgent(memory_service, progress_tracker)
+        
+        test_message = ProcessedMessage(
+            channel_id="C_TEST_SLACK",
+            user_id="U_TEST_SLACK", 
+            text="What are the latest developments in AI automation for 2025?",
+            message_ts="1640995200.001500",
+            thread_ts=None,
+            user_name="test_user",
+            user_first_name="Alex",
+            user_display_name="Alex Rodriguez",
+            user_title="CTO", 
+            user_department="Engineering",
+            channel_name="ai-strategy",
+            is_dm=False,
+            thread_context=""
+        )
+        
+        # Test complete flow with timing
+        start_time = time.time()
+        response = await orchestrator.process_query(test_message)
+        total_time = time.time() - start_time
+        
+        # Analyze progress messages
+        web_search_msgs = [msg for msg in slack_messages if "real-time web" in msg.lower()]
+        processing_msgs = [msg for msg in slack_messages if any(emoji in msg for emoji in ["⚙️", "⚡"])]
+        error_msgs = [msg for msg in slack_messages if "⚠️" in msg]
+        
+        return {
+            "status": "success" if response else "partial",
+            "perplexity_slack_integration": {
+                "total_processing_time": round(total_time, 2),
+                "slack_messages_sent": len(slack_messages),
+                "web_search_indicators": len(web_search_msgs),
+                "processing_feedback": len(processing_msgs),
+                "error_messages": len(error_msgs),
+                "response_generated": response is not None,
+                "response_length": len(response.get("text", "")) if response else 0
+            },
+            "slack_message_sequence": slack_messages,
+            "user_experience": {
+                "clear_web_search_indication": len(web_search_msgs) > 0,
+                "real_time_feedback": len(slack_messages) >= 4,
+                "logical_progression": len(slack_messages) > 0,
+                "timely_completion": total_time < 20.0,
+                "final_response": response is not None
+            },
+            "sample_response_preview": response.get("text", "")[:200] + "..." if response else None,
+            "integration_working": len(web_search_msgs) > 0 and response is not None
+        }
+        
+    except Exception as e:
+        logger.error(f"Error testing Perplexity Slack integration: {e}")
+        return {
+            "status": "error",
+            "error": str(e),
+            "perplexity_slack_working": False
+        }
+
 @app.get("/admin/perplexity-test")
 async def test_perplexity_integration():
     """Admin endpoint to test Perplexity search integration"""
