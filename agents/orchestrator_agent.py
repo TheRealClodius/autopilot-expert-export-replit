@@ -106,11 +106,7 @@ class OrchestratorAgent:
                 }
             
             exec_start = time.time()
-            # Emit execution progress
-            if self.progress_tracker:
-                await emit_searching(self.progress_tracker, "vector_search", "knowledge base")
-            
-            # Execute the plan
+            # Execute the plan (specific search progress will be emitted during actual execution)
             gathered_information = await self._execute_plan(execution_plan, message)
             logger.info(f"Plan execution took {time.time() - exec_start:.2f}s")
             
