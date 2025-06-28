@@ -344,44 +344,36 @@ Current Query: "{message.text}"
                         "timestamp": msg.get("message_ts", "")
                     })
             
-            # Build complete state stack
+            # Build streamlined state stack without redundant information
             state_stack = {
-                "query": message.text,  # Client agent expects "query" key with text directly
-                "current_query": {
-                    "text": message.text,
-                    "user": message.user_name,
-                    "user_first_name": message.user_first_name,
-                    "user_display_name": message.user_display_name,
-                    "user_title": message.user_title,
-                    "user_department": message.user_department,
+                "query": message.text,  # Client agent expects "query" key
+                "user": {
+                    "name": message.user_name,
+                    "first_name": message.user_first_name,
+                    "display_name": message.user_display_name,
+                    "title": message.user_title,
+                    "department": message.user_department
+                },
+                "context": {
                     "channel": message.channel_name,
                     "is_dm": message.is_dm,
-                    "is_mention": message.is_mention,
-                    "thread_ts": message.thread_ts,
-                    "message_ts": message.message_ts
+                    "thread_ts": message.thread_ts
                 },
-                "recent_history": {
-                    "user_queries": user_queries[-5:],  # Last 5 user queries
-                    "agent_responses": agent_responses[-5:],  # Last 5 agent responses
-                    "raw_messages": recent_messages  # All 10 raw messages for full context
+                "conversation_history": {
+                    "recent_exchanges": [
+                        {"role": "user" if msg.get("user_name") != "bot" else "assistant", 
+                         "text": msg.get("text", "")[:200],  # Truncate long messages
+                         "timestamp": msg.get("message_ts", "")}
+                        for msg in recent_messages[-6:]  # Only last 6 messages for context
+                    ] if recent_messages else [],
+                    "long_conversation_summary": conversation_context if len(recent_messages) >= 8 else None
                 },
-                "long_conversation_summary": {
-                    "has_long_history": len(recent_messages) >= 10,
-                    "conversation_context": conversation_context,
-                    "summary": "This is a continuing conversation..." if len(recent_messages) >= 10 else None
+                "orchestrator_analysis": {
+                    "intent": execution_plan.get("analysis", ""),
+                    "tools_used": execution_plan.get("tools_needed", []),
+                    "search_results": gathered_information.get("vector_results", [])[:3] if gathered_information.get("vector_results") else []  # Limit to top 3 results
                 },
-                "orchestrator_results": {
-                    "vector_search_results": gathered_information.get("vector_results", []),
-                    "execution_plan": execution_plan,
-                    "orchestrator_insights": execution_plan.get("analysis", ""),
-
-                    "tools_used": execution_plan.get("tools_needed", [])
-                },
-                "metadata": {
-                    "conversation_key": conversation_key,
-                    "thread_identifier": thread_identifier,
-                    "response_thread_ts": message.thread_ts or message.message_ts
-                }
+                "response_thread_ts": message.thread_ts or message.message_ts
             }
             
             logger.info(f"Built state stack with {len(user_queries)} user queries, {len(agent_responses)} agent responses, {len(gathered_information.get('vector_results', []))} vector results")
@@ -391,20 +383,16 @@ Current Query: "{message.text}"
             logger.error(f"Error building state stack: {e}")
             # Return minimal state stack on error
             return {
-                "query": message.text,  # Client agent expects "query" key
-                "current_query": {
-                    "text": message.text,
-                    "user": message.user_name,
-                    "channel": message.channel_name
+                "query": message.text,
+                "user": {"name": message.user_name, "first_name": message.user_first_name},
+                "context": {"channel": message.channel_name, "is_dm": message.is_dm},
+                "conversation_history": {"recent_exchanges": []},
+                "orchestrator_analysis": {
+                    "intent": execution_plan.get("analysis", "Error occurred during analysis"),
+                    "tools_used": [],
+                    "search_results": []
                 },
-                "recent_history": {"user_queries": [], "agent_responses": [], "raw_messages": []},
-                "long_conversation_summary": {"has_long_history": False, "summary": None},
-                "orchestrator_results": {
-                    "vector_search_results": gathered_information.get("vector_results", []),
-                    "execution_plan": execution_plan,
-                    "orchestrator_insights": execution_plan.get("analysis", "")
-                },
-                "metadata": {"response_thread_ts": message.thread_ts or message.message_ts}
+                "response_thread_ts": message.thread_ts or message.message_ts
             }
 
     async def _trigger_observation(self, message: ProcessedMessage, response: str, gathered_info: Dict[str, Any]):
