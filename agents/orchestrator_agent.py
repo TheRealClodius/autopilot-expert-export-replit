@@ -13,6 +13,7 @@ from tools.vector_search import VectorSearchTool
 from agents.client_agent import ClientAgent
 from agents.observer_agent import ObserverAgent
 from services.memory_service import MemoryService
+from services.progress_tracker import ProgressTracker, ProgressEventType, emit_thinking, emit_searching, emit_processing, emit_generating, emit_error, emit_warning, emit_retry
 from models.schemas import ProcessedMessage
 
 logger = logging.getLogger(__name__)
@@ -23,12 +24,13 @@ class OrchestratorAgent:
     Creates multi-step execution plans and manages the overall response flow.
     """
     
-    def __init__(self, memory_service: MemoryService):
+    def __init__(self, memory_service: MemoryService, progress_tracker: Optional[ProgressTracker] = None):
         self.gemini_client = GeminiClient()
         self.vector_tool = VectorSearchTool()
         self.client_agent = ClientAgent()
         self.observer_agent = ObserverAgent()
         self.memory_service = memory_service
+        self.progress_tracker = progress_tracker
         
     async def process_query(self, message: ProcessedMessage) -> Optional[Dict[str, Any]]:
         """
@@ -45,6 +47,10 @@ class OrchestratorAgent:
         
         try:
             logger.info(f"Orchestrator processing query: {message.text[:100]}...")
+            
+            # Emit initial thinking progress
+            if self.progress_tracker:
+                await emit_thinking(self.progress_tracker, "analyzing", "your request")
             
             # Store raw message in short-term memory (10 message sliding window)
             # Use consistent thread identifier: for new mentions use message_ts, for thread replies use thread_ts
@@ -64,6 +70,10 @@ class OrchestratorAgent:
             )
             
             plan_start = time.time()
+            # Emit planning progress
+            if self.progress_tracker:
+                await emit_thinking(self.progress_tracker, "planning", "approach to your question")
+            
             # Analyze query and create execution plan
             execution_plan = await self._analyze_query_and_plan(message)
             logger.info(f"Query analysis took {time.time() - plan_start:.2f}s")
@@ -83,13 +93,25 @@ class OrchestratorAgent:
                 }
             
             exec_start = time.time()
+            # Emit execution progress
+            if self.progress_tracker:
+                await emit_searching(self.progress_tracker, "vector_search", "knowledge base")
+            
             # Execute the plan
             gathered_information = await self._execute_plan(execution_plan, message)
             logger.info(f"Plan execution took {time.time() - exec_start:.2f}s")
             
             response_start = time.time()
+            # Emit processing progress
+            if self.progress_tracker:
+                await emit_processing(self.progress_tracker, "analyzing_results", "search results")
+            
             # Build comprehensive state stack for Client Agent
             state_stack = await self._build_state_stack(message, gathered_information, execution_plan)
+            
+            # Emit final generation progress
+            if self.progress_tracker:
+                await emit_generating(self.progress_tracker, "response_generation", "your answer")
             
             # Generate final response through Client Agent with complete state
             response = await self.client_agent.generate_response(state_stack)
@@ -135,6 +157,9 @@ class OrchestratorAgent:
             
         except Exception as e:
             logger.error(f"Error in orchestrator processing: {e}")
+            # Emit error progress if tracker is available
+            if self.progress_tracker:
+                await emit_error(self.progress_tracker, "processing_error", "internal system issue")
             return None
     
     async def _analyze_query_and_plan(self, message: ProcessedMessage) -> Optional[Dict[str, Any]]:
@@ -225,14 +250,28 @@ Current Query: "{message.text}"
                 vector_queries = plan.get("vector_queries", [])
                 if vector_queries:
                     logger.info(f"Executing {len(vector_queries)} vector searches")
-                    for query in vector_queries:
-                        results = await self.vector_tool.search(
-                            query=query,
-                            top_k=5,
-                            filters={}
-                        )
-                        if results:
-                            gathered_info["vector_results"].extend(results)
+                    for i, query in enumerate(vector_queries):
+                        # Emit specific search progress
+                        if self.progress_tracker:
+                            search_context = f"'{query[:30]}...'" if len(query) > 30 else f"'{query}'"
+                            await emit_searching(self.progress_tracker, "vector_search", search_context)
+                        
+                        try:
+                            results = await self.vector_tool.search(
+                                query=query,
+                                top_k=5,
+                                filters={}
+                            )
+                            if results:
+                                gathered_info["vector_results"].extend(results)
+                            elif self.progress_tracker:
+                                # Emit warning if no results found
+                                await emit_warning(self.progress_tracker, "limited_results", f"no matches for '{query[:20]}...'")
+                        except Exception as search_error:
+                            logger.error(f"Vector search error for query '{query}': {search_error}")
+                            if self.progress_tracker:
+                                await emit_error(self.progress_tracker, "search_error", f"issue with search query")
+                            # Continue with other queries even if one fails
             
             logger.info(f"Gathered {len(gathered_info['vector_results'])} vector results")
             return gathered_info

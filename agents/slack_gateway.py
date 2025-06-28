@@ -383,7 +383,7 @@ class SlackGateway:
             memory_service = MemoryService()
             
             thread_key = f"thread_participation:{channel_id}:{thread_ts}"
-            cached_participation = await memory_service.get_data(thread_key)
+            cached_participation = await memory_service.get_temp_data(thread_key)
             
             if cached_participation is not None:
                 return cached_participation.get("bot_participated", False)
@@ -404,7 +404,7 @@ class SlackGateway:
                         break
             
             # Cache the result for 1 hour to avoid repeated API calls
-            await memory_service.store_data(
+            await memory_service.store_temp_data(
                 thread_key,
                 {"bot_participated": bot_participated, "checked_at": response["messages"][-1].get("ts", "") if response.get("messages") else ""},
                 ttl=3600

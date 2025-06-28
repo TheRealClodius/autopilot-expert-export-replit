@@ -130,36 +130,43 @@ async def process_slack_message(event_data: SlackEvent):
         processed_message = await slack_gateway.process_message(event_data)
         
         if processed_message:
-            # Send immediate thinking indicator
-            thinking_message_ts = await slack_gateway.send_thinking_indicator(
+            # Create progress updater for real-time Slack message updates
+            progress_updater = await slack_gateway.create_progress_updater(
                 processed_message.channel_id,
                 processed_message.thread_ts
             )
             
-            # Forward to Orchestrator Agent for processing
-            response = await orchestrator_agent.process_query(processed_message)
-            
-            # Update the thinking message with final response
-            if response and thinking_message_ts:
-                await slack_gateway.update_message(
-                    processed_message.channel_id,
-                    thinking_message_ts,
-                    response.get("text", "Sorry, I couldn't generate a response.")
+            if progress_updater:
+                # Import progress tracker locally to avoid circular imports
+                from services.progress_tracker import ProgressTracker
+                
+                # Create progress tracker with Slack update callback
+                progress_tracker = ProgressTracker(update_callback=progress_updater)
+                
+                # Create new orchestrator instance with progress tracking
+                from agents.orchestrator_agent import OrchestratorAgent
+                orchestrator_with_progress = OrchestratorAgent(
+                    memory_service=orchestrator_agent.memory_service,
+                    progress_tracker=progress_tracker
                 )
-                logger.info("Successfully processed and updated Slack message")
-            elif response:
-                # Fallback: send new message if update failed
-                await slack_gateway.send_response(response)
-                logger.info("Successfully processed and responded to Slack message")
+                
+                # Forward to Orchestrator Agent for processing with progress tracking
+                response = await orchestrator_with_progress.process_query(processed_message)
+                
+                # Update the progress message with final response
+                if response:
+                    await progress_updater(response.get("text", "Sorry, I couldn't generate a response."))
+                    logger.info("Successfully processed and updated Slack message with progress tracking")
+                else:
+                    await progress_updater("Sorry, I couldn't process your request at the moment.")
+                    logger.warning("No response generated for Slack message")
             else:
-                # Update thinking indicator with error message
-                if thinking_message_ts:
-                    await slack_gateway.update_message(
-                        processed_message.channel_id,
-                        thinking_message_ts,
-                        "Sorry, I couldn't process your request at the moment."
-                    )
-                logger.warning("No response generated for Slack message")
+                # Fallback to original behavior if progress updater creation fails
+                logger.warning("Failed to create progress updater, falling back to standard processing")
+                response = await orchestrator_agent.process_query(processed_message)
+                if response:
+                    await slack_gateway.send_response(response)
+                    logger.info("Successfully processed and responded to Slack message (fallback)")
         else:
             logger.info("Message filtered out by Slack Gateway")
             
