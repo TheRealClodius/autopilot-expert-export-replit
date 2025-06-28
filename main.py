@@ -1072,6 +1072,106 @@ async def test_progress_events():
             "progress_tracking_working": False
         }
 
+@app.get("/admin/perplexity-test")
+async def test_perplexity_integration():
+    """Admin endpoint to test Perplexity search integration"""
+    try:
+        from tools.perplexity_search import PerplexitySearchTool
+        from agents.orchestrator_agent import OrchestratorAgent
+        from models.schemas import ProcessedMessage
+        import time
+        
+        # Test Perplexity tool directly
+        perplexity_tool = PerplexitySearchTool()
+        test_results = {
+            "perplexity_available": perplexity_tool.available,
+            "api_key_configured": bool(perplexity_tool.api_key),
+            "direct_search_test": None,
+            "orchestrator_integration_test": None
+        }
+        
+        if not perplexity_tool.available:
+            test_results["status"] = "failed"
+            test_results["message"] = "Perplexity API not available - check API key configuration"
+            return test_results
+        
+        # Test direct search
+        print("Testing direct Perplexity search...")
+        start_time = time.time()
+        search_result = await perplexity_tool.search("latest AI automation trends 2025", max_tokens=500)
+        search_time = time.time() - start_time
+        
+        test_results["direct_search_test"] = {
+            "query": "latest AI automation trends 2025",
+            "success": bool(search_result.get("content")),
+            "content_length": len(search_result.get("content", "")),
+            "citations_count": len(search_result.get("citations", [])),
+            "search_time": round(search_time, 2),
+            "model_used": search_result.get("model_used", "unknown"),
+            "error": search_result.get("error", None)
+        }
+        
+        # Test orchestrator integration
+        print("Testing orchestrator integration...")
+        memory_service = MemoryService()
+        orchestrator = OrchestratorAgent(memory_service)
+        
+        test_message = ProcessedMessage(
+            channel_id="C_TEST",
+            user_id="U_TEST", 
+            text="What are the latest trends in AI automation for 2025?",
+            message_ts="1640995200.001500",
+            thread_ts=None,
+            user_name="test_user",
+            user_first_name="Test",
+            user_display_name="Test User",
+            user_title="Engineer", 
+            user_department="Engineering",
+            channel_name="test",
+            is_dm=False,
+            thread_context=""
+        )
+        
+        # Test orchestrator analysis
+        start_time = time.time()
+        execution_plan = await orchestrator._analyze_query_and_plan(test_message)
+        analysis_time = time.time() - start_time
+        
+        # Test plan execution  
+        start_time = time.time()
+        gathered_info = await orchestrator._execute_plan(execution_plan, test_message)
+        execution_time = time.time() - start_time
+        
+        test_results["orchestrator_integration_test"] = {
+            "analysis_success": execution_plan is not None,
+            "tools_planned": execution_plan.get("tools_needed", []) if execution_plan else [],
+            "perplexity_planned": "perplexity_search" in execution_plan.get("tools_needed", []) if execution_plan else False,
+            "perplexity_queries": execution_plan.get("perplexity_queries", []) if execution_plan else [],
+            "web_results_found": len(gathered_info.get("perplexity_results", [])),
+            "analysis_time": round(analysis_time, 2),
+            "execution_time": round(execution_time, 2),
+            "total_time": round(analysis_time + execution_time, 2)
+        }
+        
+        # Overall status
+        direct_success = test_results["direct_search_test"]["success"]
+        orchestrator_success = test_results["orchestrator_integration_test"]["analysis_success"]
+        perplexity_used = test_results["orchestrator_integration_test"]["perplexity_planned"] 
+        
+        test_results["status"] = "success" if direct_success and orchestrator_success else "partial"
+        test_results["integration_working"] = direct_success and orchestrator_success and perplexity_used
+        test_results["ready_for_deployment"] = direct_success and orchestrator_success
+        
+        return test_results
+        
+    except Exception as e:
+        logger.error(f"Error testing Perplexity integration: {e}")
+        return {
+            "status": "error",
+            "error": str(e),
+            "perplexity_integration_working": False
+        }
+
 @app.get("/admin/langsmith-test")
 async def test_langsmith_tracing():
     """Admin endpoint to test LangSmith tracing integration"""

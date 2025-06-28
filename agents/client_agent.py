@@ -224,21 +224,41 @@ class ClientAgent:
         # B3. Collated Answers from Orchestrator (Search Results)
         orchestrator_analysis = state_stack.get("orchestrator_analysis", {})
         search_results = orchestrator_analysis.get("search_results", [])
+        web_results = orchestrator_analysis.get("web_results", [])
         
-        if search_results:
+        if search_results or web_results:
             prompt_parts.append("COLLATED ANSWERS FROM ORCHESTRATOR:")
-            prompt_parts.append("Vector Search Results:")
-            for i, result in enumerate(search_results[:3], 1):  # Top 3 results
-                content = result.get("content", "")
-                source = result.get("source", "")
-                score = result.get("score", 0.0)
-                if content:
-                    prompt_parts.append(f"  {i}. {content[:300]}...")
-                    if source:
-                        prompt_parts.append(f"     Source: {source}")
-                    if score:
-                        prompt_parts.append(f"     Relevance: {score:.2f}")
-            prompt_parts.append("")
+            
+            # Vector Search Results
+            if search_results:
+                prompt_parts.append("Vector Search Results:")
+                for i, result in enumerate(search_results[:3], 1):  # Top 3 results
+                    content = result.get("content", "")
+                    source = result.get("source", "")
+                    score = result.get("score", 0.0)
+                    if content:
+                        prompt_parts.append(f"  {i}. {content[:300]}...")
+                        if source:
+                            prompt_parts.append(f"     Source: {source}")
+                        if score:
+                            prompt_parts.append(f"     Relevance: {score:.2f}")
+                prompt_parts.append("")
+            
+            # Web Search Results
+            if web_results:
+                prompt_parts.append("Real-Time Web Search Results:")
+                for i, result in enumerate(web_results[:2], 1):  # Top 2 web results
+                    content = result.get("content", "")
+                    citations = result.get("citations", [])
+                    query = result.get("query", "")
+                    search_time = result.get("search_time", 0)
+                    if content:
+                        prompt_parts.append(f"  {i}. Query: {query}")
+                        prompt_parts.append(f"     Content: {content[:400]}...")
+                        if citations:
+                            prompt_parts.append(f"     Sources: {', '.join(citations[:3])}")
+                        prompt_parts.append(f"     Search Time: {search_time:.2f}s")
+                prompt_parts.append("")
         
         # B4. Orchestrator Analysis & Insights
         if orchestrator_analysis:
@@ -257,8 +277,14 @@ class ClientAgent:
                 prompt_parts.append("Tools Used: none")
             
             # Include search results summary if available
+            results_summary = []
             if search_results:
-                prompt_parts.append(f"Search Results Found: {len(search_results)} relevant items")
+                results_summary.append(f"{len(search_results)} knowledge base items")
+            if web_results:
+                results_summary.append(f"{len(web_results)} real-time web results")
+            
+            if results_summary:
+                prompt_parts.append(f"Search Results Found: {', '.join(results_summary)}")
             else:
                 prompt_parts.append("Search Results Found: none")
             
