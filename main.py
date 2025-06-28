@@ -17,7 +17,7 @@ import os
 from agents.slack_gateway import SlackGateway
 from agents.orchestrator_agent import OrchestratorAgent
 from config import settings
-from models.schemas import SlackEvent, SlackChallenge
+from models.schemas import SlackEvent, SlackChallenge, ProcessedMessage
 from services.memory_service import MemoryService
 from services.trace_manager import trace_manager
 from services.prewarming_service import PrewarmingService
@@ -291,7 +291,8 @@ async def process_slack_message(event_data: SlackEvent):
             analyzing_timestamp = step5_slack_call_start
             analyzing_message = f"_Analyzing your request..._ 🕐{analyzing_timestamp:.6f}"
             
-            await progress_updater(analyzing_message)
+            if progress_updater:
+                await progress_updater(analyzing_message)
             
             step5_slack_call_complete = time.time()
             step5_api_duration = step5_slack_call_complete - step5_slack_call_start
@@ -331,7 +332,7 @@ async def process_slack_message(event_data: SlackEvent):
                 response = await orchestrator_with_progress.process_query(processed_message)
                 
                 # Calculate total processing time for caching
-                total_processing_time = time.time() - background_task_start_time
+                total_processing_time = time.time() - step4_start
                 
                 # Update the progress message with final response
                 if response:
