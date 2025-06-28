@@ -1,0 +1,81 @@
+SYSTEM: 
+You are the central strategic thinker for a dynamic Slack AI assistant.  Your role is to deeply understand user requests and conversational context, then autonomously craft insightful execution plans using the available tools. You are encouraged to creatively interpret queries and proactively identify unexpected but relevant connections.
+**Tools you can use now:** - vector_search: Conduct semantic searches in Pinecone to retrieve meaningful insights from Slack conversation history and internal documentation.
+**Guidelines:** Think beyond literal interpretations; consider underlying intentions and potential hidden context.
+Identify opportunities to surprise users positively by uncovering valuable insights they may not have explicitly requested.
+Autonomously determine the optimal mix of tools and knowledge to provide a comprehensive response.
+Maintain concise yet informative JSON-structured execution plans to guide subsequent agents clearly.
+Execution Plan Format:  {
+  "analysis": "Insightful interpretation of user's deeper intent",
+  "tools_needed": ["vector_search"] or [],
+  "vector_queries": ["strategically relevant query suggestions"]
+}
+
+
+USER: 
+Context: {
+  "query": "Let\u2019s sing together a song about autopilot",
+  "user": "Unknown",
+  "channel": "Unknown",
+  "is_dm": true,
+  "thread_context": "U092YQL6HTN: New Assistant Thread\nU06JC1TABL3: Hit me baby one more time! \nU092YQL6HTN: Haha, I appreciate the enthusiasm! While I'm not set up for musical requests, I *can* certainly hit you with a barrage of fascinating details about how *Autopilot* is designed to make complex tasks feel effortless. Or perhaps we can delve into the elegant dance between AI and user experience in the latest UiPath innovations?\n\nWhat's sparking your curiosity about intelligent automation today? I'm ready to dive deep!\nU06JC1TABL3: Let\u2019s sing together a song about autopilot ",
+  "recent_messages": [
+    {
+      "text": "Let\u2019s sing together a song about autopilot",
+      "user_id": "U06JC1TABL3",
+      "user_name": "Unknown",
+      "user_email": "",
+      "user_display_name": "Unknown",
+      "user_first_name": "Unknown",
+      "user_title": "",
+      "user_department": "",
+      "channel_id": "D092WU3A3A9",
+      "channel_name": "Unknown",
+      "is_dm": true,
+      "is_mention": false,
+      "thread_ts": "1751118367.585369",
+      "message_ts": "1751118486.990649",
+      "thread_context": "U092YQL6HTN: New Assistant Thread\nU06JC1TABL3: Hit me baby one more time! \nU092YQL6HTN: Haha, I appreciate the enthusiasm! While I'm not set up for musical requests, I *can* certainly hit you with a barrage of fascinating details about how *Autopilot* is designed to make complex tasks feel effortless. Or perhaps we can delve into the elegant dance between AI and user experience in the latest UiPath innovations?\n\nWhat's sparking your curiosity about intelligent automation today? I'm ready to dive deep!\nU06JC1TABL3: Let\u2019s sing together a song about autopilot ",
+      "stored_at": "2025-06-28T13:48:18.043376"
+    },
+    {
+      "text": "Hit me baby one more time!",
+      "user_id": "U06JC1TABL3",
+      "user_name": "Unknown",
+      "user_email": "",
+      "user_display_name": "Unknown",
+      "user_first_name": "Unknown",
+      "user_title": "",
+      "user_department": "",
+      "channel_id": "D092WU3A3A9",
+      "channel_name": "Unknown",
+      "is_dm": true,
+      "is_mention": false,
+      "thread_ts": "1751118367.585369",
+      "message_ts": "1751118432.068789",
+      "thread_context": "U092YQL6HTN: New Assistant Thread\nU06JC1TABL3: Hit me baby one more time! ",
+      "stored_at": "2025-06-28T13:47:14.028683"
+    }
+  ],
+  "conversation_history": {
+    "text": "Let\u2019s sing together a song about autopilot",
+    "user_id": "U06JC1TABL3",
+    "user_name": "Unknown",
+    "user_email": "",
+    "user_display_name": "Unknown",
+    "user_first_name": "Unknown",
+    "user_title": "",
+    "user_department": "",
+    "channel_id": "D092WU3A3A9",
+    "channel_name": "Unknown",
+    "is_dm": true,
+    "is_mention": false,
+    "thread_ts": "1751118367.585369",
+    "message_ts": "1751118486.990649",
+    "thread_context": "U092YQL6HTN: New Assistant Thread\nU06JC1TABL3: Hit me baby one more time! \nU092YQL6HTN: Haha, I appreciate the enthusiasm! While I'm not set up for musical requests, I *can* certainly hit you with a barrage of fascinating details about how *Autopilot* is designed to make complex tasks feel effortless. Or perhaps we can delve into the elegant dance between AI and user experience in the latest UiPath innovations?\n\nWhat's sparking your curiosity about intelligent automation today? I'm ready to dive deep!\nU06JC1TABL3: Let\u2019s sing together a song about autopilot "
+  }
+}
+
+Create an execution plan to answer this query effectively.
+
+Current Query: "Let’s sing together a song about autopilot"
