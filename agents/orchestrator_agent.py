@@ -6,6 +6,7 @@ Uses Gemini 2.5 Pro for query analysis and tool orchestration.
 import json
 import logging
 import time
+import asyncio
 from typing import Dict, Any, List, Optional
 from datetime import datetime
 
@@ -221,12 +222,22 @@ Current Query: "{message.text}"
             # Track LLM call timing for LangSmith
             llm_start = time.time()
             
-            response = await self.gemini_client.generate_structured_response(
-                system_prompt,
-                user_prompt,
-                response_format="json",
-                model=self.gemini_client.pro_model  # Orchestrator uses Pro model for complex planning
-            )
+            # Add timeout protection for API call
+            try:
+                response = await asyncio.wait_for(
+                    self.gemini_client.generate_structured_response(
+                        system_prompt,
+                        user_prompt,
+                        response_format="json",
+                        model=self.gemini_client.pro_model  # Orchestrator uses Pro model for complex planning
+                    ),
+                    timeout=15.0  # 15 second timeout
+                )
+            except asyncio.TimeoutError:
+                logger.error("Gemini API call timed out after 15 seconds")
+                if self.progress_tracker:
+                    await emit_warning(self.progress_tracker, "api_timeout", "analysis taking longer than expected")
+                response = None
             
             # Log LLM call to LangSmith
             llm_duration = time.time() - llm_start
