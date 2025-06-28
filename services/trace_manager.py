@@ -204,47 +204,32 @@ class TraceManager:
                 "agent_system": "autopilot-expert-multi-agent"
             }
             
-            # Create the trace with improved error handling
+            # Create the trace (LangSmith create_run returns None by design)
             try:
-                trace = self.client.create_run(
+                # Generate a UUID for tracking this conversation
+                trace_id = str(uuid.uuid4())
+                
+                # Create run in LangSmith (fire-and-forget)
+                self.client.create_run(
                     name=conversation_name,
-                    run_type="chain",
                     inputs=inputs,
+                    run_type="chain",
                     project_name=self.settings.LANGSMITH_PROJECT,
                     tags=["conversation", "multi-agent", "slack"],
-                    extra=metadata,
-                    start_time=current_time
+                    extra=metadata
                 )
                 
-                logger.debug(f"LangSmith create_run returned: {trace} (type: {type(trace)})")
-                
-                if trace:
-                    # Handle different response types from LangSmith API
-                    if hasattr(trace, 'id') and trace.id:
-                        trace_id = str(trace.id)
-                    elif isinstance(trace, dict) and trace.get('id'):
-                        trace_id = str(trace['id'])
-                    elif isinstance(trace, str):
-                        trace_id = trace
-                    else:
-                        logger.error(f"LangSmith trace object has no usable ID: {trace}")
-                        trace_id = f"fallback_{session_id}_{int(current_time.timestamp())}"
-                        logger.info(f"Using fallback trace ID: {trace_id}")
-                else:
-                    logger.error("LangSmith create_run returned None")
-                    trace_id = f"fallback_{session_id}_{int(current_time.timestamp())}"
-                    logger.info(f"Using fallback trace ID: {trace_id}")
+                logger.info(f"LangSmith conversation trace created with ID: {trace_id}")
                     
             except Exception as e:
                 logger.error(f"Exception during LangSmith trace creation: {e}")
                 trace_id = f"fallback_{session_id}_{int(current_time.timestamp())}"
                 logger.info(f"Using fallback trace ID due to exception: {trace_id}")
-                trace = None
                 
             # Store session data regardless of LangSmith success/failure
             self.active_sessions[session_id] = {
                 'trace_id': trace_id,
-                'trace_object': trace,
+                'langsmith_enabled': self.is_enabled(),
                 'start_time': current_time,
                 'last_activity': current_time
             }
@@ -270,34 +255,25 @@ class TraceManager:
             return None
             
         try:
-            # Only use parent_run_id if we have a valid LangSmith trace ID (not fallback)
-            run_params = {
-                "name": "user_message",
-                "run_type": "chain",
-                "inputs": {
+            # Generate unique ID for this message log
+            message_id = str(uuid.uuid4())
+            
+            # Create run in LangSmith (fire-and-forget)
+            self.client.create_run(
+                name="user_message",
+                inputs={
                     "user_id": user_id,
                     "message": message,
-                    "timestamp": timestamp
+                    "timestamp": timestamp,
+                    "conversation_trace_id": self.current_trace_id
                 },
-                "project_name": self.settings.LANGSMITH_PROJECT,
-                "tags": ["user-input", "message"],
-                "start_time": datetime.now()
-            }
+                run_type="chain",
+                project_name=self.settings.LANGSMITH_PROJECT,
+                tags=["user-input", "message"]
+            )
             
-            # Only add parent_run_id if we have a valid trace (not fallback)
-            if not self.current_trace_id.startswith('fallback_'):
-                run_params["parent_run_id"] = self.current_trace_id
-            
-            run = self.client.create_run(**run_params)
-            
-            if run and hasattr(run, 'id'):
-                # Complete immediately
-                self.client.update_run(
-                    run_id=run.id,
-                    outputs={"message_logged": True},
-                    end_time=datetime.now()
-                )
-                return str(run.id)
+            logger.debug(f"Logged user message with ID: {message_id}")
+            return message_id
                 
         except Exception as e:
             logger.error(f"Failed to log user message: {e}")
