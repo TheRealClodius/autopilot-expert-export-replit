@@ -303,6 +303,65 @@ class TraceManager:
             logger.error(f"Failed to log orchestrator analysis: {e}")
             return None
     
+    async def log_agent_operation(self, agent_name: str, operation: str, 
+                                input_data: str, metadata: Optional[Dict[str, Any]] = None) -> Optional[str]:
+        """Log the start of an agent operation"""
+        if not self.is_enabled() or not self.current_trace_id:
+            return None
+            
+        try:
+            operation_id = str(uuid.uuid4())
+            start_time = datetime.now()
+            
+            self.client.create_run(
+                id=operation_id,
+                name=f"{agent_name}_{operation}",
+                inputs={
+                    "agent": agent_name,
+                    "operation": operation,
+                    "input": input_data,
+                    **(metadata or {})
+                },
+                run_type="chain",
+                project_name=self.settings.LANGSMITH_PROJECT,
+                start_time=start_time,
+                parent_run_id=self.current_trace_id,
+                tags=[agent_name, operation, "agent_operation"]
+            )
+            
+            logger.debug(f"Started {agent_name} operation: {operation_id}")
+            return operation_id
+                
+        except Exception as e:
+            logger.error(f"Failed to log {agent_name} operation: {e}")
+            return None
+    
+    async def complete_agent_operation(self, trace_id: str, output_data: str, 
+                                     success: bool, duration: float, 
+                                     metadata: Optional[Dict[str, Any]] = None) -> None:
+        """Complete an agent operation trace"""
+        if not self.is_enabled() or not trace_id:
+            return
+            
+        try:
+            end_time = datetime.now()
+            
+            self.client.update_run(
+                run_id=trace_id,
+                outputs={
+                    "result": output_data,
+                    "success": success,
+                    "duration_seconds": duration,
+                    **(metadata or {})
+                },
+                end_time=end_time
+            )
+            
+            logger.debug(f"Completed agent operation: {trace_id}")
+                
+        except Exception as e:
+            logger.error(f"Failed to complete agent operation {trace_id}: {e}")
+    
     async def log_vector_search(self, query: str, results: List[Dict[str, Any]], 
                                duration_ms: float = None) -> Optional[str]:
         """Log vector search operation"""

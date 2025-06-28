@@ -43,11 +43,23 @@ class ClientAgent:
             start_time = time.time()
             logger.info("Client Agent formatting response from orchestrator state stack...")
             
+            # Get trace manager for LangSmith integration
+            from services.trace_manager import TraceManager
+            trace_manager = TraceManager()
+            
             # A. Get User Query from state stack
             user_query = state_stack.get("query", "")
             if not user_query:
                 logger.error("No user query found in state stack")
                 return None
+            
+            # Start client agent trace span
+            client_trace_id = await trace_manager.log_agent_operation(
+                agent_name="client_agent",
+                operation="response_generation",
+                input_data=f"Query: {user_query[:100]}...",
+                metadata={"model": "gemini-2.5-flash", "agent_type": "personality_formatting"}
+            )
             
             # B. Prepare complete state stack context for Gemini
             user_prompt = self._format_state_stack_context(state_stack)
@@ -95,12 +107,33 @@ class ClientAgent:
                 "suggestions": suggestions
             }
             
-            # Client response logged as part of conversation completion
+            # Complete client agent trace span with successful result
+            total_time = time.time() - start_time
+            if 'client_trace_id' in locals():
+                await trace_manager.complete_agent_operation(
+                    trace_id=client_trace_id,
+                    output_data=f"Response: {response[:200]}..." if len(response) > 200 else response,
+                    success=True,
+                    duration=total_time,
+                    metadata={"suggestions_count": len(suggestions)}
+                )
             
             return final_result
             
         except Exception as e:
             logger.error(f"CRITICAL ERROR in Client Agent: {e}")
+            # Complete client agent trace span with error
+            if 'client_trace_id' in locals() and 'trace_manager' in locals():
+                try:
+                    await trace_manager.complete_agent_operation(
+                        trace_id=client_trace_id,
+                        output_data=f"Error: {str(e)}",
+                        success=False,
+                        duration=time.time() - start_time if 'start_time' in locals() else 0,
+                        metadata={"error_type": type(e).__name__}
+                    )
+                except:
+                    pass  # Don't let trace logging errors break the system
             return None
     
     def _get_personality_system_prompt(self) -> str:
