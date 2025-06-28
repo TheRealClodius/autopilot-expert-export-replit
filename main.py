@@ -1199,6 +1199,74 @@ async def test_state_stack():
             "message": str(e)
         }
 
+@app.get("/admin/test-analysis-traces")
+async def test_analysis_traces():
+    """Admin endpoint to test orchestrator analysis visibility in LangSmith traces"""
+    try:
+        from models.schemas import ProcessedMessage
+        from datetime import datetime
+        from services.trace_manager import trace_manager
+        
+        # Start a conversation trace for visibility
+        conversation_id = await trace_manager.start_conversation_session(
+            user_id="U_TRACE_TEST",
+            channel_id="C_TRACE_TEST"
+        )
+        
+        if not conversation_id:
+            return {
+                "status": "error",
+                "message": "Failed to start conversation trace"
+            }
+        
+        # Create test message that will trigger interesting analysis
+        test_message = ProcessedMessage(
+            text="What is UiPath Autopilot and how does it help with automation?",
+            user_id="U_TRACE_TEST",
+            user_name="TraceTestUser",
+            user_first_name="Trace",
+            user_display_name="Trace Test User",
+            user_title="Product Manager",
+            user_department="Product",
+            channel_id="C_TRACE_TEST",
+            channel_name="trace-test-channel",
+            message_ts=str(int(datetime.now().timestamp())),
+            thread_ts=None,
+            is_dm=False,
+            thread_context=None
+        )
+        
+        logger.info("Testing orchestrator analysis trace visibility...")
+        
+        # Process through full orchestrator pipeline
+        response = await orchestrator_agent.process_query(test_message)
+        
+        # Complete the conversation trace
+        await trace_manager.complete_conversation_turn(success=True)
+        
+        if response:
+            return {
+                "status": "success",
+                "conversation_trace_id": conversation_id,
+                "response_generated": True,
+                "response_preview": response.get("text", "")[:150] + "...",
+                "message": f"Analysis trace test completed. Check LangSmith trace: {conversation_id}",
+                "langsmith_project": "autopilot-expert-multi-agent"
+            }
+        else:
+            return {
+                "status": "partial_success",
+                "conversation_trace_id": conversation_id,
+                "message": "Trace created but no response generated"
+            }
+            
+    except Exception as e:
+        logger.error(f"Analysis traces test error: {e}")
+        return {
+            "status": "error",
+            "message": str(e)
+        }
+
 if __name__ == "__main__":
     # Get port from environment for Cloud Run deployment
     port = int(os.environ.get("PORT", 5000))

@@ -276,7 +276,12 @@ class ClientAgent:
         prompt_parts.append("TASK:")
         prompt_parts.append("Format the answer to the user query in your personality, taking into account the orchestrator findings and message history provided above.")
         
-        return "\n".join(prompt_parts)
+        formatted_prompt = "\n".join(prompt_parts)
+        
+        # Log the complete formatted prompt for trace visibility
+        logger.info(f"CLIENT AGENT PROMPT PREVIEW:\n{formatted_prompt[:500]}...")
+        
+        return formatted_prompt
     
     def _post_process_response(self, response: str, state_stack: Dict[str, Any]) -> str:
         """
