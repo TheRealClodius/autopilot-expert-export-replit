@@ -153,10 +153,11 @@ class ClientAgent:
             prompt_parts.append("")
         
         # B2. Raw History (recent messages)
-        conversation_history = state_stack.get("conversation_history", [])
-        if conversation_history:
+        conversation_history_data = state_stack.get("conversation_history", {})
+        recent_exchanges = conversation_history_data.get("recent_exchanges", []) if isinstance(conversation_history_data, dict) else []
+        if recent_exchanges:
             prompt_parts.append("RECENT MESSAGE HISTORY:")
-            for message in conversation_history:
+            for message in recent_exchanges:
                 role = message.get("role", "unknown")
                 text = message.get("text", "")
                 timestamp = message.get("timestamp", "")
