@@ -13,8 +13,14 @@ services/data_processor.py
 services/document_ingestion.py
 services/embedding_service.py
 services/memory_service.py
+services/prewarming_service.py
 services/progress_tracker.py
 services/slack_connector.py
+services/trace_manager.py
+services/trace_manager_old.py
+services/trace_manager_old_broken.py
+services/webhook_cache.py
+tools/perplexity_search.py
 tools/vector_search.py
 utils/gemini_client.py
 utils/prompt_loader.py

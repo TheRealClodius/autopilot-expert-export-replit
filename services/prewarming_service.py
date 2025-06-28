@@ -39,11 +39,13 @@ class PrewarmingService:
         self.service_health: Dict[str, ServiceHealth] = {}
         
         # Keep-alive configuration
-        self.keep_alive_interval = 120  # 2 minutes
+        self.keep_alive_interval = 60   # 1 minute for aggressive warm-keeping
+        self.serverless_ping_interval = 30  # 30 seconds for serverless functions
         self.max_response_time = 5.0    # 5 seconds
         
         # Pre-warming tasks
         self._keep_alive_task: Optional[asyncio.Task] = None
+        self._serverless_warm_task: Optional[asyncio.Task] = None
         self._is_running = False
         
         logger.info("Pre-warming service initialized")
@@ -56,9 +58,10 @@ class PrewarmingService:
             # Perform initial pre-warming
             await self._perform_initial_prewarming()
             
-            # Start keep-alive task
+            # Start keep-alive tasks
             self._is_running = True
             self._keep_alive_task = asyncio.create_task(self._keep_alive_loop())
+            self._serverless_warm_task = asyncio.create_task(self._serverless_keep_warm_loop())
             
             logger.info("✅ Service pre-warming completed and keep-alive started")
             
@@ -281,6 +284,28 @@ class PrewarmingService:
         
         logger.info("Keep-alive loop stopped")
     
+    async def _serverless_keep_warm_loop(self):
+        """Aggressive keep-warm loop specifically for serverless functions"""
+        logger.info(f"🔥 Serverless keep-warm loop started (interval: {self.serverless_ping_interval}s)")
+        
+        while self._is_running:
+            try:
+                await asyncio.sleep(self.serverless_ping_interval)
+                
+                if not self._is_running:
+                    break
+                
+                # Ping production serverless function aggressively
+                await self._ping_serverless_function()
+                
+            except asyncio.CancelledError:
+                break
+            except Exception as e:
+                logger.error(f"Serverless keep-warm error: {e}")
+                await asyncio.sleep(5)  # Brief pause before retry
+        
+        logger.info("Serverless keep-warm loop stopped")
+    
     async def _perform_keep_alive_pings(self):
         """Perform keep-alive pings for all services"""
         ping_tasks = []
@@ -291,6 +316,9 @@ class PrewarmingService:
         if self.memory_service:
             ping_tasks.append(self._ping_memory_service())
         
+        # Add serverless function keep-warm ping
+        ping_tasks.append(self._ping_serverless_function())
+        
         # Execute pings concurrently
         if ping_tasks:
             results = await asyncio.gather(*ping_tasks, return_exceptions=True)
@@ -299,6 +327,48 @@ class PrewarmingService:
             for result in results:
                 if isinstance(result, Exception):
                     logger.warning(f"Keep-alive ping failed: {result}")
+    
+    async def _ping_serverless_function(self):
+        """Keep-warm ping for the production serverless deployment"""
+        try:
+            import aiohttp
+            import os
+            
+            start_time = time.time()
+            
+            # Get the production deployment URL from environment or use default
+            deployment_url = os.getenv("REPLIT_DEPLOYMENT_URL", "https://intelligent-autopilot-andreiclodius.replit.app")
+            health_endpoint = f"{deployment_url}/health"
+            
+            async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=10)) as session:
+                async with session.get(health_endpoint) as response:
+                    response_time = time.time() - start_time
+                    success = response.status == 200
+                    
+                    self.service_health["serverless_function"] = ServiceHealth(
+                        name="Serverless Function",
+                        last_ping=time.time(),
+                        response_time=response_time,
+                        success=success
+                    )
+                    
+                    if success:
+                        if response_time > 2.0:  # Warn if response is slow
+                            logger.warning(f"🐌 Serverless function warming up: {response_time:.3f}s")
+                        else:
+                            logger.debug(f"🔥 Serverless function warm: {response_time:.3f}s")
+                    else:
+                        logger.warning(f"❌ Serverless function unhealthy: HTTP {response.status}")
+                        
+        except Exception as e:
+            logger.warning(f"Serverless function keep-warm ping failed: {e}")
+            self.service_health["serverless_function"] = ServiceHealth(
+                name="Serverless Function",
+                last_ping=time.time(),
+                response_time=0.0,
+                success=False,
+                error=str(e)
+            )
     
     async def _ping_slack_api(self):
         """Keep-alive ping for Slack API"""

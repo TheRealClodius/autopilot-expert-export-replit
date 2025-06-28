@@ -3,6 +3,7 @@ Name: autopilot-expert-multi-agent
 Version: 1.0.0
 Summary: Multi-agent AI system for Slack with FastAPI backend
 Requires-Python: >=3.11
+Requires-Dist: aiohttp>=3.12.13
 Requires-Dist: celery>=5.5.3
 Requires-Dist: fastapi>=0.115.14
 Requires-Dist: google-genai>=1.22.0
