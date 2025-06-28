@@ -26,75 +26,9 @@ class GeminiClient:
         self.client = genai.Client(api_key=settings.GEMINI_API_KEY)
         self.pro_model = settings.GEMINI_PRO_MODEL
         self.flash_model = settings.GEMINI_FLASH_MODEL
-        # Request queue to prevent rate limiting issues
-        self._request_queue = asyncio.Queue()
-        self._queue_processor_task = None
-        self._ensure_queue_processor()
-    
-    def _ensure_queue_processor(self):
-        """Ensure the queue processor is running"""
-        if self._queue_processor_task is None or self._queue_processor_task.done():
-            self._queue_processor_task = asyncio.create_task(self._process_request_queue())
-    
-    async def _process_request_queue(self):
-        """Process requests from the queue with rate limiting"""
-        while True:
-            try:
-                # Get next request from queue
-                request_data, result_future = await self._request_queue.get()
-                
-                try:
-                    # Execute the request
-                    result = await self._execute_request(request_data)
-                    result_future.set_result(result)
-                except Exception as e:
-                    result_future.set_exception(e)
-                finally:
-                    self._request_queue.task_done()
-                
-                # Small delay to prevent rate limiting
-                await asyncio.sleep(0.1)
-                
-            except asyncio.CancelledError:
-                break
-            except Exception as e:
-                logger.error(f"Error in queue processor: {e}")
-                await asyncio.sleep(1)
-    
-    async def _execute_request(self, request_data: Dict[str, Any]) -> Optional[str]:
-        """Execute a single Gemini API request"""
-        try:
-            request_type = request_data["type"]
-            
-            if request_type == "generate":
-                response = self.client.models.generate_content(
-                    model=request_data["model"],
-                    contents=request_data["contents"],
-                    config=request_data["config"]
-                )
-                
-                if response and response.text:
-                    return response.text.strip()
-                else:
-                    logger.warning(f"Empty response from {request_data['model']}")
-                    return None
-                    
-            elif request_type == "structured":
-                # Handle structured response requests
-                response = self.client.models.generate_content(
-                    model=request_data["model"],
-                    contents=request_data["contents"],
-                    config=request_data["config"]
-                )
-                
-                if response and response.text:
-                    return response.text.strip()
-                else:
-                    return None
-                    
-        except Exception as e:
-            logger.error(f"Error executing Gemini request: {e}")
-            return None
+        # Simple delay tracking to prevent rate limiting
+        self._last_request_time = 0
+
         
     async def generate_response(
         self,
@@ -120,35 +54,33 @@ class GeminiClient:
         try:
             model_name = model or self.flash_model
             
-            # Prepare request data for queue
-            request_data = {
-                "type": "generate",
-                "model": model_name,
-                "contents": [
+            # Simple rate limiting - ensure 100ms between requests
+            import time
+            current_time = time.time()
+            time_since_last = current_time - self._last_request_time
+            if time_since_last < 0.1:
+                await asyncio.sleep(0.1 - time_since_last)
+            
+            response = self.client.models.generate_content(
+                model=model_name,
+                contents=[
                     types.Content(role="user", parts=[types.Part(text=user_prompt)])
                 ],
-                "config": types.GenerateContentConfig(
+                config=types.GenerateContentConfig(
                     system_instruction=system_prompt,
                     max_output_tokens=max_tokens,
                     temperature=temperature
                 )
-            }
+            )
             
-            # Create future for result
-            result_future = asyncio.Future()
+            self._last_request_time = time.time()
             
-            # Add to queue
-            await self._request_queue.put((request_data, result_future))
-            
-            # Wait for result
-            result = await result_future
-            
-            if result:
+            if response and response.text:
                 logger.debug(f"Generated response with {model_name}")
-                return result
-            else:
-                logger.warning(f"Empty response from {model_name}")
-                return None
+                return response.text.strip()
+            
+            logger.warning(f"Empty response from {model_name}")
+            return None
             
         except Exception as e:
             logger.error(f"Error generating Gemini response: {e}")

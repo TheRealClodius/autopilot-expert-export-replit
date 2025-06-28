@@ -53,11 +53,11 @@ return {
 - **Fix**: Increased max_tokens from 500 to 1,500 and character limit from 2,000 to 4,000
 - **Result**: Full responses will no longer be truncated prematurely
 
-## Additional Fix - Request Queue System  
+## Additional Fix - Simple Rate Limiting  
 - **Issue**: Potential rate limiting after 4 rapid message exchanges causing "Sorry, I couldn't process your request"
-- **Fix**: Implemented async request queue in Gemini client with 0.1s delays between calls
-- **Result**: Sequential processing prevents rate limits, even with rapid user interactions
-- **Benefits**: Maintains response order, isolates failures, automatic retry capability
+- **Fix**: Implemented simple 100ms delay between Gemini API calls to prevent rate limiting
+- **Result**: Prevents API rate limits while maintaining system stability
+- **Benefits**: Lightweight solution that doesn't break initialization process
 
 ## Verification
 The fix has been verified locally - the client agent now successfully finds the query in the state stack.
