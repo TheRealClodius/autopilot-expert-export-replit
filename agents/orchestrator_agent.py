@@ -69,9 +69,18 @@ class OrchestratorAgent:
             logger.info(f"Query analysis took {time.time() - plan_start:.2f}s")
             
             if not execution_plan:
-                # Instead of generic fallback, create a minimal plan to proceed
-                logger.warning("Query analysis failed, creating minimal execution plan")
-                execution_plan = await self._create_minimal_plan(message)
+                # Let the orchestrator plan freely without constraints
+                logger.warning("Query analysis returned None, letting orchestrator handle freely")
+                # Don't force a minimal plan - let the system handle it naturally
+                execution_plan = {
+                    "analysis": f"Free-form analysis of query: '{message.text}'",
+                    "tools_needed": ["vector_search"],  # Let it use available tools
+                    "vector_queries": [message.text],  # Use the original query
+                    "context": {
+                        "intent": "open_query",
+                        "response_approach": "Use full AI capabilities and available knowledge"
+                    }
+                }
             
             exec_start = time.time()
             # Execute the plan
@@ -117,11 +126,22 @@ class OrchestratorAgent:
                 
                 return result
             
-            return await self._generate_fallback_response(message)
+            # If no response generated, let the client agent handle it freely
+            logger.warning("No response generated, allowing free-form processing")
+            return await self.client_agent.generate_response(
+                message, 
+                {"vector_results": [], "graph_results": []}, 
+                {"intent": "free_response", "response_approach": "Use full AI knowledge and capabilities"}
+            )
             
         except Exception as e:
             logger.error(f"Error in orchestrator processing: {e}")
-            return await self._generate_error_response(message, str(e))
+            # Even on errors, let the AI handle it naturally instead of generic error messages
+            return await self.client_agent.generate_response(
+                message, 
+                {"vector_results": [], "graph_results": []}, 
+                {"intent": "error_recovery", "response_approach": "Handle the query using available knowledge despite technical issues"}
+            )
     
     async def _analyze_query_and_plan(self, message: ProcessedMessage) -> Optional[Dict[str, Any]]:
         """
@@ -188,38 +208,7 @@ Current Query: "{message.text}"
             logger.error(f"Error analyzing query: {e}")
             return None
     
-    async def _create_minimal_plan(self, message: ProcessedMessage) -> Dict[str, Any]:
-        """
-        Create a minimal execution plan when the main analysis fails.
-        This prevents the generic "trouble understanding" fallback.
-        """
-        logger.info("Creating minimal execution plan as fallback")
-        
-        # Determine if this is likely an Autopilot-related query
-        autopilot_keywords = ["autopilot", "automation", "ai", "design", "pattern", "workflow", "process"]
-        is_autopilot_query = any(keyword in message.text.lower() for keyword in autopilot_keywords)
-        
-        # Create a simple plan that bypasses complex analysis
-        if is_autopilot_query:
-            return {
-                "analysis": f"User is asking about Autopilot or automation-related topics: '{message.text}'",
-                "tools_needed": [],  # Skip vector search to avoid additional failures
-                "context": {
-                    "intent": "autopilot_information_request",
-                    "response_approach": "Provide helpful Autopilot information based on general knowledge and expertise",
-                    "tone_guidance": "Helpful and knowledgeable, acknowledging if specific details aren't available"
-                }
-            }
-        else:
-            return {
-                "analysis": f"User is asking a general question: '{message.text}'",
-                "tools_needed": [],
-                "context": {
-                    "intent": "general_query",
-                    "response_approach": "Respond helpfully based on available knowledge and context",
-                    "tone_guidance": "Friendly and supportive"
-                }
-            }
+
     
     async def _execute_plan(self, plan: Dict[str, Any], message: ProcessedMessage) -> Dict[str, Any]:
         """
@@ -349,24 +338,4 @@ Current Query: "{message.text}"
         except Exception as e:
             logger.error(f"Error triggering observation: {e}")
     
-    async def _generate_fallback_response(self, message: ProcessedMessage) -> Dict[str, Any]:
-        """Generate fallback response when planning fails"""
-        fallback_text = f"I'm having trouble understanding your question about '{message.text[:50]}...'. Could you please rephrase or provide more specific details?"
-        
-        return {
-            "channel_id": message.channel_id,
-            "thread_ts": message.thread_ts,
-            "text": fallback_text,
-            "timestamp": datetime.now().isoformat()
-        }
-    
-    async def _generate_error_response(self, message: ProcessedMessage, error: str) -> Dict[str, Any]:
-        """Generate error response"""
-        error_text = "I'm experiencing technical difficulties right now. Please try again in a few moments."
-        
-        return {
-            "channel_id": message.channel_id,
-            "thread_ts": message.thread_ts,
-            "text": error_text,
-            "timestamp": datetime.now().isoformat()
-        }
+
