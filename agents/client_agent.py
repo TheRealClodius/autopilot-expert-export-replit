@@ -53,6 +53,7 @@ class ClientAgent:
             
             # Check if we have an existing conversation trace to join
             existing_trace_id = state_stack.get("trace_id")
+            logger.info(f"DEBUG: trace_id from state stack: {existing_trace_id}")
             if existing_trace_id:
                 trace_manager.current_trace_id = existing_trace_id
                 logger.info(f"DEBUG: Using existing trace ID: {existing_trace_id}")
