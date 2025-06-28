@@ -88,12 +88,11 @@ class OrchestratorAgent:
             logger.info(f"Plan execution took {time.time() - exec_start:.2f}s")
             
             response_start = time.time()
-            # Generate final response through Client Agent
-            response = await self.client_agent.generate_response(
-                message, 
-                gathered_information, 
-                execution_plan.get("context", {})
-            )
+            # Build comprehensive state stack for Client Agent
+            state_stack = await self._build_state_stack(message, gathered_information, execution_plan)
+            
+            # Generate final response through Client Agent with complete state
+            response = await self.client_agent.generate_response(state_stack)
             logger.info(f"Response generation took {time.time() - response_start:.2f}s")
             
             if response:
@@ -242,8 +241,101 @@ Current Query: "{message.text}"
             logger.error(f"Error executing plan: {e}")
             return gathered_info
     
+    async def _build_state_stack(self, message: ProcessedMessage, gathered_information: Dict[str, Any], execution_plan: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Build comprehensive state stack for Client Agent containing all context needed.
+        
+        Args:
+            message: Original processed message
+            gathered_information: Results from vector search and other tools
+            execution_plan: Orchestrator's execution plan with insights
+            
+        Returns:
+            Complete state stack for client agent
+        """
+        try:
+            # Get conversation history
+            thread_identifier = message.thread_ts or message.message_ts
+            conversation_key = f"conv:{message.channel_id}:{thread_identifier}"
+            recent_messages = await self.memory_service.get_recent_messages(conversation_key, limit=10)
+            
+            # Get conversation context for potential long-term summary
+            conversation_context = await self.memory_service.get_conversation_context(conversation_key)
+            
+            # Organize recent messages into user queries and agent responses
+            user_queries = []
+            agent_responses = []
+            
+            for msg in recent_messages:
+                if msg.get("user_name") != "bot" and msg.get("user_name") != "autopilot":
+                    user_queries.append({
+                        "text": msg.get("text", ""),
+                        "user": msg.get("user_name", "Unknown"),
+                        "timestamp": msg.get("message_ts", "")
+                    })
+                else:
+                    agent_responses.append({
+                        "text": msg.get("text", ""),
+                        "timestamp": msg.get("message_ts", "")
+                    })
+            
+            # Build complete state stack
+            state_stack = {
+                "current_query": {
+                    "text": message.text,
+                    "user": message.user_name,
+                    "channel": message.channel_name,
+                    "is_dm": message.is_dm,
+                    "is_mention": message.is_mention,
+                    "thread_ts": message.thread_ts,
+                    "message_ts": message.message_ts
+                },
+                "recent_history": {
+                    "user_queries": user_queries[-5:],  # Last 5 user queries
+                    "agent_responses": agent_responses[-5:],  # Last 5 agent responses
+                    "raw_messages": recent_messages  # All 10 raw messages for full context
+                },
+                "long_conversation_summary": {
+                    "has_long_history": len(recent_messages) >= 10,
+                    "conversation_context": conversation_context,
+                    "summary": "This is a continuing conversation..." if len(recent_messages) >= 10 else None
+                },
+                "orchestrator_results": {
+                    "vector_search_results": gathered_information.get("vector_results", []),
+                    "execution_plan": execution_plan,
+                    "orchestrator_insights": execution_plan.get("analysis", ""),
+                    "response_approach": execution_plan.get("context", {}).get("response_approach", ""),
+                    "tools_used": execution_plan.get("tools_needed", [])
+                },
+                "metadata": {
+                    "conversation_key": conversation_key,
+                    "thread_identifier": thread_identifier,
+                    "response_thread_ts": message.thread_ts or message.message_ts
+                }
+            }
+            
+            logger.info(f"Built state stack with {len(user_queries)} user queries, {len(agent_responses)} agent responses, {len(gathered_information.get('vector_results', []))} vector results")
+            return state_stack
+            
+        except Exception as e:
+            logger.error(f"Error building state stack: {e}")
+            # Return minimal state stack on error
+            return {
+                "current_query": {
+                    "text": message.text,
+                    "user": message.user_name,
+                    "channel": message.channel_name
+                },
+                "recent_history": {"user_queries": [], "agent_responses": [], "raw_messages": []},
+                "long_conversation_summary": {"has_long_history": False, "summary": None},
+                "orchestrator_results": {
+                    "vector_search_results": gathered_information.get("vector_results", []),
+                    "execution_plan": execution_plan,
+                    "orchestrator_insights": execution_plan.get("analysis", "")
+                },
+                "metadata": {"response_thread_ts": message.thread_ts or message.message_ts}
+            }
 
-    
     async def _trigger_observation(self, message: ProcessedMessage, response: str, gathered_info: Dict[str, Any]):
         """
         Trigger Observer Agent to learn from the conversation (async).
