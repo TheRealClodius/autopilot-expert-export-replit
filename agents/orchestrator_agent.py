@@ -360,12 +360,12 @@ Current Query: "{message.text}"
                     "thread_ts": message.thread_ts
                 },
                 "conversation_history": {
-                    "recent_exchanges": [
-                        {"role": "user" if msg.get("user_name") != "bot" else "assistant", 
+                    "recent_exchanges": self._deduplicate_messages([
+                        {"role": "user" if msg.get("user_name") != "bot" and msg.get("user_name") != "autopilot" else "assistant", 
                          "text": msg.get("text", "")[:200],  # Truncate long messages
                          "timestamp": msg.get("message_ts", "")}
                         for msg in recent_messages[-6:]  # Only last 6 messages for context
-                    ] if recent_messages else [],
+                    ]) if recent_messages else [],
                     "long_conversation_summary": conversation_context if len(recent_messages) >= 8 else None
                 },
                 "orchestrator_analysis": {
@@ -407,6 +407,28 @@ Current Query: "{message.text}"
         except Exception as e:
             logger.error(f"ERROR: Failed to get trace ID: {e}")
             return None
+    
+    def _deduplicate_messages(self, messages: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """
+        Remove duplicate messages based on text content and timestamp.
+        
+        Args:
+            messages: List of message dictionaries
+            
+        Returns:
+            Deduplicated list of messages
+        """
+        seen = set()
+        deduplicated = []
+        
+        for msg in messages:
+            # Create a unique key from text and timestamp
+            key = (msg.get("text", ""), msg.get("timestamp", ""))
+            if key not in seen and msg.get("text", "").strip():  # Only include non-empty messages
+                seen.add(key)
+                deduplicated.append(msg)
+        
+        return deduplicated
     
     async def _trigger_observation(self, message: ProcessedMessage, response: str, gathered_info: Dict[str, Any]):
         """
