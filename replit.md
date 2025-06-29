@@ -810,10 +810,11 @@ The system uses environment variables for configuration management and supports 
 - **Deployment Solutions**: Multiple MCP_SERVER_URL options documented for different deployment scenarios (localhost, container, host networking, external)
 - **Enhanced Documentation**: Updated DEPLOYMENT_TRIGGER.md with step-by-step network diagnosis and environment-specific recommendations
 - **SSE Protocol Fixes**: Improved Server-Sent Events response parsing with better error handling and debug logging
-- **Files Created**: deployment_network_diagnosis.py, test_atlassian_tool_direct.py for deployment troubleshooting
-- **Files Modified**: DEPLOYMENT_TRIGGER.md (comprehensive MCP connectivity guide), tools/atlassian_tool.py (enhanced SSE parsing)
+- **Enhanced Error Handling**: Added deployment-aware error messages with specific guidance for network connectivity issues
+- **Files Created**: deployment_network_diagnosis.py, test_atlassian_tool_direct.py, test_mcp_url_config.py for deployment troubleshooting
+- **Files Modified**: DEPLOYMENT_TRIGGER.md (comprehensive MCP connectivity guide), tools/atlassian_tool.py (enhanced error handling and connectivity checks)
 - **Production Impact**: Eliminates "All connection attempts failed" errors by providing proper MCP server URL configuration for deployment environments
-- **Verification Command**: python deployment_network_diagnosis.py identifies working URLs and provides exact MCP_SERVER_URL setting needed
+- **Verification Commands**: python deployment_network_diagnosis.py identifies working URLs, python test_mcp_url_config.py confirms configurable URL usage
 - **Status**: Complete MCP connectivity solution implemented - deployment requires MCP_SERVER_URL environment variable configuration based on network topology
 
 ## Changelog

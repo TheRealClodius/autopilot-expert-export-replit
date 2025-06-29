@@ -111,6 +111,7 @@ class AtlassianTool:
         
         try:
             logger.debug(f"Executing MCP tool: {tool_name} with args: {arguments}")
+            logger.debug(f"Using MCP server URL: {self.mcp_server_url}")
             
             # Use FastMCP streamable-http transport with session management
             # First create a session, then send the tool call
@@ -122,6 +123,18 @@ class AtlassianTool:
             }
             
             async with httpx.AsyncClient(timeout=60.0, follow_redirects=True) as client:
+                # First, test basic connectivity to help with deployment debugging
+                try:
+                    health_response = await client.get(f"{self.mcp_server_url}/healthz")
+                    logger.debug(f"MCP server health check: {health_response.status_code}")
+                    if health_response.status_code != 200:
+                        logger.warning(f"MCP server health check returned: {health_response.status_code}")
+                except Exception as e:
+                    logger.error(f"MCP server connectivity test failed: {e}")
+                    return {
+                        "error": "mcp_server_unreachable",
+                        "message": f"Cannot reach MCP server at {self.mcp_server_url}. Check if MCP server is running and MCP_SERVER_URL is correct for your deployment environment."
+                    }
                 # Step 1: Create session via redirect handling
                 session_request = {
                     "jsonrpc": "2.0",
@@ -338,13 +351,13 @@ class AtlassianTool:
             logger.error(error_msg)
             logger.error(f"Full traceback: {full_traceback}")
             
-            # For specific connection-related errors, provide more helpful error messages
-            if "Connection" in str(e) or "timeout" in str(e).lower():
+            # For specific connection-related errors, provide deployment-aware error messages
+            if "Connection" in str(e) or "timeout" in str(e).lower() or "refused" in str(e).lower():
                 return {
-                    "error": "connection_timeout",
-                    "message": "MCP server connection timed out. This may be due to deployment environment network conditions.",
+                    "error": "connection_failed",
+                    "message": f"Cannot connect to MCP server at {self.mcp_server_url}. In deployment, set MCP_SERVER_URL to the correct endpoint for your environment.",
                     "exception_type": type(e).__name__,
-                    "retry_suggested": True
+                    "deployment_help": "Try: export MCP_SERVER_URL='http://your-deployment-host:8001'"
                 }
             elif "handshake" in str(e).lower() or "initialized" in str(e).lower():
                 return {
@@ -352,6 +365,13 @@ class AtlassianTool:
                     "message": "MCP protocol handshake failed. The server may be starting up.",
                     "exception_type": type(e).__name__,
                     "retry_suggested": True
+                }
+            elif "All connection attempts failed" in str(e):
+                return {
+                    "error": "mcp_server_unreachable",
+                    "message": f"MCP server unreachable at {self.mcp_server_url}. This is a deployment network configuration issue.",
+                    "exception_type": type(e).__name__,
+                    "deployment_help": "Check MCP_SERVER_URL environment variable and ensure MCP server is running"
                 }
             else:
                 return {
