@@ -36,7 +36,7 @@ class WebhookCache:
         # Cache configuration
         self.cache_ttl = 300  # 5 minutes default TTL
         self.max_cache_size = 1000
-        self.duplicate_window = 10  # 10 seconds for duplicate detection (Slack retries only)
+        self.duplicate_window = 3  # 3 seconds for duplicate detection (Slack retries only)
         
         # Performance tracking
         self.stats = {
@@ -67,17 +67,23 @@ class WebhookCache:
     
     def _generate_duplicate_key(self, event_data: Dict[str, Any]) -> str:
         """Generate key for duplicate detection using Slack's unique event identifiers"""
-        # Use Slack's unique event ID and timestamp for true duplicate detection
+        # Primary key: Use Slack's unique event_id if available (most reliable)
+        event_id = event_data.get("event_id")
+        if event_id:
+            return f"dup_event_{event_id}"
+        
+        # Fallback: Use message-specific fields for uniqueness
         event = event_data.get("event", {})
         duplicate_fields = {
-            "event_id": event_data.get("event_id"),  # Slack's unique event identifier
-            "event_ts": event.get("event_ts"),       # Slack's event timestamp
-            "ts": event.get("ts"),                   # Message timestamp
+            "ts": event.get("ts"),                   # Message timestamp (microsecond precision)
             "user": event.get("user"),
-            "channel": event.get("channel")
+            "channel": event.get("channel"),
+            "text_hash": hashlib.md5(event.get("text", "").encode()).hexdigest()[:8]  # Short text hash
         }
         
-        # Only consider it a duplicate if we have the same event_id or exact same ts
+        # Filter out None values to ensure consistent hashing
+        duplicate_fields = {k: v for k, v in duplicate_fields.items() if v is not None}
+        
         key_string = json.dumps(duplicate_fields, sort_keys=True)
         return f"dup_{hashlib.md5(key_string.encode()).hexdigest()}"
     
@@ -141,30 +147,20 @@ class WebhookCache:
         """
         Check if this is a duplicate request within the duplicate window
         Helps prevent processing the same message multiple times
+        
+        TEMPORARILY DISABLED: Duplicate detection causing false positives
         """
         try:
-            duplicate_key = self._generate_duplicate_key(event_data)
-            current_time = time.time()
+            # TEMPORARY FIX: Disable duplicate detection to resolve false positives
+            # The cache was incorrectly flagging legitimate messages as duplicates
             
-            # Check memory cache for recent duplicates
-            for key, entry in list(self.cache.items()):
-                if key.startswith("dup_") and current_time - entry.timestamp <= self.duplicate_window:
-                    if key == duplicate_key:
-                        self.stats["duplicates_prevented"] += 1
-                        time_since = current_time - entry.timestamp
-                        event_id = event_data.get("event_id", "unknown")
-                        logger.info(f"🔄 TRUE duplicate detected - Event ID: {event_id}, time since: {time_since:.1f}s")
-                        return True
+            event_id = event_data.get("event_id", "unknown")
+            logger.info(f"📨 Processing message - Event ID: {event_id} (duplicate detection temporarily disabled)")
             
-            # Mark this request to prevent future duplicates
-            dup_entry = CacheEntry(
-                result={"duplicate_marker": True},
-                timestamp=current_time,
-                processing_time=0.0
-            )
-            self.cache[duplicate_key] = dup_entry
+            return False  # Never consider anything a duplicate for now
             
-            return False
+            # TODO: Re-enable with better logic once root cause is identified
+            # The issue appears to be persistent cache entries surviving across deployments
             
         except Exception as e:
             logger.error(f"Duplicate check error: {e}")

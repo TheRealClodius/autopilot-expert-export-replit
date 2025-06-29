@@ -3244,6 +3244,39 @@ async def run_deployment_diagnosis():
             "success": False
         }
 
+@app.post("/admin/clear-webhook-cache")
+async def clear_webhook_cache():
+    """Clear the webhook cache to resolve duplicate detection issues"""
+    try:
+        if hasattr(app.state, 'webhook_cache'):
+            cache = app.state.webhook_cache
+            cache_size_before = len(cache.cache)
+            cache.cache.clear()
+            cache.stats = {
+                "total_requests": 0,
+                "cache_hits": 0,
+                "cache_misses": 0,
+                "duplicates_prevented": 0,
+                "processing_time_saved": 0.0
+            }
+            
+            return {
+                "success": True,
+                "message": f"Webhook cache cleared. Removed {cache_size_before} entries.",
+                "cache_size_before": cache_size_before,
+                "cache_size_after": 0
+            }
+        else:
+            return {
+                "success": False,
+                "message": "Webhook cache not found"
+            }
+    except Exception as e:
+        return {
+            "success": False,
+            "error": f"Failed to clear cache: {str(e)}"
+        }
+
 if __name__ == "__main__":
     # Get port from environment for Cloud Run deployment
     port = int(os.environ.get("PORT", 5000))
