@@ -11,7 +11,6 @@ import json
 import uuid
 from typing import Dict, Any, Optional, List
 import httpx
-from mcp.client.sse import sse_client
 from config import settings
 
 logger = logging.getLogger(__name__)
@@ -102,27 +101,84 @@ class AtlassianTool:
         try:
             logger.debug(f"Executing MCP tool: {tool_name} with args: {arguments}")
             
-            # Use proper MCP SSE client
-            async with sse_client(self.sse_endpoint) as (read, write):
-                # Call the tool
-                result = await write.call_tool(tool_name, arguments)
+            # Use HTTP/JSON transport directly to FastMCP server
+            # FastMCP supports both SSE and streamable-http transports
+            mcp_endpoint = f"{self.mcp_server_url}/mcp"
+            
+            # Build MCP protocol request
+            mcp_request = {
+                "jsonrpc": "2.0",
+                "id": str(uuid.uuid4()),
+                "method": "tools/call",
+                "params": {
+                    "name": tool_name,
+                    "arguments": arguments
+                }
+            }
+            
+            headers = {
+                "Content-Type": "application/json",
+                "Accept": "application/json"
+            }
+            
+            async with httpx.AsyncClient(timeout=30.0) as client:
+                response = await client.post(mcp_endpoint, json=mcp_request, headers=headers)
                 
-                logger.debug(f"MCP tool {tool_name} completed successfully")
-                
-                # Extract content from MCP result
-                if hasattr(result, 'content') and result.content:
-                    # Convert content list to dictionary format
-                    content_dict = {}
-                    for item in result.content:
-                        if hasattr(item, 'type') and hasattr(item, 'text'):
-                            if item.type == 'text':
-                                content_dict['text'] = item.text
-                        elif hasattr(item, 'data'):
-                            content_dict.update(item.data if isinstance(item.data, dict) else {})
+                if response.status_code == 200:
+                    result_data = response.json()
                     
-                    return content_dict if content_dict else {"result": "success"}
+                    # Check for MCP protocol error
+                    if "error" in result_data:
+                        logger.error(f"MCP protocol error: {result_data['error']}")
+                        return {
+                            "error": "mcp_protocol_error",
+                            "message": str(result_data["error"])
+                        }
+                    
+                    # Extract result from MCP response
+                    mcp_result = result_data.get("result", {})
+                    content = mcp_result.get("content", [])
+                    
+                    logger.debug(f"MCP tool {tool_name} completed successfully with {len(content)} content items")
+                    
+                    # Parse content from MCP response
+                    if content and isinstance(content, list):
+                        # Look for text content with JSON data
+                        for item in content:
+                            if isinstance(item, dict) and item.get("type") == "text":
+                                text_content = item.get("text", "")
+                                try:
+                                    # Try to parse as JSON
+                                    import json
+                                    parsed_data = json.loads(text_content)
+                                    return {
+                                        "success": True,
+                                        "result": parsed_data
+                                    }
+                                except json.JSONDecodeError:
+                                    # Return as formatted text
+                                    return {
+                                        "success": True,
+                                        "result": {"text_content": text_content}
+                                    }
+                        
+                        # If no text content found, return content array
+                        return {
+                            "success": True,
+                            "result": {"content": content}
+                        }
+                    else:
+                        # Return basic success
+                        return {
+                            "success": True,
+                            "result": mcp_result
+                        }
                 else:
-                    return {"result": "success"}
+                    logger.error(f"HTTP error calling MCP server: {response.status_code} - {response.text}")
+                    return {
+                        "error": f"http_error_{response.status_code}",
+                        "message": f"MCP server returned {response.status_code}: {response.text}"
+                    }
                     
         except Exception as e:
             error_msg = f"Error executing MCP tool {tool_name}: {str(e)}"
