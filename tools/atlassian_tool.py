@@ -172,7 +172,8 @@ class AtlassianTool:
                 # Step 2: Send initialized notification to complete handshake
                 initialized_request = {
                     "jsonrpc": "2.0",
-                    "method": "notifications/initialized"
+                    "method": "notifications/initialized",
+                    "params": {}
                 }
                 
                 # Add session ID to headers if available
@@ -183,6 +184,14 @@ class AtlassianTool:
                 logger.debug(f"Sending initialized notification: {initialized_request}")
                 init_response = await client.post(str(session_url), json=initialized_request, headers=initialized_headers)
                 logger.debug(f"Initialized response: {init_response.status_code}")
+                
+                # Wait for the initialization to complete before proceeding
+                if init_response.status_code != 200:
+                    logger.error(f"Failed to send initialized notification: {init_response.status_code}")
+                    return {
+                        "error": "initialization_failed",
+                        "message": f"Failed to complete MCP handshake: {init_response.text}"
+                    }
                 
                 # Step 3: Call the tool using the session URL with session headers
                 tool_request = {
