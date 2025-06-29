@@ -489,6 +489,17 @@ The system uses environment variables for configuration management and supports 
 - **Test Results**: Orchestrator correctly identifies atlassian_search tool needs, generates proper action types (search_jira_issues, create_jira_issue, search_confluence_pages)
 - **Status**: Production-ready Atlassian integration with verified API connectivity enabling comprehensive project management operations
 
+✅ **June 29, 2025 - CRITICAL CONFLUENCE PAGE ACCESS BUG FIXED (PRODUCTION READY)**
+- **Root Cause Identified**: AtlassianTool contained leftover `_make_mcp_request()` method calls from old MCP server approach causing "object has no attribute" errors
+- **Method Calls Fixed**: Replaced 2 remaining MCP calls in `get_confluence_page()` and `create_jira_issue()` with proper REST API calls
+- **Direct API Migration**: Updated `get_confluence_page()` to use `_make_confluence_request()` and `create_jira_issue()` to use `_make_jira_request()`
+- **Complete Architecture Consistency**: All Atlassian tool methods now use direct REST API calls consistently without MCP dependencies
+- **Error Handling Improved**: Confluence page access now properly handles 404 errors for invalid page IDs with graceful error messages
+- **Verified Functionality**: Confluence search returns 3 results for template queries, page access works correctly with proper error handling
+- **User Impact**: Eliminates agent crashes when attempting to access Confluence pages, ensuring reliable documentation search and retrieval
+- **Files Modified**: tools/atlassian_tool.py (fixed `get_confluence_page()` and `create_jira_issue()` methods)
+- **Status**: Confluence page access fully operational with consistent REST API architecture
+
 ✅ **June 29, 2025 - OUTLOOK MEETING INTEGRATION IMPLEMENTED (WRITE OPERATIONS ENABLED)**
 - **Complete Microsoft Graph API Integration**: Built comprehensive Outlook meeting tool with Microsoft Graph API authentication and calendar operations
 - **Meeting Management Capabilities**: Schedule meetings, check availability, find meeting times, and retrieve calendar events with Teams integration
