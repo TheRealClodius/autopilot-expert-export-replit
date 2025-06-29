@@ -63,7 +63,8 @@ class ProgressEvent:
                 "evaluating": "I am evaluating different approaches",
                 "weighing": "I am weighing the available options",
                 "determining": "I am determining the best course of action",
-                "thinking": "I am thinking through this systematically"
+                "thinking": "I am thinking through this systematically",
+                "streaming": "{context}"  # Direct streaming content from model
             },
             ProgressEventType.CONSIDERING: {
                 "options": "I am considering various options",
@@ -328,24 +329,35 @@ class StreamingReasoningEmitter:
     
     async def emit_reasoning_chunk(self, chunk_text: str, chunk_metadata: Optional[Dict[str, Any]] = None):
         """
-        Process and emit reasoning from a streaming chunk
+        Process and emit actual streaming content from Gemini model
         
         Args:
-            chunk_text: Text chunk from streaming response
+            chunk_text: Text chunk from streaming response (raw model output)
             chunk_metadata: Optional metadata about the chunk
         """
         try:
-            # Check if this appears to be a reasoning step
-            if self._is_reasoning_content(chunk_text):
-                # Apply debouncing to prevent spam
-                now = datetime.now()
-                if (self.last_reasoning_time and 
-                    (now - self.last_reasoning_time).total_seconds() < self.reasoning_debounce_seconds):
-                    return
+            # Clean up the chunk text for display
+            clean_text = chunk_text.strip()
+            if not clean_text:
+                return
                 
-                # Emit the reasoning step
-                await emit_reasoning_step(self.tracker, chunk_text)
-                self.last_reasoning_time = now
+            # Apply debouncing to prevent message spam
+            now = datetime.now()
+            if (self.last_reasoning_time and 
+                (now - self.last_reasoning_time).total_seconds() < self.reasoning_debounce_seconds):
+                return
+            
+            # Display the actual streaming content from the model
+            # Use italic formatting to distinguish from regular responses
+            formatted_message = f"_{clean_text}_"
+            
+            # Emit the actual reasoning/thinking content as progress
+            await self.tracker.emit_progress(
+                ProgressEventType.REASONING,
+                "streaming",
+                formatted_message
+            )
+            self.last_reasoning_time = now
                 
         except Exception as e:
             logger.error(f"Error emitting reasoning chunk: {e}")

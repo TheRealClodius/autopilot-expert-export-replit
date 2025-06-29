@@ -324,24 +324,19 @@ class GeminiClient:
                     
                     streaming_chunks.append(chunk_info)
                     
-                    # If this looks like a reasoning step (contains thinking patterns)
-                    if any(pattern in chunk_text.lower() for pattern in [
-                        "step", "first", "second", "next", "then", "because", 
-                        "therefore", "let me", "i need to", "considering", 
-                        "thinking", "reasoning", "analysis"
-                    ]):
-                        reasoning_steps.append(chunk_info)
-                        
-                        # Call reasoning callback for real-time updates
-                        if reasoning_callback:
-                            try:
-                                if asyncio.iscoroutinefunction(reasoning_callback):
-                                    await reasoning_callback(chunk_text, chunk_info)
-                                else:
-                                    reasoning_callback(chunk_text, chunk_info)
-                            except Exception as callback_error:
-                                # Don't let callback errors interrupt streaming
-                                logger.warning(f"Reasoning callback error: {callback_error}")
+                    # Always add to reasoning steps and call callback for ALL chunks
+                    reasoning_steps.append(chunk_info)
+                    
+                    # Call reasoning callback for ALL streaming content (real-time display)
+                    if reasoning_callback:
+                        try:
+                            if asyncio.iscoroutinefunction(reasoning_callback):
+                                await reasoning_callback(chunk_text, chunk_info)
+                            else:
+                                reasoning_callback(chunk_text, chunk_info)
+                        except Exception as callback_error:
+                            # Don't let callback errors interrupt streaming
+                            logger.warning(f"Reasoning callback error: {callback_error}")
                 
                 # Extract usage metadata from final chunk
                 usage_metadata = {}
