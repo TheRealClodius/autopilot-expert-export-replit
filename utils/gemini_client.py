@@ -267,7 +267,8 @@ class GeminiClient:
         user_prompt: str,
         model: str = None,
         max_tokens: int = 1000,
-        temperature: float = 0.7
+        temperature: float = 0.7,
+        reasoning_callback: Optional[callable] = None
     ) -> Dict[str, Any]:
         """
         Generate a streaming response to capture reasoning steps as they're generated.
@@ -330,6 +331,17 @@ class GeminiClient:
                         "thinking", "reasoning", "analysis"
                     ]):
                         reasoning_steps.append(chunk_info)
+                        
+                        # Call reasoning callback for real-time updates
+                        if reasoning_callback:
+                            try:
+                                if asyncio.iscoroutinefunction(reasoning_callback):
+                                    await reasoning_callback(chunk_text, chunk_info)
+                                else:
+                                    reasoning_callback(chunk_text, chunk_info)
+                            except Exception as callback_error:
+                                # Don't let callback errors interrupt streaming
+                                logger.warning(f"Reasoning callback error: {callback_error}")
                 
                 # Extract usage metadata from final chunk
                 usage_metadata = {}
