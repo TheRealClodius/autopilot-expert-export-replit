@@ -179,63 +179,11 @@ class AtlassianTool:
                 "Accept": "application/json, text/event-stream"
             }
             
-            # Deployment-aware connectivity with retry logic
-            deployment_urls = []
-            
-            # Check for deployment environment indicators
-            replit_domains = os.getenv("REPLIT_DOMAINS", "")
-            is_deployment = any([
-                os.getenv("REPLIT_DEPLOYMENT") == "1",
-                os.getenv("DEPLOYMENT_ENV") == "production",
-                os.getenv("PORT") and os.getenv("PORT") != "5000",  # Cloud Run uses dynamic ports
-                "replit.app" in replit_domains,
-                "replit.dev" in replit_domains,  # Fix: also check for replit.dev domains
-                len(replit_domains) > 0 and ("riker." in replit_domains or "wolf." in replit_domains)  # Replit internal domains
-            ])
-            
-            if is_deployment:
-                # In deployment, try container networking first
-                deployment_urls = [
-                    "http://mcp-atlassian-server:8001",  # Container name
-                    "http://mcp-server:8001",  # Alternative container name
-                    f"http://0.0.0.0:8001",  # Same host different interface
-                    f"http://127.0.0.1:8001",  # Local fallback
-                ]
-            
-            mcp_urls_to_try = [
-                self.mcp_server_url,  # Configured URL first
-                *deployment_urls,  # Deployment-specific URLs
-                "http://localhost:8001",  # Local development fallback
-                "http://127.0.0.1:8001",  # Alternative localhost
-                "http://0.0.0.0:8001"  # Wildcard fallback
-            ]
-            
-            working_url = None
-            last_error = None
-            
-            for url_to_test in mcp_urls_to_try:
-                try:
-                    async with httpx.AsyncClient(timeout=10.0) as client:
-                        # Test basic connectivity
-                        health_response = await client.get(f"{url_to_test}/healthz")
-                        if health_response.status_code == 200:
-                            working_url = url_to_test
-                            logger.info(f"MCP server connectivity verified at: {working_url}")
-                            break
-                except Exception as e:
-                    last_error = e
-                    logger.debug(f"Failed to connect to {url_to_test}: {e}")
-                    continue
-            
-            if not working_url:
-                logger.error(f"MCP server connectivity test failed: {last_error}")
-                return {
-                    "error": "mcp_server_unreachable", 
-                    "message": f"Cannot reach MCP server. Tried URLs: {', '.join(mcp_urls_to_try)}. Last error: {last_error}"
-                }
-            
-            # Use the working URL for actual MCP communication
+            # Use the configured MCP server URL directly (for remote separate project)
+            working_url = self.mcp_server_url
             base_endpoint = f"{working_url}/mcp"
+            
+            logger.info(f"Connecting to remote MCP server at: {working_url}")
             
             async with httpx.AsyncClient(timeout=60.0, follow_redirects=True) as client:
                 # Step 1: Create session via redirect handling
