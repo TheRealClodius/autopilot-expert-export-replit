@@ -29,6 +29,12 @@ class Settings(BaseSettings):
     # Perplexity Configuration
     PERPLEXITY_API_KEY: str = os.getenv("PERPLEXITY_API_KEY", "")
     
+    # Microsoft Graph/Outlook Configuration
+    MICROSOFT_CLIENT_ID: str = os.getenv("MICROSOFT_CLIENT_ID", "")
+    MICROSOFT_CLIENT_SECRET: str = os.getenv("MICROSOFT_CLIENT_SECRET", "")
+    MICROSOFT_TENANT_ID: str = os.getenv("MICROSOFT_TENANT_ID", "")
+    MICROSOFT_SCOPE: str = os.getenv("MICROSOFT_SCOPE", "https://graph.microsoft.com/.default")
+    
     # Redis Configuration (optional - fallback to in-memory cache if not available)
     REDIS_URL: str = os.getenv("REDIS_URL", "")
     REDIS_PASSWORD: Optional[str] = os.getenv("REDIS_PASSWORD")

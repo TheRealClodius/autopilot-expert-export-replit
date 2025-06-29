@@ -13,6 +13,7 @@ from datetime import datetime
 from utils.gemini_client import GeminiClient
 from tools.vector_search import VectorSearchTool
 from tools.perplexity_search import PerplexitySearchTool
+from tools.outlook_meeting import OutlookMeetingTool
 from agents.client_agent import ClientAgent
 from agents.observer_agent import ObserverAgent
 from services.memory_service import MemoryService
@@ -32,6 +33,7 @@ class OrchestratorAgent:
         self.gemini_client = GeminiClient()
         self.vector_tool = VectorSearchTool()
         self.perplexity_tool = PerplexitySearchTool()
+        self.outlook_tool = OutlookMeetingTool()
         self.client_agent = ClientAgent()
         self.observer_agent = ObserverAgent()
         self.memory_service = memory_service
@@ -319,7 +321,7 @@ Current Query: "{message.text}"
         Returns:
             Dictionary containing gathered information from vector search
         """
-        gathered_info = {"vector_results": [], "perplexity_results": []}
+        gathered_info = {"vector_results": [], "perplexity_results": [], "meeting_results": []}
         
         try:
             tools_needed = plan.get("tools_needed", [])
@@ -389,6 +391,86 @@ Current Query: "{message.text}"
                             if self.progress_tracker:
                                 await emit_error(self.progress_tracker, "search_error", f"issue with search query")
                             # Continue with other queries even if one fails
+            
+            # Execute Outlook meeting actions if needed
+            if "outlook_meeting" in tools_needed:
+                meeting_actions = plan.get("meeting_actions", [])
+                if meeting_actions:
+                    logger.info(f"Executing {len(meeting_actions)} Outlook meeting actions")
+                    gathered_info["meeting_results"] = []
+                    
+                    for action in meeting_actions:
+                        action_type = action.get("type")
+                        
+                        if self.progress_tracker:
+                            await emit_processing(self.progress_tracker, "meeting_action", f"processing {action_type} request")
+                        
+                        try:
+                            if action_type == "check_availability":
+                                result = await self.outlook_tool.check_availability(
+                                    email_addresses=action.get("emails", []),
+                                    start_time=action.get("start_time"),
+                                    end_time=action.get("end_time"),
+                                    timezone=action.get("timezone", "UTC")
+                                )
+                            elif action_type == "schedule_meeting":
+                                result = await self.outlook_tool.schedule_meeting(
+                                    subject=action.get("subject", "Meeting"),
+                                    attendee_emails=action.get("attendees", []),
+                                    start_time=action.get("start_time"),
+                                    end_time=action.get("end_time"),
+                                    body=action.get("body", ""),
+                                    location=action.get("location", ""),
+                                    timezone=action.get("timezone", "UTC"),
+                                    is_online_meeting=action.get("is_online", True)
+                                )
+                            elif action_type == "find_meeting_times":
+                                result = await self.outlook_tool.find_meeting_times(
+                                    attendee_emails=action.get("attendees", []),
+                                    duration_minutes=action.get("duration", 60),
+                                    max_candidates=action.get("max_suggestions", 10),
+                                    start_date=action.get("start_date"),
+                                    end_date=action.get("end_date"),
+                                    timezone=action.get("timezone", "UTC")
+                                )
+                            elif action_type == "get_calendar":
+                                result = await self.outlook_tool.get_calendar_events(
+                                    start_date=action.get("start_date"),
+                                    end_date=action.get("end_date"),
+                                    timezone=action.get("timezone", "UTC"),
+                                    max_events=action.get("max_events", 20)
+                                )
+                            else:
+                                logger.warning(f"Unknown meeting action type: {action_type}")
+                                continue
+                            
+                            if result and "error" not in result:
+                                gathered_info["meeting_results"].append({
+                                    "action_type": action_type,
+                                    "result": result,
+                                    "success": True
+                                })
+                                if self.progress_tracker:
+                                    await emit_processing(self.progress_tracker, "analyzing_results", f"meeting {action_type} completed")
+                            else:
+                                gathered_info["meeting_results"].append({
+                                    "action_type": action_type,
+                                    "error": result.get("error", "Unknown error") if result else "No result",
+                                    "success": False
+                                })
+                                if self.progress_tracker:
+                                    await emit_warning(self.progress_tracker, "meeting_error", f"{action_type} encountered an issue")
+                                    
+                        except Exception as meeting_error:
+                            logger.error(f"Meeting action error for {action_type}: {meeting_error}")
+                            gathered_info["meeting_results"].append({
+                                "action_type": action_type,
+                                "error": str(meeting_error),
+                                "success": False
+                            })
+                            if self.progress_tracker:
+                                await emit_error(self.progress_tracker, "meeting_error", f"issue with {action_type}")
+                            # Continue with other actions even if one fails
             
             logger.info(f"Gathered {len(gathered_info['vector_results'])} vector results and {len(gathered_info['perplexity_results'])} web results")
             return gathered_info
@@ -463,7 +545,8 @@ Current Query: "{message.text}"
                     "intent": execution_plan.get("analysis", ""),
                     "tools_used": execution_plan.get("tools_needed", []),
                     "search_results": gathered_information.get("vector_results", [])[:3] if gathered_information.get("vector_results") else [],  # Limit to top 3 results
-                    "web_results": gathered_information.get("perplexity_results", [])[:2] if gathered_information.get("perplexity_results") else []  # Limit to top 2 web results
+                    "web_results": gathered_information.get("perplexity_results", [])[:2] if gathered_information.get("perplexity_results") else [],  # Limit to top 2 web results
+                    "meeting_results": gathered_information.get("meeting_results", [])  # Include all meeting results
                 },
                 "response_thread_ts": message.thread_ts or message.message_ts,
                 "trace_id": self._get_current_trace_id()
