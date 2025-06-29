@@ -8,6 +8,7 @@ using the proper MCP client protocol.
 import asyncio
 import logging
 import json
+import os
 import uuid
 from typing import Dict, Any, Optional, List
 import httpx
@@ -148,9 +149,29 @@ class AtlassianTool:
             }
             
             # Deployment-aware connectivity with retry logic
+            deployment_urls = []
+            
+            # Check for deployment environment indicators
+            is_deployment = any([
+                os.getenv("REPLIT_DEPLOYMENT") == "1",
+                os.getenv("DEPLOYMENT_ENV") == "production",
+                os.getenv("PORT") and os.getenv("PORT") != "5000",  # Cloud Run uses dynamic ports
+                "replit.app" in os.getenv("REPLIT_DOMAINS", "")
+            ])
+            
+            if is_deployment:
+                # In deployment, try container networking first
+                deployment_urls = [
+                    "http://mcp-atlassian-server:8001",  # Container name
+                    "http://mcp-server:8001",  # Alternative container name
+                    f"http://0.0.0.0:8001",  # Same host different interface
+                    f"http://127.0.0.1:8001",  # Local fallback
+                ]
+            
             mcp_urls_to_try = [
                 self.mcp_server_url,  # Configured URL first
-                "http://localhost:8001",  # Standard fallback
+                *deployment_urls,  # Deployment-specific URLs
+                "http://localhost:8001",  # Local development fallback
                 "http://127.0.0.1:8001",  # Alternative localhost
                 "http://0.0.0.0:8001"  # Wildcard fallback
             ]

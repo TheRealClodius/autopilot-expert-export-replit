@@ -74,6 +74,9 @@ class Settings(BaseSettings):
     LANGSMITH_PROJECT: str = os.getenv("LANGSMITH_PROJECT", "autopilot-expert-multi-agent")
     LANGSMITH_ENDPOINT: str = os.getenv("LANGSMITH_ENDPOINT", "https://api.smith.langchain.com")
     
+    # MCP Server Configuration
+    MCP_SERVER_URL: str = os.getenv("MCP_SERVER_URL", "http://localhost:8001")
+    
     def get_monitored_channels(self) -> List[str]:
         """Get list of channels to monitor for data ingestion"""
         if not self.SLACK_CHANNELS_TO_MONITOR:
