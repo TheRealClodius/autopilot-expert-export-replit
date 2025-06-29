@@ -12,7 +12,7 @@ import uuid
 from typing import Dict, Any, List, Optional
 from datetime import datetime, timezone
 import traceback
-from dataclasses import dataclass, asdict
+from dataclasses import dataclass, asdict, field
 from collections import defaultdict
 
 logger = logging.getLogger(__name__)

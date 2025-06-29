@@ -351,6 +351,9 @@ async def process_slack_message(event_data: SlackEvent):
                     progress_tracker=progress_tracker
                 )
                 
+                # Set trace_id for production logging
+                orchestrator_with_progress._current_trace_id = trace_id
+                
                 # Forward to Orchestrator Agent for processing with progress tracking
                 response = await orchestrator_with_progress.process_query(processed_message)
                 
@@ -362,6 +365,9 @@ async def process_slack_message(event_data: SlackEvent):
                     final_response_text = response.get("text", "Sorry, I couldn't generate a response.")
                     await progress_updater(final_response_text)
                     logger.info("Successfully processed and updated Slack message with progress tracking")
+                    
+                    # Complete production trace with success
+                    production_logger.complete_trace(trace_id, final_result=response)
                     
                     # WEBHOOK CACHE: Store successful response for future use
                     if webhook_cache and webhook_cache.should_cache_response(event_data.dict(), {"status": "success", "response": response}):
@@ -2892,6 +2898,66 @@ Step 4: Let me consider the implications and trade-offs..."""
         }
     except Exception as e:
         logger.error(f"Error testing streaming reasoning: {e}")
+        return {"status": "error", "message": str(e)}
+
+@app.get("/admin/production-traces")
+async def get_production_traces(limit: int = 10):
+    """Admin endpoint to get latest production execution traces"""
+    try:
+        traces = production_logger.get_latest_traces(limit)
+        return {
+            "status": "success",
+            "traces": traces,
+            "count": len(traces)
+        }
+    except Exception as e:
+        logger.error(f"Error getting production traces: {e}")
+        return {"status": "error", "message": str(e)}
+
+@app.get("/admin/production-trace/{trace_id}")
+async def get_production_trace(trace_id: str):
+    """Admin endpoint to get specific production trace by ID"""
+    try:
+        trace = production_logger.get_trace_by_id(trace_id)
+        if not trace:
+            return {"status": "error", "message": f"Trace {trace_id} not found"}
+        
+        return {
+            "status": "success",
+            "trace": trace
+        }
+    except Exception as e:
+        logger.error(f"Error getting production trace {trace_id}: {e}")
+        return {"status": "error", "message": str(e)}
+
+@app.get("/admin/production-transcript/{trace_id}")
+async def get_production_transcript(trace_id: str):
+    """Admin endpoint to get human-readable execution transcript"""
+    try:
+        transcript = production_logger.get_execution_transcript(trace_id)
+        if not transcript:
+            return {"status": "error", "message": f"Transcript for trace {trace_id} not found"}
+        
+        return {
+            "status": "success",
+            "trace_id": trace_id,
+            "transcript": transcript
+        }
+    except Exception as e:
+        logger.error(f"Error getting production transcript {trace_id}: {e}")
+        return {"status": "error", "message": str(e)}
+
+@app.get("/admin/production-stats")
+async def get_production_stats():
+    """Admin endpoint to get production execution statistics"""
+    try:
+        stats = production_logger.get_production_stats()
+        return {
+            "status": "success",
+            "statistics": stats
+        }
+    except Exception as e:
+        logger.error(f"Error getting production statistics: {e}")
         return {"status": "error", "message": str(e)}
 
 if __name__ == "__main__":
