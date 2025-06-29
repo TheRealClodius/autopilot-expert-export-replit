@@ -56,7 +56,7 @@ class LazyLoader:
         """Preload critical modules in background"""
         def load_google_genai():
             try:
-                import google.generativeai as genai
+                from google import genai
                 return genai
             except ImportError:
                 return None
@@ -77,7 +77,7 @@ class LazyLoader:
         
         # Load modules in background thread
         modules_to_load = [
-            ('google.generativeai', load_google_genai),
+            ('google.genai', load_google_genai),
             ('sentence_transformers', load_sentence_transformers),
             ('pinecone', load_pinecone)
         ]

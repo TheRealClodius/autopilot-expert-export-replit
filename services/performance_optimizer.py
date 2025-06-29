@@ -87,7 +87,7 @@ class PerformanceOptimizer:
             
             def preload_modules():
                 modules_to_preload = [
-                    'google.generativeai',
+                    'google.genai',
                     'sentence_transformers',
                     'pinecone',
                     'numpy',
