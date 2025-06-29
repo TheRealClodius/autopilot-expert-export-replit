@@ -1,0 +1,47 @@
+{
+  "timestamp": "2025-06-29T21:09:20.951634",
+  "tests": {
+    "health_check": {
+      "status": "passed",
+      "details": {
+        "status": "healthy",
+        "service": "autopilot-expert"
+      }
+    },
+    "configuration": {
+      "status": "passed",
+      "details": "all_keys_present"
+    },
+    "system_status": {
+      "status": "passed",
+      "details": {
+        "redis": "healthy",
+        "celery": "unhealthy",
+        "agents": "healthy",
+        "services_initialized": true
+      }
+    },
+    "root_endpoint": {
+      "status": "passed",
+      "details": "responding"
+    },
+    "slack_webhook": {
+      "status": "passed",
+      "details": "url_verification_working"
+    },
+    "mcp_configuration": {
+      "status": "warning",
+      "details": "localhost_url_needs_update"
+    },
+    "port_config": {
+      "status": "passed",
+      "details": "dynamic_port_ready"
+    }
+  },
+  "summary": {
+    "total": 7,
+    "passed": 6,
+    "failed": 0,
+    "warnings": 1
+  }
+}
