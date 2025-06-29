@@ -79,6 +79,21 @@ The system uses environment variables for configuration management and supports 
 
 ## Recent Changes
 
+✅ **June 29, 2025 - MAJOR ARCHITECTURE REFACTOR: TWO-PROJECT DEPLOYMENT IMPLEMENTED (PRODUCTION READY)**
+- **Complete Architecture Restructure**: Separated monolithic system into two independent Replit projects for better scalability and maintainability
+- **Project 1 - Main Agent System**: FastAPI with Slack integration, multi-agent coordination, vector search, Perplexity, Outlook tools, and LangSmith tracing
+- **Project 2 - Standalone MCP Server**: Lightweight MCP-Atlassian service for independent deployment and scaling
+- **Dependency Elimination**: Removed Redis server, Docker, and MCP server from main project - all using memory-based fallbacks and external connections
+- **Independent Scaling**: Each service can now scale based on specific resource needs without affecting the other
+- **Simplified Deployment**: Eliminated complex dual-server startup scripts - each project deploys independently
+- **Enhanced Maintainability**: Changes to one service don't require redeploying the other
+- **Resource Optimization**: MCP server is lightweight (minimal dependencies), main app handles complex AI operations
+- **Clean Separation**: Main project connects to MCP server via configurable URL, no shared dependencies
+- **Production Files Created**: mcp_server_standalone.py, requirements_mcp_server.txt, .replit_mcp_server, DEPLOYMENT_TRIGGER.md
+- **Environment Configuration**: Clear separation of environment variables between projects
+- **Health Verification**: Both projects include comprehensive health check systems
+- **Status**: Main project ready for immediate deployment, MCP server files ready for separate project creation
+
 ✅ **June 27, 2025 - Cloud Run Deployment Configuration Fixed**
 - Updated application to use dynamic PORT environment variable for Cloud Run compatibility
 - Removed Redis and Celery dependencies from deployment configuration
