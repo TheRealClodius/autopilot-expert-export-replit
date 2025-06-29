@@ -30,7 +30,7 @@ os.environ["MCP_LOGGING_STDOUT"] = "true"
 # Set transport and port
 transport = "sse"  # Use SSE transport instead of stdio
 port = 8001
-host = "127.0.0.1"
+host = "0.0.0.0"
 
 async def main():
     """Run the MCP server with SSE transport"""
