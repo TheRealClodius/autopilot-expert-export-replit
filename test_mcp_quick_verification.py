@@ -1,88 +1,72 @@
 #!/usr/bin/env python3
 """
-Quick MCP Verification Test
+Quick MCP Parameter Fix Verification
 
-Verifies MCP integration works correctly with minimal tracing overhead.
+Quick test to verify if the orchestrator parameter fix resolves the validation issue.
 """
 
 import asyncio
-import time
 from tools.atlassian_tool import AtlassianTool
-from services.trace_manager import TraceManager
-from config import Settings
 
-async def test_mcp_quick():
-    print("🔧 QUICK MCP VERIFICATION TEST")
-    print("=" * 35)
+async def test_parameter_formats():
+    """Test both parameter formats to ensure they work"""
     
-    # Initialize tool without trace manager to avoid hanging issues
-    atlassian_tool = AtlassianTool(trace_manager=None)
+    print("=" * 60)
+    print("🔧 QUICK MCP PARAMETER VERIFICATION")
+    print("=" * 60)
     
-    print(f"✅ Tool Available: {atlassian_tool.available}")
-    print(f"✅ Credentials: {atlassian_tool._check_credentials()}")
-    print(f"✅ MCP Server: {atlassian_tool.mcp_server_url}")
+    atlassian_tool = AtlassianTool()
     
-    # Test 1: Quick health check
-    print(f"\n🔍 Health Check")
-    try:
-        health_start = time.time()
-        health = await atlassian_tool.check_server_health()
-        health_time = time.time() - health_start
-        print(f"   Status: {'✅ Healthy' if health else '❌ Unhealthy'} ({health_time:.2f}s)")
-    except Exception as e:
-        print(f"   Error: {e}")
+    # Test the exact formats that the orchestrator should now generate
+    test_scenarios = [
+        {
+            "name": "Jira Search (Fixed Format)",
+            "tool": "jira_search",
+            "params": {
+                "jql": "text ~ \"Autopilot\" OR summary ~ \"Autopilot\"",
+                "limit": 10
+            }
+        },
+        {
+            "name": "Confluence Search (Fixed Format)", 
+            "tool": "confluence_search",
+            "params": {
+                "query": "Autopilot for Everyone",
+                "limit": 10
+            }
+        }
+    ]
     
-    # Test 2: List tools
-    print(f"\n🔍 Available Tools")
-    try:
-        tools = await atlassian_tool.list_tools()
-        print(f"   Count: {len(tools)} tools")
-        print(f"   Tools: {', '.join(tools)}")
-    except Exception as e:
-        print(f"   Error: {e}")
-    
-    # Test 3: Quick Confluence search (with timeout)
-    print(f"\n🔍 Confluence Search Test")
-    try:
-        search_start = time.time()
+    for scenario in test_scenarios:
+        print(f"\n📝 {scenario['name']}")
+        print(f"   Tool: {scenario['tool']}")
+        print(f"   Params: {scenario['params']}")
         
-        # Quick search with short timeout
-        result = await asyncio.wait_for(
-            atlassian_tool.execute_mcp_tool(
-                tool_name="confluence_search",
-                arguments={"query": "Autopilot", "limit": 2}
-            ),
-            timeout=8.0  # 8 second timeout
-        )
-        
-        search_time = time.time() - search_start
-        success = result.get('success', False)
-        
-        print(f"   Duration: {search_time:.2f}s")
-        print(f"   Success: {success}")
-        
-        if success and result.get('result', {}).get('result'):
-            pages = result['result']['result']
-            print(f"   Found: {len(pages)} pages")
-            for i, page in enumerate(pages[:2]):
-                title = page.get('title', 'Unknown Title')[:40]
-                print(f"   {i+1}. {title}...")
-        else:
-            error = result.get('error', 'No data returned')
-            print(f"   Issue: {error}")
+        try:
+            result = await atlassian_tool.execute_mcp_tool(
+                scenario['tool'], 
+                scenario['params']
+            )
             
-    except asyncio.TimeoutError:
-        print(f"   ❌ Search timed out (>8s)")
-    except Exception as e:
-        print(f"   ❌ Error: {e}")
+            if "error" in result:
+                print(f"   ❌ Error: {result['error']}")
+                if "message" in result:
+                    print(f"      Details: {result['message']}")
+            else:
+                print(f"   ✅ Success!")
+                if "result" in result and isinstance(result["result"], list):
+                    print(f"      Found {len(result['result'])} results")
+                    if result["result"]:
+                        first_result = result["result"][0]
+                        title = first_result.get("title", first_result.get("summary", "No title"))
+                        print(f"      First result: {title}")
+                        
+        except Exception as e:
+            print(f"   ❌ Exception: {e}")
     
-    print(f"\n📊 Test Summary:")
-    print(f"✅ MCP server health verified")
-    print(f"✅ Tool connectivity confirmed") 
-    print(f"✅ Authentication working")
-    print(f"✅ Data retrieval functional")
-    print(f"⚠️  LangSmith trace completion may hang (background issue)")
-    print(f"\n🎯 Core MCP integration is working correctly!")
+    print("\n" + "=" * 60)
+    print("✅ If both tests show 'Success!' the parameter fix is working")
+    print("❌ If either shows 'jql is a required property', more fixes needed")
 
 if __name__ == "__main__":
-    asyncio.run(test_mcp_quick())
+    asyncio.run(test_parameter_formats())
