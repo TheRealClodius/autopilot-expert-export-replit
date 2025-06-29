@@ -1,84 +1,44 @@
-# Deployment Trigger - Ready for Production
+# CRITICAL DEPLOYMENT ENVIRONMENT VARIABLES
 
-## Pre-Deployment Test Results ✅
+## Redis Connection Error Fix
 
-The following critical fixes have been implemented and tested locally:
+**Problem:** Deployment showing `error dial tcp 127.0.0.1:6379: connect: connection refused`
 
-### 1. State Stack Bug Fix (CRITICAL) ✅
-- **Issue**: Bot unresponsive due to orchestrator using "current_query" but client agent expecting "query"
-- **Fix**: Added both keys to state stack for compatibility
-- **Files**: agents/orchestrator_agent.py (lines 284, 325)
-- **Status**: Implemented and ready for deployment
+**Root Cause:** When these environment variables are EMPTY in deployment, something defaults to `redis://localhost:6379`
 
-### 2. Response Length Optimization ✅
-- **Issue**: Truncated responses in Slack due to 500 token limit
-- **Fix**: Increased to 1500 tokens and 4000 character limit
-- **Files**: agents/client_agent.py
-- **Status**: Implemented and ready for deployment
+## REQUIRED DEPLOYMENT ENVIRONMENT VARIABLES
 
-### 3. Slack Formatting Fix ✅
-- **Issue**: Bold text not rendering properly in Slack
-- **Fix**: Changed from **markdown** to *Slack* formatting
-- **Files**: agents/client_agent.py
-- **Status**: Implemented and ready for deployment
-
-### 4. Rate Limiting Implementation ✅
-- **Issue**: "Sorry, I couldn't process your request" after multiple exchanges
-- **Fix**: Added 100ms delays between API calls
-- **Files**: utils/gemini_client.py
-- **Status**: Implemented and ready for deployment
-
-### 5. Enhanced User Metadata System ✅
-- **Feature**: Complete user profile integration (first name, title, department)
-- **Smart Greeting**: Context-aware name usage, not every message
-- **Personalized Responses**: Tailored expertise based on user role
-- **Files**: models/schemas.py, agents/slack_gateway.py, agents/orchestrator_agent.py, prompts.yaml
-- **Status**: Implemented and tested
-
-### 6. Clean Orchestrator Architecture ✅
-- **Feature**: Removed response approach and tone guidance from orchestrator
-- **Clean Separation**: Orchestrator builds state, Client agent handles formatting
-- **Simplified Planning**: Focus on analysis and tool usage only
-- **Files**: prompts.yaml, agents/orchestrator_agent.py
-- **Status**: Architecture cleaned and optimized
-
-### 7. Pre-Deployment Testing Protocol ✅
-- **Feature**: Automated testing before each deployment
-- **Tests**: Health check, system status, agent response
-- **Files**: test_before_deploy.sh
-- **Status**: Working and validated
-
-## Testing Protocol Results
+Set these explicitly in your deployment environment:
 
 ```bash
-🧪 Running Pre-Deployment Testing Protocol...
-===============================================
-1. Testing health endpoint...
-   ✅ Health check passed
-2. Testing system status...
-   ✅ System status check passed
-3. Testing agent response...
-   ✅ Agent response test passed
-
-🎉 All tests passed! Server is ready for deployment.
-===============================================
+# Disable Redis connections completely (RECOMMENDED)
+export CELERY_BROKER_URL=''
+export CELERY_RESULT_BACKEND=''
+export REDIS_URL=''
 ```
 
-## Production Issues These Fixes Address
+**Alternative option:**
+```bash
+# Use memory transport explicitly  
+export CELERY_BROKER_URL='memory://'
+export CELERY_RESULT_BACKEND='cache+memory://'
+export REDIS_URL=''
+```
 
-1. **Bot Unresponsiveness**: Fixed state stack mismatch causing None responses
-2. **Response Truncation**: Increased token limits for complete responses
-3. **Poor Slack Formatting**: Fixed bold text rendering
-4. **Rate Limiting Errors**: Added delays to prevent API overload
-5. **Deployment Safety**: Added mandatory testing protocol
+## Deployment Status
 
-## Next Steps
+- ✅ Application code updated to handle empty Redis configurations
+- ✅ Celery fallback to memory transport implemented
+- ✅ Health checks skip Redis when not configured
+- ✅ All localhost Redis URLs blocked and replaced with memory transport
+- 🔄 **DEPLOYMENT NEEDED:** Environment variables must be set explicitly
 
-1. Deploy the current codebase to production
-2. All fixes are implemented and tested locally
-3. System is ready for full Slack integration
-4. Pre-deployment testing protocol ensures quality
+## Verification
 
----
+After setting environment variables, check logs for:
+```
+- celery_app - INFO - Using memory transport (broker_url='')
+- celery_app - INFO - Using cache+memory backend (backend_url='')
+```
 
-**Ready for Production Deployment** 🚀
+This will eliminate ALL Redis connection attempts in deployment.

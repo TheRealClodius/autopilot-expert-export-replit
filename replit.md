@@ -791,6 +791,17 @@ The system uses environment variables for configuration management and supports 
 - **Production Impact**: Eliminates all remaining "dial tcp 127.0.0.1:6379: connect: connection refused" errors in deployment logs
 - **Status**: Complete Redis connection elimination achieved - system operates entirely without Redis dependencies in deployment
 
+✅ **June 29, 2025 - DEPLOYMENT ENVIRONMENT VARIABLES CONFIGURATION DOCUMENTED (CRITICAL FOR DEPLOYMENT)**
+- **Root Cause Identified**: When CELERY_BROKER_URL, CELERY_RESULT_BACKEND, and REDIS_URL are empty in deployment, underlying system defaults to redis://localhost:6379
+- **Deployment Solution**: Environment variables must be explicitly set to empty strings or memory transport to prevent default Redis connections
+- **Documentation Created**: DEPLOYMENT_TRIGGER.md with exact environment variable configuration required for deployment
+- **Recommended Configuration**: Export CELERY_BROKER_URL='', CELERY_RESULT_BACKEND='', REDIS_URL='' to disable Redis completely
+- **Alternative Configuration**: Export CELERY_BROKER_URL='memory://', CELERY_RESULT_BACKEND='cache+memory://', REDIS_URL='' for explicit memory transport
+- **Verification Process**: Deployment logs should show "Using memory transport" and "Using cache+memory backend" messages
+- **Files Created**: DEPLOYMENT_TRIGGER.md with comprehensive deployment configuration guide
+- **Production Impact**: Provides exact solution to eliminate Redis connection errors in deployment environments
+- **Status**: Complete deployment configuration documented - ready for environment variable setup
+
 ## Changelog
 
 ```
