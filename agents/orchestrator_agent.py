@@ -41,6 +41,18 @@ class OrchestratorAgent:
         self.observer_agent = ObserverAgent()
         self.memory_service = memory_service
         self.progress_tracker = progress_tracker
+        self.discovered_tools = []  # Will be populated with actual MCP tools
+        
+    async def discover_and_update_tools(self) -> List[Dict[str, Any]]:
+        """Discover available tools from MCP server and update tool list"""
+        if self.atlassian_tool.available:
+            tools = await self.atlassian_tool.discover_available_tools()
+            self.discovered_tools = tools
+            logger.info(f"Updated tool list with {len(tools)} total tools, {len(self.atlassian_tool.available_tools)} Atlassian tools")
+            return tools
+        else:
+            logger.warning("Atlassian tool not available for discovery")
+            return []
         
     async def process_query(self, message: ProcessedMessage) -> Optional[Dict[str, Any]]:
         """

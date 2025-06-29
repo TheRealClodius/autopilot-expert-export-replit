@@ -46,13 +46,7 @@ class AtlassianTool:
                 self.trace_manager = None
         else:
             self.trace_manager = None
-        self.available_tools = [
-            'jira_search',
-            'jira_get', 
-            'jira_create',
-            'confluence_search',
-            'confluence_get'
-        ]
+        self.available_tools = []  # Will be populated dynamically from MCP server
         
         # Check if credentials are available
         self.available = self._check_credentials()
@@ -61,6 +55,42 @@ class AtlassianTool:
             logger.info("HTTP-based Atlassian tool initialized successfully")
         else:
             logger.warning("Atlassian tool initialized but credentials missing")
+    
+    async def discover_available_tools(self) -> List[Dict[str, Any]]:
+        """Dynamically discover available tools from the MCP server"""
+        try:
+            async with httpx.AsyncClient(timeout=30.0) as client:
+                tools_request = {
+                    "jsonrpc": "2.0",
+                    "id": 1,
+                    "method": "tools/list",
+                    "params": {}
+                }
+                
+                response = await client.post(f"{self.mcp_server_url}/mcp", json=tools_request)
+                
+                if response.status_code == 200:
+                    data = response.json()
+                    if 'result' in data and 'tools' in data['result']:
+                        tools = data['result']['tools']
+                        
+                        # Update our available tools list with actual tool names
+                        self.available_tools = [tool['name'] for tool in tools 
+                                              if any(keyword in tool['name'].lower() 
+                                                   for keyword in ['jira', 'confluence', 'atlassian'])]
+                        
+                        logger.info(f"Discovered {len(self.available_tools)} Atlassian tools: {self.available_tools}")
+                        return tools
+                    else:
+                        logger.warning("No tools found in MCP server response")
+                        return []
+                else:
+                    logger.error(f"Failed to discover tools: {response.status_code} - {response.text}")
+                    return []
+                    
+        except Exception as e:
+            logger.error(f"Error discovering available tools: {e}")
+            return []
     
     def _get_deployment_aware_mcp_url(self) -> str:
         """
