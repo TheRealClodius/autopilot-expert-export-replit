@@ -1,5 +1,5 @@
 """
-Atlassian Tool - Integration with Atlassian services via MCP server for Jira and Confluence operations.
+Atlassian Tool - Integration with Atlassian services via MCP (Model Context Protocol) remote server.
 Provides access to Jira issues, Confluence pages, and project management capabilities.
 """
 
@@ -7,23 +7,27 @@ import json
 import logging
 import time
 import asyncio
-import httpx
 from typing import Dict, Any, List, Optional, Union
 from datetime import datetime
 from config import settings
 from services.trace_manager import trace_manager
+from mcp import client
+from mcp.client.session import ClientSession
+import subprocess
+import tempfile
+import os
 
 logger = logging.getLogger(__name__)
 
 class AtlassianTool:
     """
-    Atlassian integration tool using MCP (Model Context Protocol) server.
+    Atlassian integration tool using MCP (Model Context Protocol) remote server.
     Provides access to Jira and Confluence via the Atlassian MCP server.
     """
     
     def __init__(self):
         """Initialize Atlassian tool with MCP server configuration."""
-        # Configuration based on the provided working example
+        # Configuration for MCP server
         self.jira_url = settings.ATLASSIAN_JIRA_URL
         self.jira_username = settings.ATLASSIAN_JIRA_USERNAME
         self.jira_token = settings.ATLASSIAN_JIRA_TOKEN
@@ -31,8 +35,9 @@ class AtlassianTool:
         self.confluence_username = settings.ATLASSIAN_CONFLUENCE_USERNAME
         self.confluence_token = settings.ATLASSIAN_CONFLUENCE_TOKEN
         
-        # MCP server configuration
-        self.mcp_url = settings.ATLASSIAN_MCP_URL or "https://mcp.atlassian.com/v1/sse"
+        # MCP client session
+        self._session: Optional[ClientSession] = None
+        self._process: Optional[subprocess.Popen] = None
         
         self.available = bool(
             self.jira_url and self.jira_username and self.jira_token and
@@ -44,174 +49,113 @@ class AtlassianTool:
         else:
             logger.warning("Atlassian tool unavailable - missing credentials")
     
-    async def _make_confluence_request(self, endpoint: str, params: Dict[str, Any] = None) -> Dict[str, Any]:
-        """
-        Make a direct request to Confluence REST API.
+    async def _get_session(self) -> Optional[ClientSession]:
+        """Get or create MCP client session."""
+        if self._session is not None:
+            return self._session
         
-        Args:
-            endpoint: The API endpoint (without base URL)
-            params: Query parameters
-            
-        Returns:
-            Response from Confluence API
-        """
+        if not self.available:
+            logger.error("Cannot create MCP session - credentials not available")
+            return None
+        
         try:
-            # Use basic auth with email and API token
-            auth = (self.confluence_username, self.confluence_token)
+            # Create MCP server command
+            # For Atlassian MCP, we need to run the server with our credentials
+            mcp_command = [
+                "npx", 
+                "@modelcontextprotocol/server-atlassian",
+                "--jira-url", self.jira_url,
+                "--jira-username", self.jira_username,
+                "--jira-token", self.jira_token,
+                "--confluence-url", self.confluence_url,
+                "--confluence-username", self.confluence_username,
+                "--confluence-token", self.confluence_token
+            ]
             
-            # Build full URL
-            base_url = self.confluence_url.rstrip('/wiki')  # Remove /wiki if present
-            url = f"{base_url}/wiki/rest/api{endpoint}"
+            # Start the MCP server process
+            self._process = await asyncio.create_subprocess_exec(
+                *mcp_command,
+                stdin=subprocess.PIPE,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE
+            )
             
-            headers = {
-                "Accept": "application/json",
-                "Content-Type": "application/json"
-            }
+            # Create client session
+            self._session = ClientSession(
+                read_stream=self._process.stdout,
+                write_stream=self._process.stdin
+            )
             
-            async with httpx.AsyncClient(timeout=30.0) as client:
-                response = await client.get(
-                    url,
-                    params=params or {},
-                    headers=headers,
-                    auth=auth
-                )
-                response.raise_for_status()
-                
-                return response.json()
-                
+            # Initialize the session
+            await self._session.initialize()
+            
+            logger.info("MCP session established successfully")
+            return self._session
+            
         except Exception as e:
-            logger.error(f"Confluence API request failed: {e}")
-            return {"error": f"Confluence API request failed: {str(e)}"}
+            logger.error(f"Failed to create MCP session: {e}")
+            await self._cleanup_session()
+            return None
     
-    async def _make_jira_request(self, endpoint: str, params: Dict[str, Any] = None, method: str = "GET", data: Dict[str, Any] = None) -> Dict[str, Any]:
+    async def _cleanup_session(self):
+        """Clean up MCP session and process."""
+        if self._session:
+            try:
+                await self._session.close()
+            except Exception as e:
+                logger.warning(f"Error closing MCP session: {e}")
+            self._session = None
+        
+        if self._process:
+            try:
+                self._process.terminate()
+                await asyncio.wait_for(self._process.wait(), timeout=5.0)
+            except Exception as e:
+                logger.warning(f"Error terminating MCP process: {e}")
+                try:
+                    self._process.kill()
+                except Exception:
+                    pass
+            self._process = None
+    
+    async def _call_tool(self, tool_name: str, arguments: Dict[str, Any]) -> Dict[str, Any]:
         """
-        Make a direct request to Jira REST API.
+        Call a tool via MCP client.
         
         Args:
-            endpoint: The API endpoint (without base URL)
-            params: Query parameters
-            method: HTTP method
-            data: Request body data
+            tool_name: Name of the tool to call
+            arguments: Arguments for the tool
             
         Returns:
-            Response from Jira API
+            Tool response
         """
+        session = await self._get_session()
+        if not session:
+            return {"error": "MCP session not available"}
+        
         try:
-            # Use basic auth with email and API token
-            auth = (self.jira_username, self.jira_token)
+            # Call the tool
+            result = await session.call_tool(tool_name, arguments)
             
-            # Build full URL
-            url = f"{self.jira_url.rstrip('/')}/rest/api/2{endpoint}"
-            
-            headers = {
-                "Accept": "application/json",
-                "Content-Type": "application/json"
-            }
-            
-            async with httpx.AsyncClient(timeout=30.0) as client:
-                if method.upper() == "GET":
-                    response = await client.get(
-                        url,
-                        params=params or {},
-                        headers=headers,
-                        auth=auth
-                    )
+            # Convert result to dictionary format
+            if hasattr(result, 'content'):
+                if isinstance(result.content, list) and len(result.content) > 0:
+                    content = result.content[0]
+                    if hasattr(content, 'text'):
+                        try:
+                            return json.loads(content.text)
+                        except json.JSONDecodeError:
+                            return {"text": content.text}
+                    else:
+                        return {"content": str(content)}
                 else:
-                    response = await client.request(
-                        method,
-                        url,
-                        params=params or {},
-                        json=data,
-                        headers=headers,
-                        auth=auth
-                    )
-                response.raise_for_status()
-                
-                return response.json()
+                    return {"content": str(result.content)}
+            else:
+                return {"result": str(result)}
                 
         except Exception as e:
-            logger.error(f"Jira API request failed: {e}")
-            return {"error": f"Jira API request failed: {str(e)}"}
-    
-    def _build_smart_cql_query(self, query: str) -> str:
-        """
-        Build intelligent CQL query based on the type of request.
-        Handles creator searches, title searches, and general text searches.
-        """
-        query_lower = query.lower()
-        
-        # Handle creator-based searches
-        if any(phrase in query_lower for phrase in ["created by", "authored by", "made by", "by "]):
-            # Extract creator name from query
-            for phrase in ["created by ", "authored by ", "made by ", "by "]:
-                if phrase in query_lower:
-                    creator_name = query_lower.split(phrase)[1].strip()
-                    # Remove common trailing words
-                    creator_name = creator_name.replace(" pages", "").replace(" documents", "").strip()
-                    return f'creator = "{creator_name}"'
-        
-        # Handle title-specific searches
-        elif any(phrase in query_lower for phrase in ["title:", "titled ", "named ", "called "]):
-            # Extract title from query
-            title_part = query
-            for phrase in ["title:", "titled ", "named ", "called "]:
-                if phrase.lower() in query_lower:
-                    title_part = query_lower.split(phrase.lower())[1].strip()
-                    break
-            return f'title ~ "{title_part}"'
-        
-        # Handle space-specific searches
-        elif any(phrase in query_lower for phrase in ["in space", "space:"]):
-            # This would be handled by the space_key parameter, so do general search
-            return f'text ~ "{query}"'
-        
-        # Default to general text search
-        else:
-            return f'text ~ "{query}"'
-    
-    def _get_alternative_cql_queries(self, original_query: str, failed_cql: str) -> List[str]:
-        """
-        Generate alternative CQL queries when the original fails.
-        Handles common CQL syntax issues and provides fallback options.
-        """
-        alternatives = []
-        query_lower = original_query.lower()
-        
-        # If the failed query was a creator search, try variations
-        if 'creator =' in failed_cql:
-            # Extract the creator name and try different formats
-            creator_match = failed_cql.split('creator = "')[1].split('"')[0]
-            
-            # Try with displayName
-            alternatives.append(f'creator.displayName = "{creator_match}"')
-            
-            # Try with accountId approach (less likely to work without knowing the accountId)
-            # alternatives.append(f'creator.accountId = "{creator_match}"')
-            
-            # Fall back to text search that includes the creator name
-            alternatives.append(f'text ~ "{creator_match}"')
-            
-            # Try searching in the content for the name
-            alternatives.append(f'title ~ "{creator_match}" or text ~ "{creator_match}"')
-        
-        # If it was a text search that failed, try simpler approaches
-        elif 'text ~' in failed_cql:
-            search_term = failed_cql.split('text ~ "')[1].split('"')[0]
-            
-            # Try title search
-            alternatives.append(f'title ~ "{search_term}"')
-            
-            # Try a more specific search
-            alternatives.append(f'title ~ "{search_term}" or label = "{search_term}"')
-        
-        # Always fall back to the most basic search if nothing else works
-        if not alternatives:
-            # Extract key terms and do a simple text search
-            key_terms = original_query.replace("created by", "").replace("by", "").strip()
-            if key_terms:
-                alternatives.append(f'text ~ "{key_terms}"')
-        
-        return alternatives
+            logger.error(f"MCP tool call failed: {e}")
+            return {"error": f"MCP tool call failed: {str(e)}"}
     
     async def search_jira_issues(
         self,
@@ -220,7 +164,7 @@ class AtlassianTool:
         fields: Optional[List[str]] = None
     ) -> Dict[str, Any]:
         """
-        Search for Jira issues using JQL or text search.
+        Search for Jira issues using JQL via MCP.
         
         Args:
             query: JQL query or text search terms
@@ -248,44 +192,26 @@ class AtlassianTool:
                     {"trace_id": trace_manager.current_trace_id}
                 )
             
-            search_fields = fields if fields is not None else ["summary", "status", "priority", "assignee", "created", "updated"]
-            params = {
+            arguments = {
                 "jql": query,
-                "maxResults": max_results,
-                "fields": search_fields
+                "maxResults": max_results
             }
             
-            # Convert fields list to comma-separated string for Jira API
-            params["fields"] = ",".join(search_fields)
-            result = await self._make_jira_request("/search", params)
+            if fields:
+                arguments["fields"] = fields
+            
+            result = await self._call_tool("jira_search", arguments)
             
             if "error" in result:
                 return result
             
-            # Process and format results
-            issues = result.get("issues", [])
-            processed_issues = []
-            
-            for issue in issues:
-                fields_data = issue.get("fields", {})
-                processed_issue = {
-                    "key": issue.get("key"),
-                    "summary": fields_data.get("summary"),
-                    "status": fields_data.get("status", {}).get("name"),
-                    "priority": fields_data.get("priority", {}).get("name"),
-                    "assignee": fields_data.get("assignee", {}).get("displayName") if fields_data.get("assignee") else "Unassigned",
-                    "created": fields_data.get("created"),
-                    "updated": fields_data.get("updated"),
-                    "url": f"{self.jira_url.rstrip('/')}/browse/{issue.get('key')}"
-                }
-                processed_issues.append(processed_issue)
-            
+            # Format the result for consistency with the original API
             return {
                 "jira_search_results": {
                     "query": query,
                     "total_found": result.get("total", 0),
-                    "returned_count": len(processed_issues),
-                    "issues": processed_issues
+                    "returned_count": len(result.get("issues", [])),
+                    "issues": result.get("issues", [])
                 },
                 "response_time": round(time.time() - start_time, 2)
             }
@@ -297,7 +223,7 @@ class AtlassianTool:
     
     async def get_jira_issue(self, issue_key: str) -> Dict[str, Any]:
         """
-        Get detailed information about a specific Jira issue.
+        Get detailed information about a specific Jira issue via MCP.
         
         Args:
             issue_key: The Jira issue key (e.g., "PROJ-123")
@@ -323,30 +249,17 @@ class AtlassianTool:
                     {"trace_id": trace_manager.current_trace_id}
                 )
             
-            result = await self._make_jira_request(f"/issue/{issue_key}")
+            arguments = {
+                "issueKey": issue_key
+            }
+            
+            result = await self._call_tool("jira_get_issue", arguments)
             
             if "error" in result:
                 return result
             
-            # Process the issue data
-            fields = result.get("fields", {})
-            processed_issue = {
-                "key": result.get("key"),
-                "summary": fields.get("summary"),
-                "description": fields.get("description"),
-                "status": fields.get("status", {}).get("name"),
-                "priority": fields.get("priority", {}).get("name"),
-                "assignee": fields.get("assignee", {}).get("displayName") if fields.get("assignee") else "Unassigned",
-                "reporter": fields.get("reporter", {}).get("displayName"),
-                "created": fields.get("created"),
-                "updated": fields.get("updated"),
-                "project": fields.get("project", {}).get("name"),
-                "issue_type": fields.get("issuetype", {}).get("name"),
-                "url": f"{self.jira_url.rstrip('/')}/browse/{result.get('key')}"
-            }
-            
             return {
-                "jira_issue": processed_issue,
+                "jira_issue": result.get("issue", {}),
                 "response_time": round(time.time() - start_time, 2)
             }
             
@@ -362,7 +275,7 @@ class AtlassianTool:
         max_results: int = 10
     ) -> Dict[str, Any]:
         """
-        Search for Confluence pages.
+        Search for Confluence pages via MCP.
         
         Args:
             query: Search terms
@@ -390,70 +303,26 @@ class AtlassianTool:
                     {"trace_id": trace_manager.current_trace_id}
                 )
             
-            # Smart CQL query construction based on query type
-            cql_query = self._build_smart_cql_query(query)
-            if space_key:
-                cql_query += f" and space = \"{space_key}\""
-                
-            params = {
-                "cql": cql_query,
+            arguments = {
+                "cql": query,
                 "limit": max_results
             }
             
-            result = await self._make_confluence_request("/content/search", params)
+            if space_key:
+                arguments["spaceKey"] = space_key
             
-            # If we get an error and it looks like a CQL syntax issue, try alternative approaches
-            if "error" in result and "400" in str(result.get("error", "")):
-                logger.info(f"CQL query failed, trying alternative approach: {cql_query}")
-                
-                # Try alternative CQL approaches for common failures
-                alternative_queries = self._get_alternative_cql_queries(query, cql_query)
-                
-                for alt_query in alternative_queries:
-                    logger.info(f"Trying alternative CQL: {alt_query}")
-                    alt_params = {
-                        "cql": alt_query,
-                        "limit": max_results
-                    }
-                    if space_key:
-                        alt_params["cql"] += f" and space = \"{space_key}\""
-                    
-                    alt_result = await self._make_confluence_request("/content/search", alt_params)
-                    
-                    if "error" not in alt_result:
-                        logger.info(f"Alternative CQL query succeeded: {alt_query}")
-                        result = alt_result
-                        break
-                else:
-                    # If all alternatives failed, return the original error
-                    return result
-            elif "error" in result:
+            result = await self._call_tool("confluence_search", arguments)
+            
+            if "error" in result:
                 return result
-            
-            # Process results
-            pages = result.get("results", [])
-            processed_pages = []
-            
-            for page in pages:
-                processed_page = {
-                    "id": page.get("id"),
-                    "title": page.get("title"),
-                    "space_key": page.get("space", {}).get("key"),
-                    "space_name": page.get("space", {}).get("name"),
-                    "excerpt": page.get("excerpt", ""),
-                    "url": page.get("_links", {}).get("webui"),
-                    "last_modified": page.get("lastModified"),
-                    "version": page.get("version", {}).get("number")
-                }
-                processed_pages.append(processed_page)
             
             return {
                 "confluence_search_results": {
                     "query": query,
                     "space_key": space_key,
                     "total_found": result.get("totalSize", 0),
-                    "returned_count": len(processed_pages),
-                    "pages": processed_pages
+                    "returned_count": len(result.get("results", [])),
+                    "pages": result.get("results", [])
                 },
                 "response_time": round(time.time() - start_time, 2)
             }
@@ -465,7 +334,7 @@ class AtlassianTool:
     
     async def get_confluence_page(self, page_id: str) -> Dict[str, Any]:
         """
-        Get detailed information about a specific Confluence page.
+        Get detailed information about a specific Confluence page via MCP.
         
         Args:
             page_id: The Confluence page ID
@@ -491,29 +360,17 @@ class AtlassianTool:
                     {"trace_id": trace_manager.current_trace_id}
                 )
             
-            result = await self._make_confluence_request(f"/content/{page_id}", {
-                "expand": "body.storage,space,version,history"
-            })
+            arguments = {
+                "pageId": page_id
+            }
+            
+            result = await self._call_tool("confluence_get_page", arguments)
             
             if "error" in result:
                 return result
             
-            # Process the page data
-            processed_page = {
-                "id": result.get("id"),
-                "title": result.get("title"),
-                "space_key": result.get("space", {}).get("key"),
-                "space_name": result.get("space", {}).get("name"),
-                "content": result.get("body", {}).get("storage", {}).get("value", ""),
-                "url": result.get("_links", {}).get("webui"),
-                "version": result.get("version", {}).get("number"),
-                "created": result.get("history", {}).get("createdDate"),
-                "last_modified": result.get("version", {}).get("when"),
-                "author": result.get("version", {}).get("by", {}).get("displayName")
-            }
-            
             return {
-                "confluence_page": processed_page,
+                "confluence_page": result.get("page", {}),
                 "response_time": round(time.time() - start_time, 2)
             }
             
@@ -525,25 +382,25 @@ class AtlassianTool:
     async def create_jira_issue(
         self,
         project_key: str,
-        issue_type: str,
-        summary: str,
+        issue_type: str = "Task",
+        summary: str = "",
         description: str = "",
         priority: str = "Medium",
         assignee: Optional[str] = None
     ) -> Dict[str, Any]:
         """
-        Create a new Jira issue.
+        Create a new Jira issue via MCP.
         
         Args:
-            project_key: The project key where to create the issue
-            issue_type: Type of issue (e.g., "Task", "Bug", "Story")
-            summary: Issue summary/title
+            project_key: The project key
+            issue_type: Type of issue (Task, Bug, Story, etc.)
+            summary: Issue summary
             description: Issue description
             priority: Issue priority
-            assignee: Username to assign the issue to
+            assignee: Optional assignee username
             
         Returns:
-            Dict containing created issue information
+            Dict containing created issue details
         """
         if not self.available:
             return {
@@ -558,36 +415,33 @@ class AtlassianTool:
             if trace_manager.current_trace_id:
                 await trace_manager.log_agent_operation(
                     "atlassian_tool",
-                    f"jira_create_issue: {summary}",
-                    json.dumps({"project": project_key, "type": issue_type, "summary": summary}),
+                    f"jira_create_issue: {project_key}",
+                    json.dumps({
+                        "project_key": project_key,
+                        "issue_type": issue_type,
+                        "summary": summary
+                    }),
                     {"trace_id": trace_manager.current_trace_id}
                 )
             
-            issue_data = {
-                "project": {"key": project_key},
-                "issuetype": {"name": issue_type},
+            arguments = {
+                "projectKey": project_key,
+                "issueType": issue_type,
                 "summary": summary,
                 "description": description,
-                "priority": {"name": priority}
+                "priority": priority
             }
             
             if assignee:
-                issue_data["assignee"] = {"name": assignee}
+                arguments["assignee"] = assignee
             
-            result = await self._make_jira_request("/issue", method="POST", data={"fields": issue_data})
+            result = await self._call_tool("jira_create_issue", arguments)
             
             if "error" in result:
                 return result
             
             return {
-                "jira_issue_created": {
-                    "key": result.get("key"),
-                    "id": result.get("id"),
-                    "url": f"{self.jira_url.rstrip('/')}/browse/{result.get('key')}",
-                    "summary": summary,
-                    "project": project_key,
-                    "issue_type": issue_type
-                },
+                "jira_issue_created": result.get("issue", {}),
                 "response_time": round(time.time() - start_time, 2)
             }
             
@@ -595,3 +449,11 @@ class AtlassianTool:
             error_msg = f"Failed to create Jira issue: {str(e)}"
             logger.error(error_msg)
             return {"error": error_msg}
+    
+    async def __aenter__(self):
+        """Async context manager entry."""
+        return self
+    
+    async def __aexit__(self, exc_type, exc_val, exc_tb):
+        """Async context manager exit."""
+        await self._cleanup_session()
