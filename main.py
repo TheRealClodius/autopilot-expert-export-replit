@@ -25,6 +25,7 @@ from services.webhook_cache import WebhookCache
 from services.performance_optimizer import performance_optimizer
 from services.lazy_loader import lazy_loader
 from services.connection_pool import connection_pool
+from services.production_logger import production_logger
 
 # Import Celery only if configured
 try:
@@ -154,9 +155,17 @@ async def slack_events(request: Request, background_tasks: BackgroundTasks):
         if body.get("type") == "event_callback":
             event_data = SlackEvent(**body)
             
+            # Start production trace
+            trace_id = production_logger.start_slack_trace(event_data.event)
+            
             # ⏱️ STEP 3C: Event validation complete  
             validation_complete_time = time.time()
             logger.info(f"✅ STEP 3C: Event validation complete at {validation_complete_time:.6f} (validation: {validation_complete_time - json_parsed_time:.6f}s)")
+            
+            production_logger.log_step(trace_id, "validation", "main", "event_validation", {
+                "event_type": event_data.event.get("type"),
+                "validation_time_ms": (validation_complete_time - json_parsed_time) * 1000
+            })
             
             # Extract Slack timestamp for Step 2 analysis
             slack_timestamp = event_data.event.get("ts")
@@ -206,6 +215,7 @@ async def slack_events(request: Request, background_tasks: BackgroundTasks):
             event_data.event['webhook_received_time'] = webhook_received_time
             event_data.event['task_queue_time'] = task_queue_time
             event_data.event['slack_timestamp'] = slack_timestamp
+            event_data.event['trace_id'] = trace_id
             
             # Process the message in background (Steps 4-5 will be measured there)
             background_tasks.add_task(process_slack_message, event_data)
@@ -238,6 +248,7 @@ async def process_slack_message(event_data: SlackEvent):
         webhook_received_time = event_data.event.get('webhook_received_time', step4_start)
         task_queue_time = event_data.event.get('task_queue_time', step4_start)
         slack_timestamp = event_data.event.get('slack_timestamp')
+        trace_id = event_data.event.get('trace_id', 'unknown')
         
         logger.info(f"⚡ STEP 4 START: Background processing begins at {step4_start:.6f} for '{user_message_text}'")
         

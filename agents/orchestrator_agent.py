@@ -792,9 +792,19 @@ Current Query: "{message.text}"
                 return {"error": "No mcp_tool specified in action"}
             
             # Direct call to Atlassian tool using working pattern
+            import time
+            start_time = time.time()
             result = await self.atlassian_tool.execute_mcp_tool(mcp_tool, arguments)
+            duration_ms = (time.time() - start_time) * 1000
             
-
+            # Log MCP call to production logger
+            try:
+                from services.production_logger import production_logger
+                trace_id = getattr(self, '_current_trace_id', None)
+                if trace_id:
+                    production_logger.log_mcp_call(trace_id, mcp_tool, arguments, result, duration_ms)
+            except Exception:
+                pass  # Don't let logging errors break execution
             
             # Return result in expected format
             if result and result.get("success"):
