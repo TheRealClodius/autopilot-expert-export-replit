@@ -75,7 +75,7 @@ def initialize_services():
         # Initialize services
         memory_service = MemoryService()
         slack_gateway = SlackGateway()
-        orchestrator_agent = OrchestratorAgent(memory_service)
+        orchestrator_agent = OrchestratorAgent(memory_service, trace_manager=trace_manager)
         
         # Initialize webhook cache
         webhook_cache = WebhookCache(memory_service=memory_service)

@@ -364,6 +364,19 @@ class AtlassianTool:
                             "result": {"content": content}
                         }
                     else:
+                        # Calculate execution time and log to LangSmith
+                        end_time = asyncio.get_event_loop().time()
+                        duration_ms = (end_time - start_time) * 1000
+                        
+                        # Log successful MCP tool operation to LangSmith
+                        if self.trace_manager:
+                            await self.trace_manager.log_mcp_tool_operation(
+                                tool_name=tool_name,
+                                arguments=arguments,
+                                results=mcp_result,
+                                duration_ms=duration_ms
+                            )
+                        
                         # Return basic success
                         return {
                             "success": True,
@@ -420,6 +433,19 @@ class AtlassianTool:
                     "deployment_help": "Check MCP_SERVER_URL environment variable and ensure MCP server is running"
                 }
             else:
+                # Calculate execution time and log error to LangSmith
+                end_time = asyncio.get_event_loop().time()
+                duration_ms = (end_time - start_time) * 1000
+                
+                # Log failed MCP tool operation to LangSmith
+                if self.trace_manager:
+                    await self.trace_manager.log_mcp_tool_operation(
+                        tool_name=tool_name,
+                        arguments=arguments,
+                        duration_ms=duration_ms,
+                        error=error_msg
+                    )
+                
                 return {
                     "error": "execution_error",
                     "message": error_msg,

@@ -30,12 +30,12 @@ class OrchestratorAgent:
     Creates multi-step execution plans and manages the overall response flow.
     """
     
-    def __init__(self, memory_service: MemoryService, progress_tracker: Optional[ProgressTracker] = None):
+    def __init__(self, memory_service: MemoryService, progress_tracker: Optional[ProgressTracker] = None, trace_manager=None):
         self.gemini_client = GeminiClient()
         self.vector_tool = VectorSearchTool()
         self.perplexity_tool = PerplexitySearchTool()
         self.outlook_tool = OutlookMeetingTool()
-        self.atlassian_tool = AtlassianTool()
+        self.atlassian_tool = AtlassianTool(trace_manager=trace_manager)
         self.client_agent = ClientAgent()
         self.observer_agent = ObserverAgent()
         self.memory_service = memory_service
