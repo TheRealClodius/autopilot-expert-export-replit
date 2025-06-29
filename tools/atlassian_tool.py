@@ -472,7 +472,7 @@ class AtlassianTool:
         """Check if MCP server is healthy and responding"""
         try:
             async with httpx.AsyncClient(timeout=5.0) as client:
-                response = await client.get(f"{self.mcp_server_url}/healthz")
+                response = await client.get(f"{self.mcp_server_url}/health")
                 return response.status_code == 200
         except Exception as e:
             logger.error(f"MCP server health check failed: {e}")
