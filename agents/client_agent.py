@@ -333,7 +333,11 @@ class ClientAgent:
                                 key = issue.get("key", "")
                                 summary = issue.get("summary", "")[:50]
                                 status = issue.get("status", "")
-                                prompt_parts.append(f"     - {key}: {summary}... ({status})")
+                                url = issue.get("url", "")
+                                if url:
+                                    prompt_parts.append(f"     - <{url}|{key}>: {summary}... ({status})")
+                                else:
+                                    prompt_parts.append(f"     - {key}: {summary}... ({status})")
                         
                         elif action_type == "get_jira_issue":
                             issue_data = atlassian_data.get("jira_issue", {})
@@ -341,7 +345,11 @@ class ClientAgent:
                             summary = issue_data.get("summary", "")
                             status = issue_data.get("status", "")
                             assignee = issue_data.get("assignee", "")
-                            prompt_parts.append(f"     Issue: {key}")
+                            url = issue_data.get("url", "")
+                            if url:
+                                prompt_parts.append(f"     Issue: <{url}|{key}>")
+                            else:
+                                prompt_parts.append(f"     Issue: {key}")
                             prompt_parts.append(f"     Summary: {summary}")
                             prompt_parts.append(f"     Status: {status}")
                             prompt_parts.append(f"     Assignee: {assignee}")
@@ -356,14 +364,22 @@ class ClientAgent:
                             for page in pages[:3]:  # Show top 3 pages
                                 title = page.get("title", "")[:50]
                                 space = page.get("space_name", "")
-                                prompt_parts.append(f"     - {title}... (Space: {space})")
+                                url = page.get("url", "")
+                                if url:
+                                    prompt_parts.append(f"     - <{url}|{title}>... (Space: {space})")
+                                else:
+                                    prompt_parts.append(f"     - {title}... (Space: {space})")
                         
                         elif action_type == "get_confluence_page":
                             page_data = atlassian_data.get("confluence_page", {})
                             title = page_data.get("title", "")
                             space = page_data.get("space_name", "")
                             author = page_data.get("author", "")
-                            prompt_parts.append(f"     Page: {title}")
+                            url = page_data.get("url", "")
+                            if url:
+                                prompt_parts.append(f"     Page: <{url}|{title}>")
+                            else:
+                                prompt_parts.append(f"     Page: {title}")
                             prompt_parts.append(f"     Space: {space}")
                             prompt_parts.append(f"     Author: {author}")
                         
@@ -372,7 +388,11 @@ class ClientAgent:
                             key = issue_data.get("key", "")
                             summary = issue_data.get("summary", "")
                             project = issue_data.get("project", "")
-                            prompt_parts.append(f"     Created: {key}")
+                            url = issue_data.get("url", "")
+                            if url:
+                                prompt_parts.append(f"     Created: <{url}|{key}>")
+                            else:
+                                prompt_parts.append(f"     Created: {key}")
                             prompt_parts.append(f"     Summary: {summary}")
                             prompt_parts.append(f"     Project: {project}")
                     else:
