@@ -276,7 +276,7 @@ class AtlassianTool:
                     "assignee": fields_data.get("assignee", {}).get("displayName") if fields_data.get("assignee") else "Unassigned",
                     "created": fields_data.get("created"),
                     "updated": fields_data.get("updated"),
-                    "url": f"{self.jira_url}/browse/{issue.get('key')}"
+                    "url": f"{self.jira_url.rstrip('/')}/browse/{issue.get('key')}"
                 }
                 processed_issues.append(processed_issue)
             
@@ -342,7 +342,7 @@ class AtlassianTool:
                 "updated": fields.get("updated"),
                 "project": fields.get("project", {}).get("name"),
                 "issue_type": fields.get("issuetype", {}).get("name"),
-                "url": f"{self.jira_url}/browse/{result.get('key')}"
+                "url": f"{self.jira_url.rstrip('/')}/browse/{result.get('key')}"
             }
             
             return {
@@ -583,7 +583,7 @@ class AtlassianTool:
                 "jira_issue_created": {
                     "key": result.get("key"),
                     "id": result.get("id"),
-                    "url": f"{self.jira_url}/browse/{result.get('key')}",
+                    "url": f"{self.jira_url.rstrip('/')}/browse/{result.get('key')}",
                     "summary": summary,
                     "project": project_key,
                     "issue_type": issue_type
