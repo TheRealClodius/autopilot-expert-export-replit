@@ -126,19 +126,42 @@ class AtlassianTool:
                 "Accept": "application/json, text/event-stream"
             }
             
-            async with httpx.AsyncClient(timeout=60.0, follow_redirects=True) as client:
-                # First, test basic connectivity to help with deployment debugging
+            # Deployment-aware connectivity with retry logic
+            mcp_urls_to_try = [
+                self.mcp_server_url,  # Configured URL first
+                "http://localhost:8001",  # Standard fallback
+                "http://127.0.0.1:8001",  # Alternative localhost
+                "http://0.0.0.0:8001"  # Wildcard fallback
+            ]
+            
+            working_url = None
+            last_error = None
+            
+            for url_to_test in mcp_urls_to_try:
                 try:
-                    health_response = await client.get(f"{self.mcp_server_url}/healthz")
-                    logger.debug(f"MCP server health check: {health_response.status_code}")
-                    if health_response.status_code != 200:
-                        logger.warning(f"MCP server health check returned: {health_response.status_code}")
+                    async with httpx.AsyncClient(timeout=10.0) as client:
+                        # Test basic connectivity
+                        health_response = await client.get(f"{url_to_test}/healthz")
+                        if health_response.status_code == 200:
+                            working_url = url_to_test
+                            logger.info(f"MCP server connectivity verified at: {working_url}")
+                            break
                 except Exception as e:
-                    logger.error(f"MCP server connectivity test failed: {e}")
-                    return {
-                        "error": "mcp_server_unreachable",
-                        "message": f"Cannot reach MCP server at {self.mcp_server_url}. Check if MCP server is running and MCP_SERVER_URL is correct for your deployment environment."
-                    }
+                    last_error = e
+                    logger.debug(f"Failed to connect to {url_to_test}: {e}")
+                    continue
+            
+            if not working_url:
+                logger.error(f"MCP server connectivity test failed: {last_error}")
+                return {
+                    "error": "mcp_server_unreachable", 
+                    "message": f"Cannot reach MCP server. Tried URLs: {', '.join(mcp_urls_to_try)}. Last error: {last_error}"
+                }
+            
+            # Use the working URL for actual MCP communication
+            base_endpoint = f"{working_url}/mcp"
+            
+            async with httpx.AsyncClient(timeout=60.0, follow_redirects=True) as client:
                 # Step 1: Create session via redirect handling
                 session_request = {
                     "jsonrpc": "2.0",
