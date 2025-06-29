@@ -28,7 +28,7 @@ os.environ["MCP_VERBOSE"] = "true"
 os.environ["MCP_LOGGING_STDOUT"] = "true"
 
 # Set transport and port
-transport = "sse"  # Use SSE transport instead of stdio
+transport = "streamable-http"  # Use streamable-http transport instead of problematic SSE
 port = 8001
 host = "0.0.0.0"
 

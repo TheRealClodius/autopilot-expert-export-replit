@@ -101,28 +101,65 @@ class AtlassianTool:
         try:
             logger.debug(f"Executing MCP tool: {tool_name} with args: {arguments}")
             
-            # Use HTTP/JSON transport directly to FastMCP server
-            # FastMCP supports both SSE and streamable-http transports
-            mcp_endpoint = f"{self.mcp_server_url}/mcp"
-            
-            # Build MCP protocol request
-            mcp_request = {
-                "jsonrpc": "2.0",
-                "id": str(uuid.uuid4()),
-                "method": "tools/call",
-                "params": {
-                    "name": tool_name,
-                    "arguments": arguments
-                }
-            }
+            # Use FastMCP streamable-http transport with session management
+            # First create a session, then send the tool call
+            base_endpoint = f"{self.mcp_server_url}/mcp"
             
             headers = {
                 "Content-Type": "application/json",
-                "Accept": "application/json"
+                "Accept": "application/json, text/event-stream"
             }
             
-            async with httpx.AsyncClient(timeout=30.0) as client:
-                response = await client.post(mcp_endpoint, json=mcp_request, headers=headers)
+            async with httpx.AsyncClient(timeout=30.0, follow_redirects=False) as client:
+                # Step 1: Create session via redirect handling
+                session_request = {
+                    "jsonrpc": "2.0",
+                    "id": str(uuid.uuid4()),
+                    "method": "initialize",
+                    "params": {
+                        "protocolVersion": "2024-11-05",
+                        "capabilities": {},
+                        "clientInfo": {
+                            "name": "atlassian-client",
+                            "version": "1.0.0"
+                        }
+                    }
+                }
+                
+                logger.debug(f"Initializing MCP session with request: {session_request}")
+                session_response = await client.post(base_endpoint, json=session_request, headers=headers)
+                
+                # Handle redirect to session-specific endpoint
+                if session_response.status_code == 307:
+                    redirect_url = session_response.headers.get("location")
+                    if redirect_url:
+                        logger.debug(f"Following redirect to session URL: {redirect_url}")
+                        session_response = await client.post(redirect_url, json=session_request, headers=headers)
+                
+                if session_response.status_code != 200:
+                    logger.error(f"Failed to initialize MCP session: {session_response.status_code} - {session_response.text}")
+                    return {
+                        "error": f"session_init_failed_{session_response.status_code}",
+                        "message": f"Failed to initialize MCP session: {session_response.text}"
+                    }
+                
+                # Extract session endpoint from successful response
+                session_url = session_response.url
+                logger.debug(f"Session established at: {session_url}")
+                
+                # Step 2: Call the tool using the session URL
+                tool_request = {
+                    "jsonrpc": "2.0",
+                    "id": str(uuid.uuid4()),
+                    "method": "tools/call",
+                    "params": {
+                        "name": tool_name,
+                        "arguments": arguments
+                    }
+                }
+                
+                logger.debug(f"Calling MCP tool with request: {tool_request}")
+                response = await client.post(str(session_url), json=tool_request, headers=headers)
                 
                 if response.status_code == 200:
                     result_data = response.json()
