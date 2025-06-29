@@ -706,7 +706,7 @@ Current Query: "{message.text}"
         Returns:
             Result from successful execution, final error, or HITL escalation
         """
-        action_type = action.get("type", "unknown_action")
+        action_type = action.get("mcp_tool") or action.get("type", "unknown_action")
         max_retries = 5  # 5 loops max as specified
         
         for attempt in range(max_retries):
@@ -829,6 +829,7 @@ Current Query: "{message.text}"
         
         elif tool_name == "outlook_meeting":
             # Handle different Outlook meeting actions
+            action_type = action.get("type", "unknown")
             if action_type == "check_availability":
                 return await self.outlook_tool.check_availability(
                     email_addresses=action.get("emails", []),
