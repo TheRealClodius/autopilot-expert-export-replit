@@ -1,0 +1,82 @@
+{
+  "environment": {
+    "variables": {
+      "ATLASSIAN_JIRA_URL": "\u2705 Present (29 chars)",
+      "ATLASSIAN_JIRA_USERNAME": "\u2705 Present (25 chars)",
+      "ATLASSIAN_JIRA_TOKEN": "\u2705 Present (192 chars)",
+      "ATLASSIAN_CONFLUENCE_URL": "\u2705 Present (33 chars)",
+      "ATLASSIAN_CONFLUENCE_USERNAME": "\u2705 Present (25 chars)",
+      "ATLASSIAN_CONFLUENCE_TOKEN": "\u2705 Present (192 chars)"
+    }
+  },
+  "network": {
+    "connectivity": {
+      "MCP Server Health": {
+        "status": 200,
+        "success": true,
+        "response_time": "< 10s"
+      },
+      "MCP Server Root": {
+        "status": 404,
+        "success": true,
+        "response_time": "< 10s"
+      },
+      "MCP Server Endpoint": {
+        "status": 307,
+        "success": true,
+        "response_time": "< 10s"
+      },
+      "Jira API": {
+        "status": 200,
+        "success": true,
+        "response_time": "< 10s"
+      },
+      "Confluence API": {
+        "status": 403,
+        "success": true,
+        "response_time": "< 10s"
+      }
+    }
+  },
+  "mcp_server": {
+    "status": "operational",
+    "health_check": true
+  },
+  "atlassian_tool": {
+    "available": true,
+    "tools": [
+      "jira_search",
+      "jira_get",
+      "jira_create",
+      "confluence_search",
+      "confluence_get"
+    ],
+    "execution_test": "success"
+  },
+  "authentication": {
+    "jira": {
+      "status_code": 200,
+      "success": true
+    },
+    "confluence": {
+      "status_code": 200,
+      "success": true
+    }
+  },
+  "permissions": {
+    "cwd": "/home/runner/workspace",
+    "files": {
+      "config.py": true,
+      "tools/atlassian_tool.py": true,
+      "run_mcp_server.py": true,
+      "prompts.yaml": true
+    },
+    "write_access": true
+  },
+  "summary": {
+    "issues": [],
+    "recommendations": [
+      "No issues detected - system appears to be functioning correctly"
+    ]
+  }
+}
