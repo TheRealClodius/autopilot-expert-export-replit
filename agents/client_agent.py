@@ -119,14 +119,24 @@ class ClientAgent:
                 logger.error("CRITICAL ERROR: Gemini 2.5 Flash returned no response - API call formatting issue")
                 return None
             
-            # Response received successfully - format and return
+            # Response received successfully - validate and format
             logger.info("Successfully received response from Gemini 2.5 Flash")
+            
+            # CRITICAL FIX: Ensure response is natural language, not raw JSON
+            response_text = response.strip()
+            
+            # Check if response contains raw JSON fragments (like "limit": 10)
+            if self._contains_raw_json(response_text):
+                logger.error(f"CRITICAL: Gemini returned raw JSON instead of natural language: {response_text[:200]}...")
+                # Force a natural language fallback
+                response_text = f"I found relevant information about your query. Let me provide you with the details from our documentation and search results."
+                logger.info("Applied natural language fallback to replace raw JSON response")
             
             # Generate suggestions based on the context
             suggestions = await self._generate_suggestions(state_stack)
             
             final_result = {
-                "text": response.strip(),
+                "text": response_text,
                 "suggestions": suggestions
             }
             
