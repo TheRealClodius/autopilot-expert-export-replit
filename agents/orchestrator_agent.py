@@ -487,7 +487,8 @@ Current Query: "{message.text}"
                     gathered_info["atlassian_results"] = []
                     
                     for action in atlassian_actions:
-                        action_type = action.get("type")
+                        # Handle both modern MCP format and legacy format
+                        action_type = action.get("mcp_tool") or action.get("type")
                         
                         if self.progress_tracker:
                             await emit_processing(self.progress_tracker, "atlassian_action", f"processing {action_type} request")

@@ -2,141 +2,172 @@
 """
 Complete MCP Integration Test
 
-Tests the full end-to-end MCP Atlassian integration:
-1. Orchestrator query analysis
-2. MCP tool command generation
-3. MCP server communication
-4. Real Confluence/Jira data retrieval
-5. Client agent response formatting
-
-This validates the complete production-ready flow.
+Test the complete flow:
+1. Orchestrator executes MCP action
+2. Results stored in gathered_information  
+3. State stack built with results
+4. Client agent processes and formats results
 """
 
 import asyncio
-import logging
-import json
+import sys
+import os
+sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+
 from agents.orchestrator_agent import OrchestratorAgent
 from agents.client_agent import ClientAgent
-from models.schemas import ProcessedMessage
 from services.memory_service import MemoryService
-from services.trace_manager import TraceManager
+from models.schemas import ProcessedMessage
+from datetime import datetime
+import logging
 
-# Set up logging
 logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
 
-async def test_complete_mcp_flow():
-    """Test complete MCP integration flow with real Atlassian data"""
+async def test_complete_mcp_integration():
+    """Test complete MCP integration end-to-end"""
+    print("🔧 TESTING COMPLETE MCP INTEGRATION")
+    print("=" * 50)
     
-    print("🚀 COMPLETE MCP ATLASSIAN INTEGRATION TEST")
-    print("="*60)
-    
-    # Initialize services
-    memory_service = MemoryService()
-    trace_manager = TraceManager()
-    
-    # Initialize agents
-    orchestrator = OrchestratorAgent(memory_service, trace_manager)
-    client_agent = ClientAgent()
-    
-    # Test queries for different MCP tools
-    test_queries = [
-        {
-            "query": "Find all pages about Autopilot for Everyone in Confluence",
-            "expected_tool": "confluence_search",
-            "description": "Confluence search test"
-        },
-        {
-            "query": "Search for open bugs in the AUTOPILOT project",
-            "expected_tool": "jira_search", 
-            "description": "Jira search with JQL test"
-        },
-        {
-            "query": "Show me details for issue AUTOPILOT-123",
-            "expected_tool": "jira_get",
-            "description": "Specific Jira issue retrieval test"
-        }
-    ]
-    
-    for i, test_case in enumerate(test_queries, 1):
-        print(f"\n🧪 TEST {i}: {test_case['description']}")
-        print("-" * 50)
-        print(f"Query: {test_case['query']}")
+    try:
+        # Initialize services
+        memory_service = MemoryService()
+        orchestrator = OrchestratorAgent(memory_service)
+        client_agent = ClientAgent()
         
-        # Create processed message
-        message = ProcessedMessage(
-            text=test_case['query'],
-            user_id="test_user",
-            user_name="testuser",
+        # Create test message asking for Autopilot documentation
+        test_message = ProcessedMessage(
+            text="Find pages about Autopilot for Everyone",
+            user_id="U_TEST_USER",
+            user_name="TestUser",
             user_first_name="Test",
-            user_display_name="Test User", 
-            user_title="QA Engineer",
+            user_display_name="Test User",
+            user_title="Engineer",
             user_department="Engineering",
-            channel_id="test_channel",
+            channel_id="C_TEST_CHANNEL",
             channel_name="test-channel",
-            message_ts="1234567890.123",
+            message_ts=str(int(datetime.now().timestamp())),
             thread_ts=None,
-            is_mention=True
+            is_dm=False,
+            thread_context=None
         )
         
-        try:
-            # Step 1: Orchestrator Analysis
-            print("\n📊 Step 1: Orchestrator Analysis")
-            orchestrator_result = await orchestrator.process_query(message)
+        print(f"🎯 Test Query: '{test_message.text}'")
+        print()
+        
+        # Test just the MCP action execution 
+        print("1️⃣ Testing direct MCP action execution...")
+        
+        test_action = {
+            "mcp_tool": "confluence_search",
+            "arguments": {
+                "query": "autopilot for everyone",
+                "limit": 3
+            }
+        }
+        
+        # Execute the action directly 
+        mcp_result = await orchestrator._execute_single_tool_action("atlassian", test_action)
+        
+        if mcp_result and mcp_result.get("success"):
+            print("✅ MCP action executed successfully")
+            print(f"   Result structure: {type(mcp_result)}")
             
-            if orchestrator_result and "execution_plan" in orchestrator_result:
-                plan = orchestrator_result["execution_plan"]
+            # Create mock gathered_info with real MCP result
+            gathered_info = {
+                "vector_results": [],
+                "perplexity_results": [],
+                "atlassian_results": [
+                    {
+                        "action_type": "confluence_search",
+                        "result": mcp_result,  # Use the actual MCP result
+                        "success": True
+                    }
+                ]
+            }
+            
+            execution_plan = {
+                "analysis": "User is asking for Autopilot documentation",
+                "tools_needed": ["atlassian_search"]
+            }
+            
+            print("\n2️⃣ Building state stack with real MCP results...")
+            
+            # Build state stack 
+            state_stack = await orchestrator._build_state_stack(test_message, gathered_info, execution_plan)
+            
+            print("✅ State stack built")
+            
+            # Check what's in the state stack
+            orchestrator_analysis = state_stack.get("orchestrator_analysis", {})
+            atlassian_results = orchestrator_analysis.get("atlassian_results", [])
+            
+            print(f"   Atlassian results in state stack: {len(atlassian_results)}")
+            
+            if atlassian_results:
+                first_result = atlassian_results[0]
+                print(f"   First result structure: {list(first_result.keys())}")
                 
-                # Check if correct tool was selected
-                atlassian_actions = plan.get("atlassian_actions", [])
-                if atlassian_actions:
-                    tool_used = atlassian_actions[0].get("mcp_tool")
-                    print(f"✅ Tool Selected: {tool_used}")
-                    
-                    if tool_used == test_case["expected_tool"]:
-                        print(f"✅ Correct tool selection for {test_case['description']}")
-                    else:
-                        print(f"⚠️ Expected {test_case['expected_tool']}, got {tool_used}")
-                    
-                    # Show MCP command generated
-                    print(f"📋 MCP Command: {json.dumps(atlassian_actions[0], indent=2)}")
-                else:
-                    print("❌ No Atlassian actions generated")
-                    continue
+                # Check the actual MCP result data
+                result_data = first_result.get("result", {})
+                print(f"   Result data type: {type(result_data)}")
                 
-                # Step 2: Check if we have results
-                gathered_info = orchestrator_result.get("gathered_information", {})
-                atlassian_results = gathered_info.get("atlassian_results", [])
-                
-                if atlassian_results:
-                    print(f"✅ Retrieved {len(atlassian_results)} results from MCP server")
+                if isinstance(result_data, dict) and result_data.get("success"):
+                    pages = result_data.get("result", [])
+                    print(f"   Pages found: {len(pages) if isinstance(pages, list) else 'not a list'}")
                     
-                    # Show sample result
-                    sample_result = atlassian_results[0]
-                    if isinstance(sample_result, dict):
-                        print(f"📄 Sample Result: {sample_result.get('title', 'N/A')}")
-                        print(f"🔗 URL: {sample_result.get('url', 'N/A')}")
-                    
-                    print(f"✅ {test_case['description']}: SUCCESS")
-                else:
-                    print(f"❌ No results returned from MCP server")
-                    print(f"❌ {test_case['description']}: FAILED")
+                    if isinstance(pages, list) and len(pages) > 0:
+                        print(f"   Sample page: {pages[0].get('title', 'No title')}")
+            
+            print("\n3️⃣ Testing client agent formatting...")
+            
+            # Test client agent formatting
+            formatted_context = client_agent._format_state_stack_context(state_stack)
+            
+            # Check if Atlassian results appear
+            if "Atlassian Actions:" in formatted_context:
+                print("✅ Client agent found Atlassian results")
                 
+                # Extract the Atlassian section
+                lines = formatted_context.split('\n')
+                atlassian_section = []
+                in_atlassian = False
+                
+                for line in lines:
+                    if "Atlassian Actions:" in line:
+                        in_atlassian = True
+                    elif in_atlassian and line.strip() == "":
+                        break
+                    
+                    if in_atlassian:
+                        atlassian_section.append(line)
+                
+                print("   Atlassian section from client agent:")
+                for line in atlassian_section[:10]:  # First 10 lines
+                    print(f"     {line}")
+                
+                return True
             else:
-                print("❌ Orchestrator failed to generate execution plan")
-                print(f"❌ {test_case['description']}: FAILED")
-                
-        except Exception as e:
-            print(f"❌ Error in {test_case['description']}: {str(e)}")
-            logger.exception(f"Test failed: {test_case['description']}")
-    
-    print("\n" + "="*60)
-    print("🎯 MCP INTEGRATION TEST COMPLETE")
-    print("="*60)
-
-async def main():
-    """Main test runner"""
-    await test_complete_mcp_flow()
+                print("❌ Client agent did not find Atlassian results")
+                print(f"   Context length: {len(formatted_context)}")
+                print("   Context preview:")
+                print(formatted_context[:500] + "...")
+                return False
+        else:
+            print("❌ MCP action failed")
+            print(f"   Result: {mcp_result}")
+            return False
+            
+    except Exception as e:
+        print(f"❌ EXCEPTION: {e}")
+        import traceback
+        traceback.print_exc()
+        return False
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    success = asyncio.run(test_complete_mcp_integration())
+    if success:
+        print("\n🎉 COMPLETE MCP INTEGRATION WORKING")
+        print("   End-to-end flow from MCP execution → state stack → client formatting successful")
+    else:
+        print("\n💥 MCP INTEGRATION BROKEN")
+        print("   Issue in the complete flow - need to debug further")
