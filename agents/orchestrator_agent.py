@@ -383,7 +383,10 @@ Current Query: "{message.text}"
                             result = await self._execute_tool_action_with_generalized_retry("vector_search", vector_action, message)
                             
                             if result and not result.get("error"):
-                                gathered_info["vector_results"].extend(result if isinstance(result, list) else [result])
+                                # Extract actual results from the wrapped response
+                                actual_results = result.get("results", []) if isinstance(result, dict) else result
+                                if actual_results:
+                                    gathered_info["vector_results"].extend(actual_results if isinstance(actual_results, list) else [actual_results])
                             elif self.progress_tracker:
                                 # Emit warning if no results found or HITL required
                                 if result.get("hitl_required"):

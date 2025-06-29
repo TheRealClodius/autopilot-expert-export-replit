@@ -436,6 +436,22 @@ The system uses environment variables for configuration management and supports 
 - **Files Modified**: main.py (slack_events and process_slack_message functions enhanced with complete timing framework)
 - **Status**: System now processes messages successfully with full timing visibility for production delay analysis
 
+✅ **June 29, 2025 - GENERALIZED REACT PATTERN FOR ALL TOOLS IMPLEMENTED (PRODUCTION READY)**
+- **Universal Tool Retry System**: Implemented generalized ReAct pattern (Reason → Act → Observe → Reason → Act) for ALL tools, not just Atlassian-specific
+- **5-Loop Maximum with HITL**: System automatically retries failed tool operations up to 5 times, then escalates to Human-in-the-Loop intervention
+- **AI-Powered Failure Analysis**: Uses Gemini Flash to analyze any tool failure and determine intelligent corrections (syntax errors, parameter issues, format problems)
+- **Cross-Tool Intelligence**: Pattern works for Atlassian (CQL syntax), Vector Search (query optimization), Perplexity (parameter validation), and Outlook Meeting (data formatting)
+- **Automatic Syntax Correction**: When tools report syntax errors (400 Bad Request, etc.), orchestrator automatically reasons about corrections and retries
+- **Progressive Error Handling**: Each retry attempt uses AI reasoning to adjust approach - no manual intervention required for common syntax issues
+- **HITL Escalation Logic**: After 5 failed attempts, system provides clear error message indicating human intervention may be required
+- **Real-Time Progress Tracking**: Users see reasoning, retry attempts, and escalation decisions through live progress updates
+- **Fallback Heuristics**: When AI reasoning fails, system uses proven heuristic patterns for common tool failure scenarios
+- **Complete Tool Coverage**: Generalized pattern applied to atlassian_search, vector_search, perplexity_search, and outlook_meeting tools
+- **Method Architecture**: `_execute_tool_action_with_generalized_retry()` handles any tool with `_generalized_failure_reasoning()` for intelligent corrections
+- **Files Modified**: agents/orchestrator_agent.py (replaced tool-specific retry with universal pattern)
+- **Key Improvement**: Addresses user requirement "orchestrator should retry if tool says syntax is wrong, do its best to answer, 5 loops max then HITL"
+- **Status**: Production-ready universal ReAct pattern ensuring robust tool execution across all integrated systems
+
 ✅ **June 29, 2025 - ATLASSIAN DIRECT REST API INTEGRATION IMPLEMENTED AND TESTED (PRODUCTION READY)**
 - **Complete Atlassian Tool**: Built comprehensive AtlassianTool with direct REST API integration for both Jira and Confluence
 - **Direct API Access**: Replaced MCP server approach with reliable direct REST API calls using Basic Auth (email + API token)
