@@ -31,7 +31,7 @@ class AtlassianTool:
     
     def __init__(self, trace_manager=None):
         """Initialize HTTP-based Atlassian tool"""
-        self.mcp_server_url = settings.MCP_SERVER_URL
+        self.mcp_server_url = self._get_deployment_aware_mcp_url()
         self.sse_endpoint = f"{self.mcp_server_url}/mcp/sse"
         self.session_id = None
         self.messages_endpoint = None
@@ -61,6 +61,37 @@ class AtlassianTool:
             logger.info("HTTP-based Atlassian tool initialized successfully")
         else:
             logger.warning("Atlassian tool initialized but credentials missing")
+    
+    def _get_deployment_aware_mcp_url(self) -> str:
+        """
+        Get MCP server URL with deployment environment awareness.
+        
+        In Replit deployment environments, container networking may be different
+        from local development. This method provides smart URL detection.
+        """
+        base_url = settings.MCP_SERVER_URL
+        
+        # Detect deployment environment
+        replit_domains = os.getenv("REPLIT_DOMAINS", "")
+        is_deployment = any([
+            os.getenv("REPLIT_DEPLOYMENT") == "1",
+            os.getenv("DEPLOYMENT_ENV") == "production", 
+            os.getenv("PORT") and os.getenv("PORT") != "5000",
+            "replit.app" in replit_domains,
+            "replit.dev" in replit_domains,
+            len(replit_domains) > 0 and ("riker." in replit_domains or "wolf." in replit_domains)
+        ])
+        
+        if is_deployment:
+            # In deployment, try to use the configured URL or fallback to localhost
+            if base_url and "localhost" not in base_url and "127.0.0.1" not in base_url:
+                return base_url
+            else:
+                # For Replit deployments, both services run in same container
+                return "http://localhost:8001"
+        else:
+            # Local development
+            return base_url
     
     def _map_tool_name(self, our_tool_name: str) -> str:
         """Map our tool names to official MCP tool names
