@@ -494,8 +494,11 @@ Current Query: "{message.text}"
                             await emit_processing(self.progress_tracker, "atlassian_action", f"processing {action_type} request")
                         
                         try:
-                            # Execute action with generalized retry pattern
-                            result = await self._execute_tool_action_with_generalized_retry("atlassian", action, message)
+                            # Execute action with deployment-aware timeout handling
+                            result = await asyncio.wait_for(
+                                self._execute_tool_action_with_generalized_retry("atlassian", action, message),
+                                timeout=90.0  # Extended timeout for deployment environments
+                            )
                             
                             # Store result
                             if result and not result.get("error"):
@@ -514,6 +517,17 @@ Current Query: "{message.text}"
                                 })
                                 if self.progress_tracker:
                                     await emit_warning(self.progress_tracker, "atlassian_error", f"{action_type} encountered an issue")
+                        
+                        except asyncio.TimeoutError:
+                            logger.warning(f"Atlassian {action_type} timed out after 90 seconds (deployment environment)")
+                            gathered_info["atlassian_results"].append({
+                                "action_type": action_type,
+                                "error": "Request timed out in deployment environment. This may be due to slower network conditions.",
+                                "success": False,
+                                "timeout": True
+                            })
+                            if self.progress_tracker:
+                                await emit_warning(self.progress_tracker, "atlassian_timeout", f"{action_type} timed out - continuing with other sources")
                                     
                         except Exception as atlassian_error:
                             logger.error(f"Atlassian action error for {action_type}: {atlassian_error}")
