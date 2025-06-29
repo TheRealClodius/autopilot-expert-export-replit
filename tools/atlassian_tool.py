@@ -186,12 +186,15 @@ class AtlassianTool:
                 logger.debug(f"Initialized response: {init_response.status_code}")
                 
                 # Wait for the initialization to complete before proceeding
-                if init_response.status_code != 200:
+                # 202 Accepted is the correct response for notifications
+                if init_response.status_code not in [200, 202]:
                     logger.error(f"Failed to send initialized notification: {init_response.status_code}")
                     return {
                         "error": "initialization_failed",
                         "message": f"Failed to complete MCP handshake: {init_response.text}"
                     }
+                
+                logger.debug(f"MCP handshake completed successfully (status: {init_response.status_code})")
                 
                 # Step 3: Call the tool using the session URL with session headers
                 tool_request = {
