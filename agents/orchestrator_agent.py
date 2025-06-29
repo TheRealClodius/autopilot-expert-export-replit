@@ -53,15 +53,15 @@ class OrchestratorAgent:
         try:
             logger.info(f"Orchestrator processing query: {message.text[:100]}...")
             
-            # Emit initial thinking progress with query context
+            # Emit initial reasoning progress instead of generic "analyzing"
             if self.progress_tracker:
                 query_preview = message.text[:50] + "..." if len(message.text) > 50 else message.text
                 first_progress_time = time.time()
-                logger.info(f"⏱️  FIRST PROGRESS TRACE: About to emit '_Analyzing {query_preview}_' at {first_progress_time:.3f}")
-                await emit_thinking(self.progress_tracker, "analyzing", f"'{query_preview}'")
+                logger.info(f"⏱️  FIRST PROGRESS TRACE: About to emit reasoning progress at {first_progress_time:.3f}")
+                await emit_considering(self.progress_tracker, "requirements", f"how to best approach: {query_preview}")
                 post_progress_time = time.time()
                 progress_emit_duration = post_progress_time - first_progress_time
-                logger.info(f"⏱️  FIRST PROGRESS TRACE: Progress trace emitted at {post_progress_time:.3f} (emit took: {progress_emit_duration:.3f}s)")
+                logger.info(f"⏱️  FIRST PROGRESS TRACE: Reasoning progress emitted at {post_progress_time:.3f} (emit took: {progress_emit_duration:.3f}s)")
             
             # Store raw message in short-term memory (10 message sliding window)
             # Use consistent thread identifier: for new mentions use message_ts, for thread replies use thread_ts
@@ -81,9 +81,9 @@ class OrchestratorAgent:
             )
             
             plan_start = time.time()
-            # Emit planning progress with context about what we're planning
+            # Emit reasoning progress instead of generic "planning"
             if self.progress_tracker:
-                await emit_thinking(self.progress_tracker, "planning", "the best way to answer your question")
+                await emit_reasoning(self.progress_tracker, "evaluating", "different approaches to solve this effectively")
             
             # Analyze query and create execution plan with tracing
             execution_plan = await self._analyze_query_and_plan(message)
@@ -231,6 +231,7 @@ Current Query: "{message.text}"
                 
                 async def reasoning_callback(chunk_text: str, chunk_metadata: dict):
                     """Handle real-time reasoning chunks from Gemini streaming"""
+                    logger.info(f"🧠 REASONING CHUNK: {chunk_text[:100]}...")
                     if reasoning_emitter:
                         await reasoning_emitter.emit_reasoning_chunk(chunk_text, chunk_metadata)
                 
