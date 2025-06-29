@@ -439,7 +439,7 @@ The system uses environment variables for configuration management and supports 
 ✅ **June 29, 2025 - GENERALIZED REACT PATTERN FOR ALL TOOLS IMPLEMENTED (PRODUCTION READY)**
 - **Universal Tool Retry System**: Implemented generalized ReAct pattern (Reason → Act → Observe → Reason → Act) for ALL tools, not just Atlassian-specific
 - **5-Loop Maximum with HITL**: System automatically retries failed tool operations up to 5 times, then escalates to Human-in-the-Loop intervention
-- **AI-Powered Failure Analysis**: Uses Gemini Flash to analyze any tool failure and determine intelligent corrections (syntax errors, parameter issues, format problems)
+- **AI-Powered Failure Analysis**: Uses Gemini 2.5 Pro to analyze any tool failure and determine intelligent corrections (syntax errors, parameter issues, format problems)
 - **Cross-Tool Intelligence**: Pattern works for Atlassian (CQL syntax), Vector Search (query optimization), Perplexity (parameter validation), and Outlook Meeting (data formatting)
 - **Automatic Syntax Correction**: When tools report syntax errors (400 Bad Request, etc.), orchestrator automatically reasons about corrections and retries
 - **Progressive Error Handling**: Each retry attempt uses AI reasoning to adjust approach - no manual intervention required for common syntax issues
@@ -448,9 +448,10 @@ The system uses environment variables for configuration management and supports 
 - **Fallback Heuristics**: When AI reasoning fails, system uses proven heuristic patterns for common tool failure scenarios
 - **Complete Tool Coverage**: Generalized pattern applied to atlassian_search, vector_search, perplexity_search, and outlook_meeting tools
 - **Method Architecture**: `_execute_tool_action_with_generalized_retry()` handles any tool with `_generalized_failure_reasoning()` for intelligent corrections
-- **Files Modified**: agents/orchestrator_agent.py (replaced tool-specific retry with universal pattern)
+- **Gemini 2.5 Pro Consistency**: Fixed orchestrator to use Pro model for both query analysis AND failure reasoning (corrected from Flash)
+- **Files Modified**: agents/orchestrator_agent.py (replaced tool-specific retry with universal pattern, fixed model usage)
 - **Key Improvement**: Addresses user requirement "orchestrator should retry if tool says syntax is wrong, do its best to answer, 5 loops max then HITL"
-- **Status**: Production-ready universal ReAct pattern ensuring robust tool execution across all integrated systems
+- **Status**: Production-ready universal ReAct pattern ensuring robust tool execution across all integrated systems with consistent Pro-level reasoning
 
 ✅ **June 29, 2025 - ATLASSIAN DIRECT REST API INTEGRATION IMPLEMENTED AND TESTED (PRODUCTION READY)**
 - **Complete Atlassian Tool**: Built comprehensive AtlassianTool with direct REST API integration for both Jira and Confluence

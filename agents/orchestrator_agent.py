@@ -898,7 +898,7 @@ Current Query: "{message.text}"
             response = await self.gemini_client.generate_response(
                 system_prompt="You are an expert at analyzing tool failures and determining retry strategies. Focus on correcting syntax errors and parameter issues.",
                 user_prompt=reasoning_prompt,
-                model=self.gemini_client.flash_model,  # Use flash for quick reasoning
+                model=self.gemini_client.pro_model,  # Use Pro model for sophisticated reasoning
                 max_tokens=500,
                 temperature=0.1  # Low temperature for consistent reasoning
             )
