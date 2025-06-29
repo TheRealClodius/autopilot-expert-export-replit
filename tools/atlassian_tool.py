@@ -99,17 +99,28 @@ class AtlassianTool:
                 
                 # Use aggressive timeouts to prevent hangs
                 try:
+                    logger.info("Creating stdio client context...")
                     self._session_context = stdio_client(server_params)
+                    
+                    logger.info("Entering session context...")
                     read_stream, write_stream = await asyncio.wait_for(
                         self._session_context.__aenter__(),
-                        timeout=20.0  # Reduced from 30s
+                        timeout=30.0  # Give more time for uvx to download dependencies
                     )
                     
+                    logger.info("Creating ClientSession...")
                     self._session = ClientSession(read_stream, write_stream)
-                    await asyncio.wait_for(
+                    
+                    logger.info("Initializing session...")
+                    # Give the server more time to fully initialize after startup message
+                    await asyncio.sleep(2.0)  # Wait for server to be fully ready
+                    
+                    initialization_result = await asyncio.wait_for(
                         self._session.initialize(),
-                        timeout=10.0  # Reduced from 15s
+                        timeout=20.0  # Increased timeout for initialization
                     )
+                    
+                    logger.info(f"Session initialization completed: {initialization_result}")
                     
                     logger.info("MCP Atlassian session established successfully")
                     return self._session
