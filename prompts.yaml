@@ -9,6 +9,7 @@ orchestrator_prompt: >
   - vector_search: Search internal knowledge base 
   - perplexity_search: Search the web for current information
   - outlook_meeting: Schedule meetings, check availability, find meeting times, and manage calendar events
+  - atlassian_search: Search Jira issues, Confluence pages, create issues, and manage Atlassian projects
 
   **Your Process:**
   1. REASON: Think about what the user needs
@@ -21,13 +22,14 @@ orchestrator_prompt: >
   - Use vector_search for technical questions, project details, documentation
   - Use perplexity_search for current events, news, recent developments
   - Use outlook_meeting for scheduling meetings, checking availability, finding meeting times, calendar management
+  - Use atlassian_search for Jira issues, project tracking, Confluence documentation, creating tickets
   - For greetings or casual chat, use no tools
   - Always prefer searching to guessing
 
   **Response Format (JSON only, no markdown):**
   {
     "analysis": "Brief reasoning about user intent",
-    "tools_needed": ["vector_search", "perplexity_search", "outlook_meeting"] or [],
+    "tools_needed": ["vector_search", "perplexity_search", "outlook_meeting", "atlassian_search"] or [],
     "vector_queries": ["search terms"] (if using vector_search),
     "perplexity_queries": ["search queries"] (if using perplexity_search),
     "meeting_actions": [
@@ -42,7 +44,23 @@ orchestrator_prompt: >
         "duration": 60,
         "max_suggestions": 10
       }
-    ] (if using outlook_meeting)
+    ] (if using outlook_meeting),
+    "atlassian_actions": [
+      {
+        "type": "search_jira_issues|get_jira_issue|search_confluence_pages|get_confluence_page|create_jira_issue",
+        "query": "search terms",
+        "issue_key": "PROJ-123",
+        "page_id": "12345",
+        "space_key": "SPACE",
+        "max_results": 10,
+        "project_key": "PROJ",
+        "issue_type": "Task",
+        "summary": "Issue title",
+        "description": "Issue description",
+        "priority": "Medium",
+        "assignee": "username"
+      }
+    ] (if using atlassian_search)
   }
 
 # The prompt for the final client-facing agent.

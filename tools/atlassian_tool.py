@@ -92,7 +92,7 @@ class AtlassianTool:
         self,
         query: str,
         max_results: int = 10,
-        fields: List[str] = None
+        fields: Optional[List[str]] = None
     ) -> Dict[str, Any]:
         """
         Search for Jira issues using JQL or text search.
@@ -192,8 +192,8 @@ class AtlassianTool:
                 await trace_manager.log_agent_operation(
                     "atlassian_tool",
                     f"jira_get_issue: {issue_key}",
-                    {"issue_key": issue_key},
-                    trace_manager.current_trace_id
+                    json.dumps({"issue_key": issue_key}),
+                    {"trace_id": trace_manager.current_trace_id}
                 )
             
             params = {"issueKey": issue_key}
@@ -232,7 +232,7 @@ class AtlassianTool:
     async def search_confluence_pages(
         self,
         query: str,
-        space_key: str = None,
+        space_key: Optional[str] = None,
         max_results: int = 10
     ) -> Dict[str, Any]:
         """
@@ -257,14 +257,19 @@ class AtlassianTool:
         try:
             # Trace the operation
             if trace_manager.current_trace_id:
-                await trace_manager.log_tool_operation(
-                    "atlassian_confluence_search",
-                    {"query": query, "space_key": space_key, "max_results": max_results},
-                    trace_manager.current_trace_id
+                await trace_manager.log_agent_operation(
+                    "atlassian_tool",
+                    f"confluence_search: {query}",
+                    json.dumps({"query": query, "space_key": space_key, "max_results": max_results}),
+                    {"trace_id": trace_manager.current_trace_id}
                 )
             
+            cql_query = f"text ~ \"{query}\""
+            if space_key:
+                cql_query += f" and space = \"{space_key}\""
+                
             params = {
-                "cql": f"text ~ \"{query}\"" + (f" and space = \"{space_key}\"" if space_key else ""),
+                "cql": cql_query,
                 "limit": max_results
             }
             
@@ -327,10 +332,11 @@ class AtlassianTool:
         try:
             # Trace the operation
             if trace_manager.current_trace_id:
-                await trace_manager.log_tool_operation(
-                    "atlassian_confluence_get_page",
-                    {"page_id": page_id},
-                    trace_manager.current_trace_id
+                await trace_manager.log_agent_operation(
+                    "atlassian_tool",
+                    f"confluence_get_page: {page_id}",
+                    json.dumps({"page_id": page_id}),
+                    {"trace_id": trace_manager.current_trace_id}
                 )
             
             params = {"pageId": page_id, "expand": "body.storage,space,version"}
@@ -370,7 +376,7 @@ class AtlassianTool:
         summary: str,
         description: str = "",
         priority: str = "Medium",
-        assignee: str = None
+        assignee: Optional[str] = None
     ) -> Dict[str, Any]:
         """
         Create a new Jira issue.
@@ -397,10 +403,11 @@ class AtlassianTool:
         try:
             # Trace the operation
             if trace_manager.current_trace_id:
-                await trace_manager.log_tool_operation(
-                    "atlassian_jira_create_issue",
-                    {"project": project_key, "type": issue_type, "summary": summary},
-                    trace_manager.current_trace_id
+                await trace_manager.log_agent_operation(
+                    "atlassian_tool",
+                    f"jira_create_issue: {summary}",
+                    json.dumps({"project": project_key, "type": issue_type, "summary": summary}),
+                    {"trace_id": trace_manager.current_trace_id}
                 )
             
             issue_data = {

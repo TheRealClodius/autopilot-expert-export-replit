@@ -14,6 +14,7 @@ from utils.gemini_client import GeminiClient
 from tools.vector_search import VectorSearchTool
 from tools.perplexity_search import PerplexitySearchTool
 from tools.outlook_meeting import OutlookMeetingTool
+from tools.atlassian_tool import AtlassianTool
 from agents.client_agent import ClientAgent
 from agents.observer_agent import ObserverAgent
 from services.memory_service import MemoryService
@@ -34,6 +35,7 @@ class OrchestratorAgent:
         self.vector_tool = VectorSearchTool()
         self.perplexity_tool = PerplexitySearchTool()
         self.outlook_tool = OutlookMeetingTool()
+        self.atlassian_tool = AtlassianTool()
         self.client_agent = ClientAgent()
         self.observer_agent = ObserverAgent()
         self.memory_service = memory_service
@@ -472,7 +474,82 @@ Current Query: "{message.text}"
                                 await emit_error(self.progress_tracker, "meeting_error", f"issue with {action_type}")
                             # Continue with other actions even if one fails
             
-            logger.info(f"Gathered {len(gathered_info['vector_results'])} vector results and {len(gathered_info['perplexity_results'])} web results")
+            # Execute Atlassian tool if needed
+            if "atlassian_search" in tools_needed:
+                atlassian_actions = plan.get("atlassian_actions", [])
+                if atlassian_actions:
+                    logger.info(f"Executing {len(atlassian_actions)} Atlassian actions")
+                    gathered_info["atlassian_results"] = []
+                    
+                    for action in atlassian_actions:
+                        action_type = action.get("type")
+                        
+                        if self.progress_tracker:
+                            await emit_processing(self.progress_tracker, "atlassian_action", f"processing {action_type} request")
+                        
+                        try:
+                            if action_type == "search_jira_issues":
+                                result = await self.atlassian_tool.search_jira_issues(
+                                    query=action.get("query", ""),
+                                    max_results=action.get("max_results", 10),
+                                    fields=action.get("fields")
+                                )
+                            elif action_type == "get_jira_issue":
+                                result = await self.atlassian_tool.get_jira_issue(
+                                    issue_key=action.get("issue_key", "")
+                                )
+                            elif action_type == "search_confluence_pages":
+                                result = await self.atlassian_tool.search_confluence_pages(
+                                    query=action.get("query", ""),
+                                    space_key=action.get("space_key"),
+                                    max_results=action.get("max_results", 10)
+                                )
+                            elif action_type == "get_confluence_page":
+                                result = await self.atlassian_tool.get_confluence_page(
+                                    page_id=action.get("page_id", "")
+                                )
+                            elif action_type == "create_jira_issue":
+                                result = await self.atlassian_tool.create_jira_issue(
+                                    project_key=action.get("project_key", ""),
+                                    issue_type=action.get("issue_type", "Task"),
+                                    summary=action.get("summary", ""),
+                                    description=action.get("description", ""),
+                                    priority=action.get("priority", "Medium"),
+                                    assignee=action.get("assignee")
+                                )
+                            else:
+                                result = {"error": f"Unknown Atlassian action type: {action_type}"}
+                            
+                            # Store result
+                            if result and not result.get("error"):
+                                gathered_info["atlassian_results"].append({
+                                    "action_type": action_type,
+                                    "result": result,
+                                    "success": True
+                                })
+                                if self.progress_tracker:
+                                    await emit_processing(self.progress_tracker, "analyzing_results", f"Atlassian {action_type} completed")
+                            else:
+                                gathered_info["atlassian_results"].append({
+                                    "action_type": action_type,
+                                    "error": result.get("error", "Unknown error") if result else "No result",
+                                    "success": False
+                                })
+                                if self.progress_tracker:
+                                    await emit_warning(self.progress_tracker, "atlassian_error", f"{action_type} encountered an issue")
+                                    
+                        except Exception as atlassian_error:
+                            logger.error(f"Atlassian action error for {action_type}: {atlassian_error}")
+                            gathered_info["atlassian_results"].append({
+                                "action_type": action_type,
+                                "error": str(atlassian_error),
+                                "success": False
+                            })
+                            if self.progress_tracker:
+                                await emit_error(self.progress_tracker, "atlassian_error", f"issue with {action_type}")
+                            # Continue with other actions even if one fails
+            
+            logger.info(f"Gathered {len(gathered_info['vector_results'])} vector results, {len(gathered_info['perplexity_results'])} web results, and {len(gathered_info.get('atlassian_results', []))} Atlassian results")
             return gathered_info
             
         except Exception as e:
@@ -546,7 +623,8 @@ Current Query: "{message.text}"
                     "tools_used": execution_plan.get("tools_needed", []),
                     "search_results": gathered_information.get("vector_results", [])[:3] if gathered_information.get("vector_results") else [],  # Limit to top 3 results
                     "web_results": gathered_information.get("perplexity_results", [])[:2] if gathered_information.get("perplexity_results") else [],  # Limit to top 2 web results
-                    "meeting_results": gathered_information.get("meeting_results", [])  # Include all meeting results
+                    "meeting_results": gathered_information.get("meeting_results", []),  # Include all meeting results
+                    "atlassian_results": gathered_information.get("atlassian_results", [])  # Include all Atlassian results
                 },
                 "response_thread_ts": message.thread_ts or message.message_ts,
                 "trace_id": self._get_current_trace_id()
@@ -567,7 +645,8 @@ Current Query: "{message.text}"
                     "intent": execution_plan.get("analysis", "Error occurred during analysis"),
                     "tools_used": [],
                     "search_results": [],
-                    "web_results": []
+                    "web_results": [],
+                    "atlassian_results": []
                 },
                 "response_thread_ts": message.thread_ts or message.message_ts,
                 "trace_id": self._get_current_trace_id()
