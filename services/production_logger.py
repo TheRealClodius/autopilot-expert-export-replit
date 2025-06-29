@@ -289,10 +289,12 @@ class ProductionLogger:
         avg_duration = sum(durations) / len(durations) if durations else 0
         
         return {
+            "total_traces": active_count + completed_count,
             "active_traces": active_count,
             "completed_traces": completed_count,
+            "successful_traces": successful_traces,
             "success_rate": f"{success_rate:.1f}%",
-            "average_duration_ms": f"{avg_duration:.1f}",
+            "average_duration_ms": avg_duration,
             "recent_errors": [
                 {"trace_id": t.trace_id, "error": t.error_summary, "query": t.query[:50]}
                 for t in self.completed_traces[-10:] if t.error_summary
