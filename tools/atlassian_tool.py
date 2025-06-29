@@ -152,11 +152,14 @@ class AtlassianTool:
             deployment_urls = []
             
             # Check for deployment environment indicators
+            replit_domains = os.getenv("REPLIT_DOMAINS", "")
             is_deployment = any([
                 os.getenv("REPLIT_DEPLOYMENT") == "1",
                 os.getenv("DEPLOYMENT_ENV") == "production",
                 os.getenv("PORT") and os.getenv("PORT") != "5000",  # Cloud Run uses dynamic ports
-                "replit.app" in os.getenv("REPLIT_DOMAINS", "")
+                "replit.app" in replit_domains,
+                "replit.dev" in replit_domains,  # Fix: also check for replit.dev domains
+                len(replit_domains) > 0 and ("riker." in replit_domains or "wolf." in replit_domains)  # Replit internal domains
             ])
             
             if is_deployment:

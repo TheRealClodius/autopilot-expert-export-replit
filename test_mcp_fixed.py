@@ -1,111 +1,106 @@
 #!/usr/bin/env python3
 """
-Test the actual AtlassianTool implementation to verify MCP works correctly
+Test MCP Parameter Fix Verification
+
+Test if the orchestrator prompt fix resolves the parameter validation issue
 """
 
 import asyncio
-import logging
-from tools.atlassian_tool import AtlassianTool
+import json
+from agents.orchestrator_agent import OrchestratorAgent
+from services.memory_service import MemoryService
+from services.trace_manager import TraceManager
+from models.schemas import ProcessedMessage
 
-# Configure logging
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
-
-async def test_actual_atlassian_tool():
-    """Test the real AtlassianTool to verify MCP protocol works correctly"""
+async def test_mcp_fix():
+    """Test if MCP parameter fix works"""
     
     print("=" * 80)
-    print("🔧 TESTING ACTUAL ATLASSIAN TOOL")
+    print("🔧 TESTING MCP PARAMETER FIX")
     print("=" * 80)
     
-    # Initialize the tool
-    atlassian_tool = AtlassianTool()
+    # Initialize services
+    memory_service = MemoryService()
+    trace_manager = TraceManager()
     
-    if not atlassian_tool.available:
-        print("❌ Atlassian credentials not available")
-        return
-        
-    print("✅ AtlassianTool initialized successfully")
+    # Initialize orchestrator
+    orchestrator = OrchestratorAgent(
+        memory_service=memory_service,
+        trace_manager=trace_manager
+    )
     
-    # Test 1: Simple Confluence search with specific term
-    print("\n🔍 Test 1: Confluence search for 'Autopilot'")
-    try:
-        result1 = await atlassian_tool.execute_mcp_tool("confluence_search", {
-            "query": "Autopilot",
-            "limit": 3
-        })
+    # Test queries that should trigger MCP calls
+    test_queries = [
+        "Find me information about Autopilot for Everyone",
+        "What Jira tickets are related to UiPath design system?",
+        "Show me Confluence pages about Autopilot templates"
+    ]
+    
+    for query in test_queries:
+        print(f"\n📝 Testing Query: {query}")
         
-        if "error" in result1:
-            print(f"❌ Confluence search failed: {result1['error']}")
-        else:
-            print("✅ Confluence search successful!")
-            content = result1.get("content", [])
-            if content and len(content) > 0:
-                text_content = content[0].get("text", "")
-                if "Error calling tool" in text_content:
-                    print(f"⚠️ Tool error in result: {text_content}")
-                else:
-                    print(f"📄 Retrieved {len(content)} results")
+        # Create test message
+        test_message = ProcessedMessage(
+            text=query,
+            user_id="test_user",
+            user_name="Test User",
+            user_first_name="Test",
+            user_display_name="Test User",
+            user_title="Test Title",
+            user_department="Test Dept",
+            channel_id="test_channel",
+            channel_name="test", 
+            message_ts="test_ts",
+            is_dm=False,
+            is_mention=True,
+            is_thread_reply=False
+        )
+        
+        try:
+            print("🧠 Analyzing query with orchestrator...")
+            result = await orchestrator.process_query(test_message)
             
-    except Exception as e:
-        print(f"❌ Confluence test exception: {e}")
-    
-    # Test 2: Jira search with project restriction
-    print("\n🎫 Test 2: Jira search with project restriction")
-    try:
-        result2 = await atlassian_tool.execute_mcp_tool("jira_search", {
-            "jql": "project = DESIGN ORDER BY created DESC",
-            "limit": 3
-        })
-        
-        if "error" in result2:
-            print(f"❌ Jira search failed: {result2['error']}")
-        else:
-            print("✅ Jira search successful!")
-            content = result2.get("content", [])
-            if content and len(content) > 0:
-                text_content = content[0].get("text", "")
-                if "Error calling tool" in text_content:
-                    print(f"⚠️ Tool error in result: {text_content}")
+            if result and "orchestrator_analysis" in result:
+                analysis = result["orchestrator_analysis"]
+                
+                # Check for atlassian tool usage
+                tools_used = analysis.get("tools_used", [])
+                print(f"   Tools used: {tools_used}")
+                
+                if "atlassian_search" in tools_used:
+                    print("   ✅ Orchestrator correctly routed to MCP Atlassian")
+                    
+                    # Check search results
+                    search_results = analysis.get("search_results", [])
+                    if search_results:
+                        print(f"   📊 Retrieved {len(search_results)} results:")
+                        for i, result in enumerate(search_results[:3]):
+                            title = result.get("title", "No title")
+                            print(f"      {i+1}. {title}")
+                    else:
+                        print("   ⚠️  No search results returned")
+                        
+                    # Check for any errors
+                    if "errors" in analysis:
+                        print(f"   ❌ Errors: {analysis['errors']}")
                 else:
-                    print(f"🎫 Retrieved {len(content)} results")
-            
-    except Exception as e:
-        print(f"❌ Jira test exception: {e}")
-    
-    # Test 3: The problematic unbounded query
-    print("\n⚠️ Test 3: Unbounded query (expected to fail)")
-    try:
-        result3 = await atlassian_tool.execute_mcp_tool("jira_search", {
-            "jql": "ORDER BY created DESC",
-            "limit": 5
-        })
-        
-        if "error" in result3:
-            print(f"❌ Unbounded query failed (expected): {result3['error']}")
-        else:
-            content = result3.get("content", [])
-            if content and len(content) > 0:
-                text_content = content[0].get("text", "")
-                if "Unbounded JQL queries are not allowed" in text_content:
-                    print("✅ Expected JQL restriction confirmed - this is normal behavior")
-                elif "Error calling tool" in text_content:
-                    print(f"⚠️ Tool error: {text_content}")
-                else:
-                    print(f"🎫 Unexpected success: {len(content)} results")
-            
-    except Exception as e:
-        print(f"❌ Unbounded query exception: {e}")
+                    print("   ⚠️  Orchestrator did not use MCP Atlassian tools")
+                    
+            else:
+                print("   ❌ No orchestrator analysis returned")
+                
+        except Exception as e:
+            print(f"   ❌ Exception: {e}")
+            import traceback
+            traceback.print_exc()
     
     print("\n" + "=" * 80)
-    print("🎯 ATLASSIAN TOOL TEST COMPLETE")
+    print("🎯 MCP PARAMETER FIX RESULTS")
     print("=" * 80)
-    print("Key Findings:")
-    print("1. MCP protocol and session management working correctly")
-    print("2. Confluence searches working for specific terms")  
-    print("3. Jira project-restricted queries working")
-    print("4. Unbounded JQL queries fail as expected (business restriction)")
-    print("\nThe 'Error calling tool' in orchestrator test is normal UiPath policy enforcement.")
+    print("If the fix worked, you should see:")
+    print("1. ✅ MCP Atlassian tools being used")
+    print("2. 📊 Real UiPath data being retrieved")
+    print("3. ❌ No more 'jql is a required property' errors")
 
 if __name__ == "__main__":
-    asyncio.run(test_actual_atlassian_tool())
+    asyncio.run(test_mcp_fix())

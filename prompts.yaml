@@ -47,14 +47,34 @@ orchestrator_prompt: >
     ] (if using outlook_meeting),
     "atlassian_actions": [
       {
-        "mcp_tool": "jira_search|jira_get|confluence_search|confluence_get|jira_create",
+        "mcp_tool": "jira_search",
         "arguments": {
-          "jql": "JQL query for jira_search",
-          "limit": 10,
-          "issue_key": "PROJ-123",
+          "jql": "text ~ \"search terms\" OR summary ~ \"search terms\"",
+          "limit": 10
+        }
+      },
+      {
+        "mcp_tool": "confluence_search", 
+        "arguments": {
           "query": "search terms",
-          "limit": 10,
-          "page_id": "12345",
+          "limit": 10
+        }
+      },
+      {
+        "mcp_tool": "jira_get",
+        "arguments": {
+          "issue_key": "PROJ-123"
+        }
+      },
+      {
+        "mcp_tool": "confluence_get",
+        "arguments": {
+          "page_id": "12345"
+        }
+      },
+      {
+        "mcp_tool": "jira_create",
+        "arguments": {
           "project_key": "PROJ",
           "issue_type": "Task",
           "summary": "Issue title",
