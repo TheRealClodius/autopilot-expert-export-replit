@@ -1,0 +1,42 @@
+2025-06-29 20:20:44.32
+error proxying request error=dial tcp 127.0.0.1:6379: connect: connection refused
+2025-06-29 20:20:44.33
+error proxying request error=dial tcp 127.0.0.1:6379: connect: connection refused
+2025-06-29 20:20:44.34
+error proxying request error=dial tcp 127.0.0.1:6379: connect: connection refused
+2025-06-29 20:20:44.42
+error proxying request error=dial tcp 127.0.0.1:6379: connect: connection refused
+2025-06-29 20:20:44.52
+error proxying request error=dial tcp 127.0.0.1:6379: connect: connection refused
+2025-06-29 20:20:44.64
+error proxying request error=dial tcp 127.0.0.1:6379: connect: connection refused
+2025-06-29 20:20:44.69
+error proxying request error=dial tcp 127.0.0.1:6379: connect: connection refused
+2025-06-29 20:20:45.65
+error proxying request error=dial tcp 127.0.0.1:6379: connect: connection refused
+2025-06-29 20:20:46.56
+error proxying request error=dial tcp 127.0.0.1:6379: connect: connection refused
+2025-06-29 20:20:48.22
+error proxying request error=dial tcp 127.0.0.1:6379: connect: connection refused
+2025-06-29 20:20:49.82
+error proxying request error=dial tcp 127.0.0.1:6379: connect: connection refused
+2025-06-29 20:20:51.23
+error proxying request error=dial tcp 127.0.0.1:6379: connect: connection refused
+2025-06-29 20:20:52.19
+error proxying request error=dial tcp 127.0.0.1:6379: connect: connection refused
+2025-06-29 20:20:52.83
+error proxying request error=dial tcp 127.0.0.1:6379: connect: connection refused
+2025-06-29 20:20:54.12
+error proxying request error=dial tcp 127.0.0.1:6379: connect: connection refused
+2025-06-29 20:20:54.18
+error proxying request error=dial tcp 127.0.0.1:6379: connect: connection refused
+2025-06-29 20:20:54.40
+error proxying request error=dial tcp 127.0.0.1:6379: connect: connection refused
+2025-06-29 20:20:56.18
+error proxying request error=dial tcp 127.0.0.1:6379: connect: connection refused
+2025-06-29 20:20:56.29
+2025-06-29 17:20:56,292 - services.production_logger - INFO - Production logger initialized
+2025-06-29 20:20:56.39
+error proxying request error=dial tcp 127.0.0.1:6379: connect: connection refused
+2025-06-29 20:20:57.20
+error proxying request error=dial tcp 127.0.0.1:6379: connect: connection refused

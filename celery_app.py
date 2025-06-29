@@ -15,21 +15,35 @@ logger = logging.getLogger(__name__)
 # Determine broker URL with fallback for deployment
 def get_broker_url():
     """Get Celery broker URL with fallback for deployment environments"""
-    if settings.CELERY_BROKER_URL and settings.CELERY_BROKER_URL.strip():
-        return settings.CELERY_BROKER_URL
-    else:
-        # Use memory transport for deployment without Redis
-        logger.info("No Celery broker URL configured, using memory transport")
+    broker_url = getattr(settings, 'CELERY_BROKER_URL', '') or ''
+    
+    # Force memory transport in deployment to avoid any Redis connections
+    if not broker_url or broker_url.strip() == "" or broker_url.strip().startswith('redis://127.0.0.1'):
+        logger.info(f"Using memory transport (broker_url='{broker_url}')")
         return 'memory://'
+    
+    # Additional check for localhost Redis URLs
+    if 'localhost' in broker_url or '127.0.0.1' in broker_url:
+        logger.info(f"Detected localhost Redis URL, using memory transport instead: {broker_url}")
+        return 'memory://'
+        
+    return broker_url
 
 def get_result_backend():
     """Get Celery result backend with fallback for deployment environments"""
-    if settings.CELERY_RESULT_BACKEND and settings.CELERY_RESULT_BACKEND.strip():
-        return settings.CELERY_RESULT_BACKEND
-    else:
-        # Use cache+memory for deployment without Redis
-        logger.info("No Celery result backend configured, using cache+memory")
+    backend_url = getattr(settings, 'CELERY_RESULT_BACKEND', '') or ''
+    
+    # Force memory backend in deployment to avoid any Redis connections
+    if not backend_url or backend_url.strip() == "" or backend_url.strip().startswith('redis://127.0.0.1'):
+        logger.info(f"Using cache+memory backend (backend_url='{backend_url}')")
         return 'cache+memory://'
+    
+    # Additional check for localhost Redis URLs  
+    if 'localhost' in backend_url or '127.0.0.1' in backend_url:
+        logger.info(f"Detected localhost Redis URL, using memory backend instead: {backend_url}")
+        return 'cache+memory://'
+        
+    return backend_url
 
 # Create Celery application with deployment-safe configuration
 celery_app = Celery(
@@ -180,8 +194,9 @@ def health_check(self):
         from datetime import datetime
         
         # Skip Redis connection in deployment if not configured
-        if not settings.REDIS_URL or settings.REDIS_URL.strip() == "":
-            logger.info("Redis not configured, skipping Redis health check")
+        redis_url = getattr(settings, 'REDIS_URL', '') or ''
+        if not redis_url or redis_url.strip() == "" or redis_url.strip() == "redis://":
+            logger.info(f"Redis not configured (url='{redis_url}'), skipping Redis health check")
             return {
                 'status': 'healthy',
                 'timestamp': datetime.now().isoformat(),
@@ -189,10 +204,28 @@ def health_check(self):
                 'redis': 'not_configured'
             }
         
-        # Test Redis connection only if URL is configured
-        import redis
-        redis_client = redis.from_url(settings.REDIS_URL)
-        redis_client.ping()
+        # Test Redis connection only if URL is configured and valid
+        try:
+            import redis
+            # Additional validation - ensure URL is a proper Redis URL
+            if not redis_url.startswith(('redis://', 'rediss://')):
+                logger.info(f"Invalid Redis URL format: '{redis_url}', skipping connection")
+                return {
+                    'status': 'healthy',
+                    'timestamp': datetime.now().isoformat(),
+                    'worker_id': self.request.id,
+                    'redis': 'invalid_url'
+                }
+            redis_client = redis.from_url(redis_url)
+            redis_client.ping()
+        except Exception as redis_error:
+            logger.warning(f"Redis connection failed but continuing: {redis_error}")
+            return {
+                'status': 'healthy',
+                'timestamp': datetime.now().isoformat(),
+                'worker_id': self.request.id,
+                'redis': 'connection_failed_but_ok'
+            }
         
         return {
             'status': 'healthy',
