@@ -19,7 +19,6 @@ try:
     TRACE_MANAGER_AVAILABLE = True
 except ImportError:
     TRACE_MANAGER_AVAILABLE = False
-    TraceManager = None
 
 logger = logging.getLogger(__name__)
 
@@ -40,7 +39,10 @@ class AtlassianTool:
         if trace_manager and TRACE_MANAGER_AVAILABLE:
             self.trace_manager = trace_manager
         elif TRACE_MANAGER_AVAILABLE:
-            self.trace_manager = TraceManager()
+            try:
+                self.trace_manager = TraceManager()
+            except Exception:
+                self.trace_manager = None
         else:
             self.trace_manager = None
         self.available_tools = [

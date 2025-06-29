@@ -1,86 +1,177 @@
 #!/usr/bin/env python3
 """
-Test MCP Tool LangSmith Tracing Integration
+Full End-to-End MCP LangSmith Tracing Test
 
-Verify that MCP tool operations are properly traced in LangSmith.
+Simulates complete Slack message processing flow with MCP tool execution
+and comprehensive LangSmith tracing integration.
 """
 
 import asyncio
 import json
-from tools.atlassian_tool import AtlassianTool
-from services.trace_manager import TraceManager
+import time
+from datetime import datetime
+from typing import Dict, Any
 
-async def test_mcp_langsmith_tracing():
-    """Test MCP tool with LangSmith tracing"""
-    print("🔍 Testing MCP Tool LangSmith Tracing")
-    print("=" * 50)
+# Import all necessary components
+from services.memory_service import MemoryService
+from services.trace_manager import TraceManager
+from agents.slack_gateway import SlackGateway
+from agents.orchestrator_agent import OrchestratorAgent
+from agents.client_agent import ClientAgent
+from models.schemas import ProcessedMessage
+from tools.atlassian_tool import AtlassianTool
+
+async def test_full_mcp_langsmith_flow():
+    """Test complete end-to-end MCP tool execution with LangSmith tracing"""
+    print("🚀 FULL END-TO-END MCP LANGSMITH TRACING TEST")
+    print("=" * 60)
     
-    # Initialize trace manager
+    # Initialize all services
+    print("📋 Initializing Services...")
+    memory_service = MemoryService()
     trace_manager = TraceManager()
-    print(f"✅ TraceManager initialized (enabled: {trace_manager.is_enabled()})")
     
-    # Start a conversation session for tracing context
-    session_id = await trace_manager.start_conversation_session(
-        user_id="test_user",
-        message="Test MCP tracing",
-        channel_id="test_channel",
-        message_ts="test_ts"
+    print(f"✅ Memory Service: {type(memory_service).__name__}")
+    print(f"✅ Trace Manager: Enabled={trace_manager.is_enabled()}")
+    
+    # Initialize agents with trace manager
+    print("\n🤖 Initializing AI Agents...")
+    orchestrator = OrchestratorAgent(
+        memory_service=memory_service, 
+        trace_manager=trace_manager
     )
-    print(f"✅ Started conversation session: {session_id}")
+    client_agent = ClientAgent()
     
-    # Initialize AtlassianTool with trace manager
-    atlassian_tool = AtlassianTool(trace_manager=trace_manager)
-    print(f"✅ AtlassianTool initialized with tracing")
-    print(f"   MCP Server URL: {atlassian_tool.mcp_server_url}")
-    print(f"   Available: {atlassian_tool.available}")
+    print(f"✅ Orchestrator Agent: {type(orchestrator).__name__}")
+    print(f"✅ Client Agent: {type(client_agent).__name__}")
+    print(f"✅ Atlassian Tool: {type(orchestrator.atlassian_tool).__name__}")
+    print(f"   - MCP Server URL: {orchestrator.atlassian_tool.mcp_server_url}")
+    print(f"   - Trace Manager: {orchestrator.atlassian_tool.trace_manager is not None}")
     
-    # Test MCP tool execution with tracing
-    print("\n🔍 Testing Confluence Search with LangSmith Tracing:")
+    # Create a realistic Slack message for Autopilot query
+    print("\n💬 Creating Test Slack Message...")
+    test_message = ProcessedMessage(
+        user_id="U123TEST456",
+        channel_id="C987AUTOPILOT",
+        text="Can you find documentation about Autopilot for Everyone and show me what it's trying to achieve?",
+        timestamp="1735571400.123456",
+        thread_ts=None,
+        is_dm=False,
+        is_mention=True,
+        user_first_name="Sarah",
+        user_display_name="Sarah Chen",
+        user_title="Product Manager",
+        user_department="Product"
+    )
+    
+    print(f"✅ Test Message Created")
+    print(f"   User: {test_message.user_display_name} ({test_message.user_title})")
+    print(f"   Query: {test_message.text[:60]}...")
+    
+    # Start conversation trace
+    print("\n📊 Starting LangSmith Conversation Trace...")
+    session_id = await trace_manager.start_conversation_session(
+        user_id=test_message.user_id,
+        message=test_message.text,
+        channel_id=test_message.channel_id,
+        message_ts=test_message.timestamp
+    )
+    print(f"✅ Conversation Session: {session_id}")
+    
+    # Process message through orchestrator
+    print("\n🧠 Processing Query through Orchestrator...")
+    start_time = time.time()
     
     try:
-        result = await atlassian_tool.execute_mcp_tool(
-            tool_name="confluence_search",
-            arguments={
-                "query": "Autopilot for Everyone",
-                "limit": 2
-            }
-        )
+        # This should trigger MCP tool execution with tracing
+        response = await orchestrator.process_query(test_message)
         
-        print("✅ MCP Tool Execution Completed")
-        print(f"   Result type: {type(result)}")
-        print(f"   Success: {result.get('success', False)}")
+        processing_time = time.time() - start_time
+        print(f"✅ Orchestrator Processing Complete ({processing_time:.2f}s)")
         
-        if result.get("success"):
-            mcp_result = result.get("result", {})
-            if isinstance(mcp_result, list):
-                print(f"   Found {len(mcp_result)} pages")
-            elif isinstance(mcp_result, dict) and "result" in mcp_result:
-                pages = mcp_result.get("result", [])
-                print(f"   Found {len(pages)} pages")
-                for i, page in enumerate(pages[:2], 1):
-                    title = page.get("title", "Unknown")
-                    print(f"   {i}. {title}")
+        if response:
+            print(f"   Response Type: {type(response)}")
+            print(f"   Has Response Text: {'response' in response}")
+            
+            # Check if MCP tool was executed
+            if 'state_stack' in response:
+                state_stack = response['state_stack']
+                orchestrator_analysis = state_stack.get('orchestrator_analysis', {})
+                
+                print(f"\n🔍 Orchestrator Analysis Results:")
+                print(f"   Intent: {orchestrator_analysis.get('intent', 'Unknown')}")
+                print(f"   Tools Used: {orchestrator_analysis.get('tools_used', [])}")
+                
+                # Check for Atlassian results
+                if 'atlassian_results' in orchestrator_analysis:
+                    atlassian_results = orchestrator_analysis['atlassian_results']
+                    print(f"   Atlassian Success: {atlassian_results.get('success', False)}")
+                    
+                    if atlassian_results.get('success'):
+                        result_data = atlassian_results.get('result', {})
+                        if isinstance(result_data, dict) and 'result' in result_data:
+                            pages = result_data['result']
+                            print(f"   Found {len(pages)} Confluence pages")
+                            for i, page in enumerate(pages[:3], 1):
+                                title = page.get('title', 'Unknown')
+                                space = page.get('space', {}).get('name', 'Unknown')
+                                print(f"     {i}. {title} (Space: {space})")
+                        else:
+                            print(f"   Result Data: {str(result_data)[:100]}...")
+                    else:
+                        print(f"   Error: {atlassian_results.get('error', 'Unknown error')}")
+            
+            # Generate client response
+            print(f"\n📝 Generating Client Response...")
+            client_start = time.time()
+            
+            client_response = await client_agent.process_query(
+                message=test_message,
+                state_stack=response.get('state_stack', {})
+            )
+            
+            client_time = time.time() - client_start
+            print(f"✅ Client Response Generated ({client_time:.2f}s)")
+            
+            if client_response and 'response' in client_response:
+                response_text = client_response['response']
+                print(f"   Response Length: {len(response_text)} characters")
+                print(f"   Response Preview: {response_text[:150]}...")
+            else:
+                print(f"   No response generated: {client_response}")
+                
         else:
-            print(f"   Error: {result.get('error', 'unknown')}")
-            print(f"   Message: {result.get('message', 'No message')}")
+            print("❌ No response from orchestrator")
             
     except Exception as e:
-        print(f"❌ MCP Tool Execution Failed: {e}")
+        print(f"❌ Processing Failed: {e}")
+        import traceback
+        traceback.print_exc()
     
-    # Complete the conversation session
+    # Complete conversation trace
+    print(f"\n🏁 Completing LangSmith Trace...")
     await trace_manager.complete_conversation_session(
-        final_response="MCP tracing test completed"
+        final_response="End-to-end MCP tracing test completed"
     )
-    print(f"✅ Completed conversation session")
     
-    print("\n📊 LangSmith Tracing Results:")
-    print("- Check your LangSmith dashboard for the trace")
-    print("- Look for 'mcp_atlassian_confluence_search' tool operation")
-    print("- Trace should include inputs, outputs, duration, and any errors")
-    print("- Parent trace: 'slack_conversation_test_channel'")
+    total_time = time.time() - start_time
+    print(f"✅ Test Completed ({total_time:.2f}s total)")
+    
+    # Summary
+    print(f"\n📊 LangSmith Tracing Summary:")
+    print(f"- Conversation Session: {session_id}")
+    print(f"- Check LangSmith dashboard for complete trace hierarchy")
+    print(f"- Expected traces:")
+    print(f"  └─ Slack Conversation (session)")
+    print(f"     ├─ Orchestrator Analysis")
+    print(f"     ├─ MCP Atlassian Tool Execution")
+    print(f"     │  └─ confluence_search tool call")
+    print(f"     └─ Client Response Generation")
+    print(f"- Processing time: {total_time:.2f}s")
+    print(f"- MCP tool should show authentic UiPath data")
 
 async def main():
-    await test_mcp_langsmith_tracing()
+    await test_full_mcp_langsmith_flow()
 
 if __name__ == "__main__":
     asyncio.run(main())

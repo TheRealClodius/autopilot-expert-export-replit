@@ -35,6 +35,7 @@ class OrchestratorAgent:
         self.vector_tool = VectorSearchTool()
         self.perplexity_tool = PerplexitySearchTool()
         self.outlook_tool = OutlookMeetingTool()
+        self.trace_manager = trace_manager
         self.atlassian_tool = AtlassianTool(trace_manager=trace_manager)
         self.client_agent = ClientAgent()
         self.observer_agent = ObserverAgent()
