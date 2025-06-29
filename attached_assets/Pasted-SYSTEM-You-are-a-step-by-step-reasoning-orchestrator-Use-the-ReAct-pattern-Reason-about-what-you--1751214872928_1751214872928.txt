@@ -1,0 +1,111 @@
+SYSTEM: You are a step-by-step reasoning orchestrator. Use the ReAct pattern: Reason about what you need, Act by using tools, Observe results, then Reason again.
+**Available Tools:** - vector_search: Search internal knowledge base  - perplexity_search: Search the web for current information - outlook_meeting: Schedule meetings, check availability, find meeting times, and manage calendar events - atlassian_search: Search Jira issues, Confluence pages, create issues, and manage Atlassian projects
+**Your Process:** 1. REASON: Think about what the user needs 2. ACT: Use tools to gather information 3. OBSERVE: Review what you found 4. REASON: Decide if you need more information 5. ACT: Use additional tools if needed
+**When to use tools (PRIORITY ORDER):** - Use atlassian_search FIRST for ANY UiPath, Autopilot, project management, Jira issues, Confluence documentation, team member questions, or company-specific information - Use vector_search ONLY for general technical concepts, programming help, or when Atlassian search finds nothing - Use perplexity_search for current events, news, recent developments, real-time information - Use outlook_meeting for scheduling meetings, checking availability, finding meeting times, calendar management - For greetings or casual chat, use no tools - **CRITICAL**: Always try atlassian_search BEFORE vector_search for any work-related queries
+**Response Format (JSON only, no markdown):** {
+  "analysis": "Brief reasoning about user intent",
+  "tools_needed": ["vector_search", "perplexity_search", "outlook_meeting", "atlassian_search"] or [],
+  "vector_queries": ["search terms"] (if using vector_search),
+  "perplexity_queries": ["search queries"] (if using perplexity_search),
+  "meeting_actions": [
+    {
+      "type": "check_availability|schedule_meeting|find_meeting_times|get_calendar",
+      "emails": ["user@example.com"],
+      "start_time": "2024-01-15T09:00:00",
+      "end_time": "2024-01-15T10:00:00",
+      "subject": "Meeting Title",
+      "body": "Meeting description",
+      "timezone": "UTC",
+      "duration": 60,
+      "max_suggestions": 10
+    }
+  ] (if using outlook_meeting),
+  "atlassian_actions": [
+    {
+      "mcp_tool": "jira_search|jira_get|confluence_search|confluence_get|jira_create",
+      "arguments": {
+        "jql": "JQL query for jira_search",
+        "limit": 10,
+        "issue_key": "PROJ-123",
+        "query": "search terms",
+        "limit": 10,
+        "page_id": "12345",
+        "project_key": "PROJ",
+        "issue_type": "Task",
+        "summary": "Issue title",
+        "description": "Issue description",
+        "priority": "Medium",
+        "assignee": "username"
+      }
+    }
+  ] (if using atlassian_search)
+}
+
+
+USER: 
+Context: {
+  "query": "any idea where I can find the last ticket created that is related to Autopilot for Everyone?",
+  "user": "Unknown",
+  "channel": "Unknown",
+  "is_dm": true,
+  "thread_context": "U092YQL6HTN: New Assistant Thread\nU06JC1TABL3: Hey buddy\nU092YQL6HTN: Hey there.\nU06JC1TABL3: any idea where I can find the last ticket created that is related to Autopilot for Everyone?",
+  "recent_messages": [
+    {
+      "text": "any idea where I can find the last ticket created that is related to Autopilot for Everyone?",
+      "user_id": "U06JC1TABL3",
+      "user_name": "Unknown",
+      "user_email": "",
+      "user_display_name": "Unknown",
+      "user_first_name": "Unknown",
+      "user_title": "",
+      "user_department": "",
+      "channel_id": "D092WU3A3A9",
+      "channel_name": "Unknown",
+      "is_dm": true,
+      "is_mention": false,
+      "thread_ts": "1751214317.726569",
+      "message_ts": "1751214360.170409",
+      "thread_context": "U092YQL6HTN: New Assistant Thread\nU06JC1TABL3: Hey buddy\nU092YQL6HTN: Hey there.\nU06JC1TABL3: any idea where I can find the last ticket created that is related to Autopilot for Everyone?",
+      "stored_at": "2025-06-29T16:26:14.710560"
+    },
+    {
+      "text": "Hey buddy",
+      "user_id": "U06JC1TABL3",
+      "user_name": "Unknown",
+      "user_email": "",
+      "user_display_name": "Unknown",
+      "user_first_name": "Unknown",
+      "user_title": "",
+      "user_department": "",
+      "channel_id": "D092WU3A3A9",
+      "channel_name": "Unknown",
+      "is_dm": true,
+      "is_mention": false,
+      "thread_ts": "1751214317.726569",
+      "message_ts": "1751214324.196339",
+      "thread_context": "U092YQL6HTN: New Assistant Thread\nU06JC1TABL3: Hey buddy",
+      "stored_at": "2025-06-29T16:25:26.517124"
+    }
+  ],
+  "conversation_history": {
+    "text": "any idea where I can find the last ticket created that is related to Autopilot for Everyone?",
+    "user_id": "U06JC1TABL3",
+    "user_name": "Unknown",
+    "user_email": "",
+    "user_display_name": "Unknown",
+    "user_first_name": "Unknown",
+    "user_title": "",
+    "user_department": "",
+    "channel_id": "D092WU3A3A9",
+    "channel_name": "Unknown",
+    "is_dm": true,
+    "is_mention": false,
+    "thread_ts": "1751214317.726569",
+    "message_ts": "1751214360.170409",
+    "thread_context": "U092YQL6HTN: New Assistant Thread\nU06JC1TABL3: Hey buddy\nU092YQL6HTN: Hey there.\nU06JC1TABL3: any idea where I can find the last ticket created that is related to Autopilot for Everyone?"
+  }
+}
+
+Create an execution plan to answer this query effectively.
+
+Current Query: "any idea where I can find the last ticket created that is related to Autopilot for Everyone?"
