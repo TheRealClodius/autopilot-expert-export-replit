@@ -2460,6 +2460,88 @@ Please think through this systematically, showing each step of your reasoning.""
         logger.error(f"Gemini reasoning test failed: {e}")
         return {"status": "error", "message": str(e)}
 
+@app.get("/admin/test-streaming-reasoning")
+async def test_streaming_reasoning(query: str = "How should I approach solving a complex problem?"):
+    """Admin endpoint to test real-time streaming reasoning with progress updates"""
+    try:
+        if not orchestrator_agent or not orchestrator_agent.gemini_client:
+            return {"status": "error", "message": "Gemini client not initialized"}
+        
+        # Track progress events for testing
+        captured_events = []
+        
+        async def mock_slack_updater(message: str):
+            """Mock Slack progress updater that captures messages"""
+            captured_events.append({
+                "timestamp": datetime.now().isoformat(),
+                "message": message,
+                "type": "progress_update"
+            })
+            logger.info(f"PROGRESS UPDATE: {message}")
+        
+        # Create progress tracker with mock updater
+        from services.progress_tracker import ProgressTracker, StreamingReasoningEmitter
+        progress_tracker = ProgressTracker(update_callback=mock_slack_updater)
+        
+        # Create streaming reasoning emitter
+        reasoning_emitter = StreamingReasoningEmitter(progress_tracker)
+        
+        # Track reasoning chunks
+        reasoning_chunks = []
+        
+        async def reasoning_callback(chunk_text: str, chunk_metadata: dict):
+            """Capture reasoning chunks and emit to Slack-like progress"""
+            reasoning_chunks.append({
+                "text": chunk_text,
+                "metadata": chunk_metadata,
+                "timestamp": datetime.now().isoformat()
+            })
+            await reasoning_emitter.emit_reasoning_chunk(chunk_text, chunk_metadata)
+        
+        # Test streaming with reasoning callbacks
+        reasoning_prompt = f"""I need to think carefully about this question. Let me work through it step by step:
+
+Question: {query}
+
+Step 1: Let me first consider what this question is really asking...
+Step 2: I should analyze the different components involved...
+Step 3: Now I need to think about the best approach...
+Step 4: Let me consider the implications and trade-offs..."""
+        
+        start_time = time.time()
+        
+        streaming_response = await orchestrator_agent.gemini_client.generate_streaming_response(
+            system_prompt="You are a helpful AI that shows detailed step-by-step reasoning. Always think out loud as you work through problems.",
+            user_prompt=reasoning_prompt,
+            model="gemini-2.5-pro",
+            reasoning_callback=reasoning_callback
+        )
+        
+        processing_time = time.time() - start_time
+        
+        return {
+            "status": "success",
+            "query": query,
+            "processing_time_seconds": round(processing_time, 2),
+            "streaming_response": streaming_response,
+            "real_time_reasoning": {
+                "total_reasoning_chunks": len(reasoning_chunks),
+                "progress_events_captured": len(captured_events),
+                "reasoning_chunks_sample": reasoning_chunks[:5],  # First 5 chunks
+                "progress_events": captured_events,
+                "final_response": streaming_response.get("text", "")[:500] + "..." if len(streaming_response.get("text", "")) > 500 else streaming_response.get("text", "")
+            },
+            "analysis": {
+                "reasoning_steps_detected": len(streaming_response.get("reasoning_steps", [])),
+                "streaming_chunks_total": len(streaming_response.get("streaming_chunks", [])),
+                "real_time_updates_sent": len(captured_events),
+                "reasoning_transparency": "ENABLED" if len(reasoning_chunks) > 0 else "NOT_DETECTED"
+            }
+        }
+    except Exception as e:
+        logger.error(f"Error testing streaming reasoning: {e}")
+        return {"status": "error", "message": str(e)}
+
 if __name__ == "__main__":
     # Get port from environment for Cloud Run deployment
     port = int(os.environ.get("PORT", 5000))

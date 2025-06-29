@@ -226,6 +226,14 @@ Current Query: "{message.text}"
             
             # Add timeout protection for API call with streaming reasoning capture
             try:
+                # Set up real-time reasoning emission to Slack
+                reasoning_emitter = StreamingReasoningEmitter(self.progress_tracker) if self.progress_tracker else None
+                
+                async def reasoning_callback(chunk_text: str, chunk_metadata: dict):
+                    """Handle real-time reasoning chunks from Gemini streaming"""
+                    if reasoning_emitter:
+                        await reasoning_emitter.emit_reasoning_chunk(chunk_text, chunk_metadata)
+                
                 # Use streaming to capture reasoning steps as they're generated
                 streaming_response = await asyncio.wait_for(
                     self.gemini_client.generate_streaming_response(
@@ -233,7 +241,8 @@ Current Query: "{message.text}"
                         user_prompt,
                         model=self.gemini_client.pro_model,  # Orchestrator uses Pro model for complex planning
                         max_tokens=2000,
-                        temperature=0.7
+                        temperature=0.7,
+                        reasoning_callback=reasoning_callback  # Pass callback for real-time reasoning
                     ),
                     timeout=20.0  # 20 second timeout for streaming
                 )
