@@ -785,25 +785,48 @@ Current Query: "{message.text}"
         Direct MCP execution bypassing complex retry logic.
         Uses the proven working pattern for all Atlassian MCP commands.
         """
+        mcp_tool = action.get("mcp_tool")
+        arguments = action.get("arguments", {})
+        
+        if not mcp_tool:
+            return {"error": "No mcp_tool specified in action"}
+        
+        # Create LangSmith trace for MCP call
+        trace_id = None
+        if self.trace_manager:
+            try:
+                trace_id = self.trace_manager.log_tool_operation(
+                    f"mcp_{mcp_tool}",
+                    arguments,
+                    context=f"Direct MCP execution: {mcp_tool}"
+                )
+            except Exception as e:
+                logger.warning(f"Failed to create LangSmith trace for MCP call: {e}")
+        
         try:
-            mcp_tool = action.get("mcp_tool")
-            arguments = action.get("arguments", {})
-            
-            if not mcp_tool:
-                return {"error": "No mcp_tool specified in action"}
-            
             # Direct call to Atlassian tool using working pattern
             import time
             start_time = time.time()
             result = await self.atlassian_tool.execute_mcp_tool(mcp_tool, arguments)
             duration_ms = (time.time() - start_time) * 1000
             
+            # Complete LangSmith trace
+            if trace_id and self.trace_manager:
+                try:
+                    self.trace_manager.complete_tool_operation(
+                        trace_id,
+                        result if result else {"error": "No result from MCP"},
+                        success=bool(result and result.get("success"))
+                    )
+                except Exception as e:
+                    logger.warning(f"Failed to complete LangSmith trace: {e}")
+            
             # Log MCP call to production logger
             try:
                 from services.production_logger import production_logger
-                trace_id = getattr(self, '_current_trace_id', None)
-                if trace_id:
-                    production_logger.log_mcp_call(trace_id, mcp_tool, arguments, result, duration_ms)
+                current_trace_id = getattr(self, '_current_trace_id', None)
+                if current_trace_id:
+                    production_logger.log_mcp_call(current_trace_id, mcp_tool, arguments, result, duration_ms)
             except Exception:
                 pass  # Don't let logging errors break execution
             
@@ -823,6 +846,18 @@ Current Query: "{message.text}"
                 
         except Exception as e:
             logger.error(f"Direct MCP execution failed: {e}")
+            
+            # Complete LangSmith trace with error
+            if trace_id and self.trace_manager:
+                try:
+                    self.trace_manager.complete_tool_operation(
+                        trace_id,
+                        {"error": str(e)},
+                        success=False
+                    )
+                except Exception:
+                    pass
+                    
             return {"error": f"MCP execution error: {str(e)}", "success": False}
     
     async def _execute_mcp_action_with_retry(self, action: Dict[str, Any]) -> Dict[str, Any]:
