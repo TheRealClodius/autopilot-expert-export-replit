@@ -1,5 +1,5 @@
 """
-Atlassian Tool - Integration with Atlassian services via MCP (Model Context Protocol) remote server.
+Atlassian Tool - Integration using the mcp-atlassian package as a subprocess MCP server.
 Provides access to Jira issues, Confluence pages, and project management capabilities.
 """
 
@@ -7,27 +7,25 @@ import json
 import logging
 import time
 import asyncio
+import subprocess
 from typing import Dict, Any, List, Optional, Union
 from datetime import datetime
 from config import settings
 from services.trace_manager import trace_manager
-from mcp import client
 from mcp.client.session import ClientSession
-import subprocess
-import tempfile
-import os
+from mcp.client.stdio import stdio_client
 
 logger = logging.getLogger(__name__)
 
 class AtlassianTool:
     """
-    Atlassian integration tool using MCP (Model Context Protocol) remote server.
-    Provides access to Jira and Confluence via the Atlassian MCP server.
+    Atlassian integration tool using the mcp-atlassian package as an MCP server.
+    Provides access to Jira and Confluence via the MCP protocol.
     """
     
     def __init__(self):
         """Initialize Atlassian tool with MCP server configuration."""
-        # Configuration for MCP server
+        # Configuration
         self.jira_url = settings.ATLASSIAN_JIRA_URL
         self.jira_username = settings.ATLASSIAN_JIRA_USERNAME
         self.jira_token = settings.ATLASSIAN_JIRA_TOKEN
@@ -37,7 +35,7 @@ class AtlassianTool:
         
         # MCP client session
         self._session: Optional[ClientSession] = None
-        self._process: Optional[subprocess.Popen] = None
+        self._session_context = None
         
         self.available = bool(
             self.jira_url and self.jira_username and self.jira_token and
@@ -59,11 +57,10 @@ class AtlassianTool:
             return None
         
         try:
-            # Create MCP server command
-            # For Atlassian MCP, we need to run the server with our credentials
-            mcp_command = [
-                "npx", 
-                "@modelcontextprotocol/server-atlassian",
+            # Build command for mcp-atlassian server
+            command = [
+                "uvx", 
+                "mcp-atlassian",
                 "--jira-url", self.jira_url,
                 "--jira-username", self.jira_username,
                 "--jira-token", self.jira_token,
@@ -72,24 +69,14 @@ class AtlassianTool:
                 "--confluence-token", self.confluence_token
             ]
             
-            # Start the MCP server process
-            self._process = await asyncio.create_subprocess_exec(
-                *mcp_command,
-                stdin=subprocess.PIPE,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE
-            )
+            # Create MCP session using stdio client
+            self._session_context = stdio_client(command)
+            read_stream, write_stream = await self._session_context.__aenter__()
             
-            # Create client session
-            self._session = ClientSession(
-                read_stream=self._process.stdout,
-                write_stream=self._process.stdin
-            )
-            
-            # Initialize the session
+            self._session = ClientSession(read_stream, write_stream)
             await self._session.initialize()
             
-            logger.info("MCP session established successfully")
+            logger.info("MCP Atlassian session established successfully")
             return self._session
             
         except Exception as e:
@@ -98,7 +85,7 @@ class AtlassianTool:
             return None
     
     async def _cleanup_session(self):
-        """Clean up MCP session and process."""
+        """Clean up MCP session."""
         if self._session:
             try:
                 await self._session.close()
@@ -106,17 +93,12 @@ class AtlassianTool:
                 logger.warning(f"Error closing MCP session: {e}")
             self._session = None
         
-        if self._process:
+        if self._session_context:
             try:
-                self._process.terminate()
-                await asyncio.wait_for(self._process.wait(), timeout=5.0)
+                await self._session_context.__aexit__(None, None, None)
             except Exception as e:
-                logger.warning(f"Error terminating MCP process: {e}")
-                try:
-                    self._process.kill()
-                except Exception:
-                    pass
-            self._process = None
+                logger.warning(f"Error cleaning up session context: {e}")
+            self._session_context = None
     
     async def _call_tool(self, tool_name: str, arguments: Dict[str, Any]) -> Dict[str, Any]:
         """
@@ -137,19 +119,17 @@ class AtlassianTool:
             # Call the tool
             result = await session.call_tool(tool_name, arguments)
             
-            # Convert result to dictionary format
-            if hasattr(result, 'content'):
-                if isinstance(result.content, list) and len(result.content) > 0:
-                    content = result.content[0]
-                    if hasattr(content, 'text'):
-                        try:
-                            return json.loads(content.text)
-                        except json.JSONDecodeError:
-                            return {"text": content.text}
-                    else:
-                        return {"content": str(content)}
+            # Extract content from MCP response
+            content_list = getattr(result, 'content', [])
+            if content_list:
+                content = content_list[0]
+                if hasattr(content, 'text'):
+                    try:
+                        return json.loads(content.text)
+                    except json.JSONDecodeError:
+                        return {"text": content.text}
                 else:
-                    return {"content": str(result.content)}
+                    return {"content": str(content)}
             else:
                 return {"result": str(result)}
                 
@@ -194,7 +174,7 @@ class AtlassianTool:
             
             arguments = {
                 "jql": query,
-                "maxResults": max_results
+                "max_results": max_results
             }
             
             if fields:
@@ -205,13 +185,14 @@ class AtlassianTool:
             if "error" in result:
                 return result
             
-            # Format the result for consistency with the original API
+            # Format the result for consistency
+            issues = result.get("issues", [])
             return {
                 "jira_search_results": {
                     "query": query,
-                    "total_found": result.get("total", 0),
-                    "returned_count": len(result.get("issues", [])),
-                    "issues": result.get("issues", [])
+                    "total_found": result.get("total", len(issues)),
+                    "returned_count": len(issues),
+                    "issues": issues
                 },
                 "response_time": round(time.time() - start_time, 2)
             }
@@ -250,16 +231,16 @@ class AtlassianTool:
                 )
             
             arguments = {
-                "issueKey": issue_key
+                "issue_key": issue_key
             }
             
-            result = await self._call_tool("jira_get_issue", arguments)
+            result = await self._call_tool("jira_get", arguments)
             
             if "error" in result:
                 return result
             
             return {
-                "jira_issue": result.get("issue", {}),
+                "jira_issue": result.get("issue", result),
                 "response_time": round(time.time() - start_time, 2)
             }
             
@@ -304,25 +285,26 @@ class AtlassianTool:
                 )
             
             arguments = {
-                "cql": query,
+                "query": query,
                 "limit": max_results
             }
             
             if space_key:
-                arguments["spaceKey"] = space_key
+                arguments["space_key"] = space_key
             
             result = await self._call_tool("confluence_search", arguments)
             
             if "error" in result:
                 return result
             
+            pages = result.get("pages", result.get("results", []))
             return {
                 "confluence_search_results": {
                     "query": query,
                     "space_key": space_key,
-                    "total_found": result.get("totalSize", 0),
-                    "returned_count": len(result.get("results", [])),
-                    "pages": result.get("results", [])
+                    "total_found": result.get("size", len(pages)),
+                    "returned_count": len(pages),
+                    "pages": pages
                 },
                 "response_time": round(time.time() - start_time, 2)
             }
@@ -361,16 +343,16 @@ class AtlassianTool:
                 )
             
             arguments = {
-                "pageId": page_id
+                "page_id": page_id
             }
             
-            result = await self._call_tool("confluence_get_page", arguments)
+            result = await self._call_tool("confluence_get", arguments)
             
             if "error" in result:
                 return result
             
             return {
-                "confluence_page": result.get("page", {}),
+                "confluence_page": result.get("page", result),
                 "response_time": round(time.time() - start_time, 2)
             }
             
@@ -425,8 +407,8 @@ class AtlassianTool:
                 )
             
             arguments = {
-                "projectKey": project_key,
-                "issueType": issue_type,
+                "project_key": project_key,
+                "issue_type": issue_type,
                 "summary": summary,
                 "description": description,
                 "priority": priority
@@ -435,13 +417,13 @@ class AtlassianTool:
             if assignee:
                 arguments["assignee"] = assignee
             
-            result = await self._call_tool("jira_create_issue", arguments)
+            result = await self._call_tool("jira_create", arguments)
             
             if "error" in result:
                 return result
             
             return {
-                "jira_issue_created": result.get("issue", {}),
+                "jira_issue_created": result.get("issue", result),
                 "response_time": round(time.time() - start_time, 2)
             }
             
