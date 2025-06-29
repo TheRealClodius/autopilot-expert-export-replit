@@ -1,32 +1,30 @@
 """
-Simplified MCP Atlassian Tool
+Simplified HTTP-based Atlassian Tool
 
-Direct HTTP calls to MCP server endpoints based on official mcp-atlassian tools.
+Connects to the MCP Atlassian server via direct HTTP tool calls,
+bypassing complex session management.
 """
 
 import asyncio
 import json
 import logging
-from typing import Dict, Any, List
+import uuid
+from typing import Dict, Any, List, Optional
 import httpx
 from config import settings
 
+# Setup logging
 logger = logging.getLogger(__name__)
 
 class AtlassianTool:
     """
-    Simple MCP client for Atlassian tools.
-    Makes direct HTTP calls to the 8 MCP tools available.
+    Simplified HTTP-based Atlassian integration tool.
+    Connects to MCP server via direct tool calls.
     """
 
     def __init__(self, trace_manager=None):
-        """Initialize MCP Atlassian tool"""
-        self.available_tools = [
-            "echo", "get_system_info", "health_check", 
-            "get_jira_issues", "create_jira_issue", 
-            "get_confluence_pages", "create_confluence_page", 
-            "get_atlassian_status"
-        ]
+        """Initialize simplified HTTP-based Atlassian tool"""
+        self.available_tools = []
         self.mcp_server_url = self._get_mcp_server_url()
         self.trace_manager = trace_manager
         logger.info(f"Using configured MCP server URL: {self.mcp_server_url}")
@@ -35,15 +33,21 @@ class AtlassianTool:
     @property
     def available(self):
         """Backward compatibility property"""
-        return True  # MCP server handles availability
+        return bool(self.available_tools)
 
     def _get_mcp_server_url(self) -> str:
         """Get the MCP server URL from configuration"""
         url = settings.MCP_SERVER_URL or "https://remote-mcp-server-andreiclodius.replit.app"
+        # Clean any whitespace and ensure URL has proper protocol
         url = url.strip()
         if not url.startswith(('http://', 'https://')):
             url = f"https://{url}"
         return url.rstrip('/')
+
+    def _check_credentials(self) -> bool:
+        """Check if required Atlassian credentials are available"""
+        required_vars = [
+            "ATLASSIAN_JIRA_URL",
             "ATLASSIAN_JIRA_USERNAME", 
             "ATLASSIAN_JIRA_TOKEN",
             "ATLASSIAN_CONFLUENCE_URL",
