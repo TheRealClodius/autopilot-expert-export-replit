@@ -35,6 +35,15 @@ class Settings(BaseSettings):
     MICROSOFT_TENANT_ID: str = os.getenv("MICROSOFT_TENANT_ID", "")
     MICROSOFT_SCOPE: str = os.getenv("MICROSOFT_SCOPE", "https://graph.microsoft.com/.default")
     
+    # Atlassian Configuration
+    ATLASSIAN_JIRA_URL: str = os.getenv("ATLASSIAN_JIRA_URL", "")
+    ATLASSIAN_JIRA_USERNAME: str = os.getenv("ATLASSIAN_JIRA_USERNAME", "")
+    ATLASSIAN_JIRA_TOKEN: str = os.getenv("ATLASSIAN_JIRA_TOKEN", "")
+    ATLASSIAN_CONFLUENCE_URL: str = os.getenv("ATLASSIAN_CONFLUENCE_URL", "")
+    ATLASSIAN_CONFLUENCE_USERNAME: str = os.getenv("ATLASSIAN_CONFLUENCE_USERNAME", "")
+    ATLASSIAN_CONFLUENCE_TOKEN: str = os.getenv("ATLASSIAN_CONFLUENCE_TOKEN", "")
+    ATLASSIAN_MCP_URL: str = os.getenv("ATLASSIAN_MCP_URL", "https://mcp.atlassian.com/v1/sse")
+    
     # Redis Configuration (optional - fallback to in-memory cache if not available)
     REDIS_URL: str = os.getenv("REDIS_URL", "")
     REDIS_PASSWORD: Optional[str] = os.getenv("REDIS_PASSWORD")

@@ -9,9 +9,11 @@ autopilot_expert_multi_agent.egg-info/dependency_links.txt
 autopilot_expert_multi_agent.egg-info/requires.txt
 autopilot_expert_multi_agent.egg-info/top_level.txt
 models/schemas.py
+services/connection_pool.py
 services/data_processor.py
 services/document_ingestion.py
 services/embedding_service.py
+services/lazy_loader.py
 services/memory_service.py
 services/performance_optimizer.py
 services/prewarming_service.py
@@ -21,6 +23,7 @@ services/trace_manager.py
 services/trace_manager_old.py
 services/trace_manager_old_broken.py
 services/webhook_cache.py
+tools/outlook_meeting.py
 tools/perplexity_search.py
 tools/vector_search.py
 utils/gemini_client.py
