@@ -71,7 +71,15 @@ async def test_mcp_results_display():
     print("\nStep 2: Testing client agent result formatting")
     print("-" * 30)
     
-    # Create a mock state stack with the MCP results
+    # Create a mock state stack with the MCP results in the format orchestrator stores them
+    # Orchestrator stores: {"success": True, "result": pages_array, "tool": mcp_tool}
+    mock_atlassian_result = {
+        "action_type": "confluence_search",  # For backward compatibility 
+        "mcp_tool": "confluence_search",     # Modern MCP format
+        "success": result.get("success", False),
+        "result": result.get("result", [])   # This should be the pages array
+    }
+    
     mock_state_stack = {
         "query": "What are the Autopilot for Everyone features?",
         "user": {"name": "TestUser", "first_name": "Test"},
@@ -80,7 +88,7 @@ async def test_mcp_results_display():
         "orchestrator_analysis": {
             "intent": "User wants information about Autopilot for Everyone",
             "tools_used": ["atlassian_search"],
-            "atlassian_results": [result]  # Include the actual MCP result
+            "atlassian_results": [mock_atlassian_result]  # Use properly formatted result
         }
     }
     
