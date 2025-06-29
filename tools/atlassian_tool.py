@@ -44,49 +44,94 @@ class AtlassianTool:
         else:
             logger.warning("Atlassian tool unavailable - missing credentials")
     
-    async def _make_mcp_request(self, method: str, params: Dict[str, Any]) -> Dict[str, Any]:
+    async def _make_confluence_request(self, endpoint: str, params: Dict[str, Any] = None) -> Dict[str, Any]:
         """
-        Make a request to the Atlassian MCP server.
+        Make a direct request to Confluence REST API.
         
         Args:
-            method: The MCP method to call
-            params: Parameters for the method
+            endpoint: The API endpoint (without base URL)
+            params: Query parameters
             
         Returns:
-            Response from the MCP server
+            Response from Confluence API
         """
         try:
-            request_data = {
-                "jsonrpc": "2.0",
-                "id": f"req_{int(time.time() * 1000)}",
-                "method": method,
-                "params": params
-            }
+            # Use basic auth with email and API token
+            auth = (self.confluence_username, self.confluence_token)
+            
+            # Build full URL
+            base_url = self.confluence_url.rstrip('/wiki')  # Remove /wiki if present
+            url = f"{base_url}/wiki/rest/api{endpoint}"
             
             headers = {
-                "Content-Type": "application/json",
-                "Authorization": f"Bearer {self.jira_token}",  # Use Jira token for auth
+                "Accept": "application/json",
+                "Content-Type": "application/json"
             }
             
             async with httpx.AsyncClient(timeout=30.0) as client:
-                response = await client.post(
-                    self.mcp_url,
-                    json=request_data,
-                    headers=headers
+                response = await client.get(
+                    url,
+                    params=params or {},
+                    headers=headers,
+                    auth=auth
                 )
                 response.raise_for_status()
                 
-                result = response.json()
-                
-                if "error" in result:
-                    logger.error(f"MCP server error: {result['error']}")
-                    return {"error": result["error"]}
-                
-                return result.get("result", {})
+                return response.json()
                 
         except Exception as e:
-            logger.error(f"MCP request failed: {e}")
-            return {"error": f"MCP request failed: {str(e)}"}
+            logger.error(f"Confluence API request failed: {e}")
+            return {"error": f"Confluence API request failed: {str(e)}"}
+    
+    async def _make_jira_request(self, endpoint: str, params: Dict[str, Any] = None, method: str = "GET", data: Dict[str, Any] = None) -> Dict[str, Any]:
+        """
+        Make a direct request to Jira REST API.
+        
+        Args:
+            endpoint: The API endpoint (without base URL)
+            params: Query parameters
+            method: HTTP method
+            data: Request body data
+            
+        Returns:
+            Response from Jira API
+        """
+        try:
+            # Use basic auth with email and API token
+            auth = (self.jira_username, self.jira_token)
+            
+            # Build full URL
+            url = f"{self.jira_url.rstrip('/')}/rest/api/2{endpoint}"
+            
+            headers = {
+                "Accept": "application/json",
+                "Content-Type": "application/json"
+            }
+            
+            async with httpx.AsyncClient(timeout=30.0) as client:
+                if method.upper() == "GET":
+                    response = await client.get(
+                        url,
+                        params=params or {},
+                        headers=headers,
+                        auth=auth
+                    )
+                else:
+                    response = await client.request(
+                        method,
+                        url,
+                        params=params or {},
+                        json=data,
+                        headers=headers,
+                        auth=auth
+                    )
+                response.raise_for_status()
+                
+                return response.json()
+                
+        except Exception as e:
+            logger.error(f"Jira API request failed: {e}")
+            return {"error": f"Jira API request failed: {str(e)}"}
     
     async def search_jira_issues(
         self,
@@ -130,7 +175,9 @@ class AtlassianTool:
                 "fields": search_fields
             }
             
-            result = await self._make_mcp_request("jira/search", params)
+            # Convert fields list to comma-separated string for Jira API
+            params["fields"] = ",".join(search_fields)
+            result = await self._make_jira_request("/search", params)
             
             if "error" in result:
                 return result
