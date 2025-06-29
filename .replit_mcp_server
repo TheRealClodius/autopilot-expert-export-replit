@@ -1,0 +1,12 @@
+# Replit configuration for standalone MCP server project
+run = ["python", "mcp_server_standalone.py"]
+
+[nix]
+channel = "stable-24_05"
+
+[deployment]
+run = ["python", "mcp_server_standalone.py"]
+
+[[ports]]
+localPort = 8001
+externalPort = 80

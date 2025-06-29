@@ -1,91 +1,103 @@
-# CRITICAL DEPLOYMENT ENVIRONMENT VARIABLES
+# Two-Project Deployment Architecture
 
-## 1. Redis Connection Error Fix
+## Overview
 
-**Problem:** Deployment showing `error dial tcp 127.0.0.1:6379: connect: connection refused`
+The multi-agent system has been restructured into two independent Replit projects for better scalability and maintainability:
 
-**Root Cause:** When these environment variables are EMPTY in deployment, something defaults to `redis://localhost:6379`
+1. **Main Agent System** (this project) - FastAPI with Slack integration
+2. **Standalone MCP Server** (separate project) - Atlassian MCP service
 
-### Required Redis Environment Variables
+## Project 1: Main Agent System (Current Project)
 
+### What This Contains:
+- FastAPI server with Slack webhook integration
+- Multi-agent system (Orchestrator, Client, Observer agents)
+- Vector search, Perplexity search, Outlook meeting tools
+- Memory service and performance optimization
+- LangSmith tracing integration
+
+### Dependencies Removed:
+- Redis server (uses memory cache fallback)
+- MCP server (connects to external MCP service)
+- Docker dependencies
+
+### Deployment:
 ```bash
-# For Replit Secrets (cannot have empty values)
-CELERY_BROKER_URL = memory://
-CELERY_RESULT_BACKEND = cache+memory://
-REDIS_URL = memory://
+# This project runs standalone on port 5000
+python main.py
 ```
 
-## 2. MCP SERVER CONNECTIVITY FIX
-
-**Problem:** `Atlassian Error (jira_search encountered an issue)` - `All connection attempts failed`
-
-**Root Cause:** MCP server not accessible at `http://localhost:8001` in deployment environment
-
-### Required MCP Server Environment Variable
-
-Choose the appropriate option for your deployment:
-
-```bash
-# Option 1: Single container deployment (default)
-export MCP_SERVER_URL='http://localhost:8001'
-
-# Option 2: Docker/container deployment
-export MCP_SERVER_URL='http://mcp-atlassian:8001'
-
-# Option 3: Host networking
-export MCP_SERVER_URL='http://host.docker.internal:8001'
-
-# Option 4: External MCP server
-export MCP_SERVER_URL='http://your-mcp-host:8001'
+### Environment Variables:
+```
+SLACK_BOT_TOKEN=xoxb-...
+SLACK_SIGNING_SECRET=...
+GEMINI_API_KEY=...
+MCP_SERVER_URL=https://your-mcp-server.replit.app
+PINECONE_API_KEY=...
+PERPLEXITY_API_KEY=...
+LANGSMITH_API_KEY=...
 ```
 
-### Deployment Diagnosis Steps
+## Project 2: Standalone MCP Server (New Separate Project)
 
-1. **Check MCP Server Status:**
-   ```bash
-   curl http://localhost:8001/healthz
-   # Should return: {"status":"ok"}
-   ```
+### Files to Copy to New Project:
+- `mcp_server_standalone.py` (main startup file)
+- `requirements_mcp_server.txt` (minimal dependencies)
+- `.replit_mcp_server` (rename to `.replit`)
+- `mcp-atlassian/` directory (if using custom MCP implementation)
 
-2. **Test MCP Connectivity:**
-   ```bash
-   curl -X POST http://localhost:8001/mcp/ \
-     -H "Content-Type: application/json" \
-     -H "Accept: application/json, text/event-stream" \
-     -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"test","version":"1.0.0"}}}'
-   ```
-
-3. **Verify Container/Process Status:**
-   ```bash
-   # Check if MCP server process is running
-   ps aux | grep mcp
-   
-   # Check port binding
-   netstat -tlnp | grep 8001
-   ```
-
-## Deployment Status
-
-- ✅ Application code updated to handle empty Redis configurations
-- ✅ Celery fallback to memory transport implemented
-- ✅ MCP server URL made configurable via environment variable
-- ✅ AtlassianTool working with authentic UiPath data locally
-- 🔄 **DEPLOYMENT NEEDED:** Environment variables must be set for deployment network
-
-## Final Verification
-
-After setting environment variables, check logs for:
-
-**Redis:**
+### Environment Variables for MCP Project:
 ```
-- celery_app - INFO - Using memory transport (broker_url='')
-- celery_app - INFO - Using cache+memory backend (backend_url='')
+ATLASSIAN_JIRA_URL=https://your-org.atlassian.net
+ATLASSIAN_JIRA_USERNAME=your-email@company.com
+ATLASSIAN_JIRA_TOKEN=your-api-token
+ATLASSIAN_CONFLUENCE_URL=https://your-org.atlassian.net
+ATLASSIAN_CONFLUENCE_USERNAME=your-email@company.com
+ATLASSIAN_CONFLUENCE_TOKEN=your-api-token
+PORT=8001
 ```
 
-**MCP Server:**
-```
-- tools.atlassian_tool - INFO - HTTP-based Atlassian tool initialized successfully
-- Successfully retrieved X Confluence pages
-```
+### Deployment Steps:
+1. Create new Replit project
+2. Copy standalone MCP files
+3. Install dependencies: `pip install -r requirements_mcp_server.txt`
+4. Set environment variables
+5. Deploy on port 8001
 
-This will eliminate ALL Redis connection attempts and MCP connectivity issues in deployment.
+## Connection Configuration
+
+After deploying both projects:
+
+1. **Get MCP Server URL**: After deploying MCP project, note the public URL
+2. **Update Main Project**: Set `MCP_SERVER_URL` to the MCP server's public URL
+3. **Test Connection**: Use `/admin/test-atlassian-integration` endpoint
+
+## Benefits of Two-Project Architecture
+
+1. **Independent Scaling**: Each service scales based on its needs
+2. **Simplified Deployment**: No complex dual-server startup scripts
+3. **Resource Efficiency**: MCP server is lightweight, main app handles complex AI
+4. **Better Maintenance**: Changes to one service don't affect the other
+5. **Cleaner Dependencies**: Each project has only what it needs
+
+## Ready for Deployment
+
+✅ **Main Project Status**: Ready to deploy
+- All Redis dependencies eliminated
+- Memory cache fallback working
+- FastAPI server running on port 5000
+- All external dependencies configurable via environment variables
+
+✅ **MCP Server Files**: Ready for separate project
+- Standalone server configuration created
+- Minimal dependencies defined
+- Environment validation implemented
+- Health check endpoints available
+
+## Next Steps
+
+1. Deploy this current project (main agent system)
+2. Create new Replit project for MCP server
+3. Copy MCP files to new project and deploy
+4. Update `MCP_SERVER_URL` environment variable
+5. Test end-to-end integration
