@@ -766,40 +766,48 @@ Current Query: "{message.text}"
     
     async def _execute_single_tool_action(self, tool_name: str, action: Dict[str, Any]) -> Dict[str, Any]:
         """Execute a single tool action without retry logic"""
-        action_type = action.get("type")
         
         if tool_name == "atlassian":
-            if action_type == "search_jira_issues":
-                return await self.atlassian_tool.search_jira_issues(
-                    query=action.get("query", ""),
-                    max_results=action.get("max_results", 10),
-                    fields=action.get("fields")
-                )
-            elif action_type == "get_jira_issue":
-                return await self.atlassian_tool.get_jira_issue(
-                    issue_key=action.get("issue_key", "")
-                )
-            elif action_type == "search_confluence_pages":
-                return await self.atlassian_tool.search_confluence_pages(
-                    query=action.get("query", ""),
-                    space_key=action.get("space_key"),
-                    max_results=action.get("max_results", 10)
-                )
-            elif action_type == "get_confluence_page":
-                return await self.atlassian_tool.get_confluence_page(
-                    page_id=action.get("page_id", "")
-                )
-            elif action_type == "create_jira_issue":
-                return await self.atlassian_tool.create_jira_issue(
-                    project_key=action.get("project_key", ""),
-                    issue_type=action.get("issue_type", "Task"),
-                    summary=action.get("summary", ""),
-                    description=action.get("description", ""),
-                    priority=action.get("priority", "Medium"),
-                    assignee=action.get("assignee")
-                )
+            # Direct MCP tool execution
+            mcp_tool = action.get("mcp_tool")
+            mcp_arguments = action.get("arguments", {})
+            
+            if mcp_tool and mcp_arguments:
+                # Modern direct MCP call
+                return await self.atlassian_tool.execute_mcp_tool(mcp_tool, mcp_arguments)
             else:
-                return {"error": f"Unknown Atlassian action type: {action_type}"}
+                # Legacy fallback for backward compatibility
+                action_type = action.get("type")
+                if action_type == "search_jira_issues":
+                    return await self.atlassian_tool.execute_mcp_tool("jira_search", {
+                        "jql": action.get("query", ""),
+                        "max_results": action.get("max_results", 10)
+                    })
+                elif action_type == "get_jira_issue":
+                    return await self.atlassian_tool.execute_mcp_tool("jira_get", {
+                        "issue_key": action.get("issue_key", "")
+                    })
+                elif action_type == "search_confluence_pages":
+                    return await self.atlassian_tool.execute_mcp_tool("confluence_search", {
+                        "query": action.get("query", ""),
+                        "space_key": action.get("space_key"),
+                        "limit": action.get("max_results", 10)
+                    })
+                elif action_type == "get_confluence_page":
+                    return await self.atlassian_tool.execute_mcp_tool("confluence_get", {
+                        "page_id": action.get("page_id", "")
+                    })
+                elif action_type == "create_jira_issue":
+                    return await self.atlassian_tool.execute_mcp_tool("jira_create", {
+                        "project_key": action.get("project_key", ""),
+                        "issue_type": action.get("issue_type", "Task"),
+                        "summary": action.get("summary", ""),
+                        "description": action.get("description", ""),
+                        "priority": action.get("priority", "Medium"),
+                        "assignee": action.get("assignee")
+                    })
+                else:
+                    return {"error": f"Unknown Atlassian action type: {action_type}"}
         
         elif tool_name == "vector_search":
             results = await self.vector_tool.search(

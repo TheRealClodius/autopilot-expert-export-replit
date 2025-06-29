@@ -47,18 +47,22 @@ orchestrator_prompt: >
     ] (if using outlook_meeting),
     "atlassian_actions": [
       {
-        "type": "search_jira_issues|get_jira_issue|search_confluence_pages|get_confluence_page|create_jira_issue",
-        "query": "search terms",
-        "issue_key": "PROJ-123",
-        "page_id": "12345",
-        "space_key": "SPACE",
-        "max_results": 10,
-        "project_key": "PROJ",
-        "issue_type": "Task",
-        "summary": "Issue title",
-        "description": "Issue description",
-        "priority": "Medium",
-        "assignee": "username"
+        "mcp_tool": "jira_search|jira_get|confluence_search|confluence_get|jira_create",
+        "arguments": {
+          "jql": "JQL query for jira_search",
+          "max_results": 10,
+          "issue_key": "PROJ-123",
+          "query": "search terms",
+          "space_key": "SPACE",
+          "limit": 10,
+          "page_id": "12345",
+          "project_key": "PROJ",
+          "issue_type": "Task",
+          "summary": "Issue title",
+          "description": "Issue description",
+          "priority": "Medium",
+          "assignee": "username"
+        }
       }
     ] (if using atlassian_search)
   }

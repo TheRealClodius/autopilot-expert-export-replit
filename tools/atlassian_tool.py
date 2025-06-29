@@ -1,14 +1,13 @@
 """
-Atlassian Tool - Integration using the mcp-atlassian package as a subprocess MCP server.
-Provides access to Jira issues, Confluence pages, and project management capabilities.
+Atlassian Tool - Direct MCP integration using the mcp-atlassian package.
+Modern LLM tool interface that communicates directly with MCP commands.
 """
 
 import json
 import logging
 import time
 import asyncio
-import subprocess
-from typing import Dict, Any, List, Optional, Union
+from typing import Dict, Any, List, Optional
 from datetime import datetime
 from config import settings
 from services.trace_manager import trace_manager
@@ -19,12 +18,12 @@ logger = logging.getLogger(__name__)
 
 class AtlassianTool:
     """
-    Atlassian integration tool using the mcp-atlassian package as an MCP server.
-    Provides access to Jira and Confluence via the MCP protocol.
+    Direct MCP Atlassian integration tool.
+    Orchestrator communicates directly with MCP commands for maximum efficiency.
     """
     
     def __init__(self):
-        """Initialize Atlassian tool with MCP server configuration."""
+        """Initialize direct MCP Atlassian tool."""
         # Configuration
         self.jira_url = settings.ATLASSIAN_JIRA_URL
         self.jira_username = settings.ATLASSIAN_JIRA_USERNAME
@@ -42,8 +41,17 @@ class AtlassianTool:
             self.confluence_url and self.confluence_username and self.confluence_token
         )
         
+        # Available MCP tools that orchestrator can use directly
+        self.available_tools = [
+            "jira_search",
+            "jira_get", 
+            "jira_create",
+            "confluence_search",
+            "confluence_get"
+        ] if self.available else []
+        
         if self.available:
-            logger.info("Atlassian tool initialized successfully")
+            logger.info("Direct MCP Atlassian tool initialized successfully")
         else:
             logger.warning("Atlassian tool unavailable - missing credentials")
     
@@ -105,23 +113,46 @@ class AtlassianTool:
                 logger.warning(f"Error cleaning up session context: {e}")
             self._session_context = None
     
-    async def _call_tool(self, tool_name: str, arguments: Dict[str, Any]) -> Dict[str, Any]:
+    async def execute_mcp_tool(self, tool_name: str, arguments: Dict[str, Any]) -> Dict[str, Any]:
         """
-        Call a tool via MCP client.
+        Execute MCP tool directly - modern LLM interface.
         
         Args:
-            tool_name: Name of the tool to call
-            arguments: Arguments for the tool
+            tool_name: MCP tool name (jira_search, confluence_search, etc.)
+            arguments: Direct MCP arguments
             
         Returns:
-            Tool response
+            MCP tool response
         """
-        session = await self._get_session()
-        if not session:
-            return {"error": "MCP session not available"}
+        if not self.available:
+            return {
+                "error": "Atlassian tool not configured",
+                "message": "Atlassian credentials not available"
+            }
+        
+        if tool_name not in self.available_tools:
+            return {
+                "error": f"Unknown MCP tool: {tool_name}",
+                "available_tools": self.available_tools
+            }
+        
+        start_time = time.time()
         
         try:
-            # Call the tool
+            # Trace the operation
+            if trace_manager.current_trace_id:
+                await trace_manager.log_agent_operation(
+                    "atlassian_mcp",
+                    f"{tool_name}: {arguments}",
+                    json.dumps({"tool": tool_name, "arguments": arguments}),
+                    {"trace_id": trace_manager.current_trace_id}
+                )
+            
+            session = await self._get_session()
+            if not session:
+                return {"error": "MCP session not available"}
+            
+            # Direct MCP tool call
             result = await session.call_tool(tool_name, arguments)
             
             # Extract content from MCP response
@@ -130,312 +161,34 @@ class AtlassianTool:
                 content = content_list[0]
                 if hasattr(content, 'text'):
                     try:
-                        return json.loads(content.text)
+                        parsed_result = json.loads(content.text)
+                        # Add metadata
+                        parsed_result["mcp_tool"] = tool_name
+                        parsed_result["response_time"] = round(time.time() - start_time, 2)
+                        return parsed_result
                     except json.JSONDecodeError:
-                        return {"text": content.text}
+                        return {
+                            "text": content.text,
+                            "mcp_tool": tool_name,
+                            "response_time": round(time.time() - start_time, 2)
+                        }
                 else:
-                    return {"content": str(content)}
+                    return {
+                        "content": str(content),
+                        "mcp_tool": tool_name,
+                        "response_time": round(time.time() - start_time, 2)
+                    }
             else:
-                return {"result": str(result)}
+                return {
+                    "result": str(result),
+                    "mcp_tool": tool_name,
+                    "response_time": round(time.time() - start_time, 2)
+                }
                 
         except Exception as e:
-            logger.error(f"MCP tool call failed: {e}")
-            return {"error": f"MCP tool call failed: {str(e)}"}
-    
-    async def search_jira_issues(
-        self,
-        query: str,
-        max_results: int = 10,
-        fields: Optional[List[str]] = None
-    ) -> Dict[str, Any]:
-        """
-        Search for Jira issues using JQL via MCP.
-        
-        Args:
-            query: JQL query or text search terms
-            max_results: Maximum number of results to return
-            fields: List of fields to include in results
-            
-        Returns:
-            Dict containing search results
-        """
-        if not self.available:
-            return {
-                "error": "Atlassian tool not configured",
-                "message": "Atlassian credentials not available"
-            }
-        
-        start_time = time.time()
-        
-        try:
-            # Trace the operation
-            if trace_manager.current_trace_id:
-                await trace_manager.log_agent_operation(
-                    "atlassian_tool",
-                    f"jira_search: {query}",
-                    json.dumps({"query": query, "max_results": max_results}),
-                    {"trace_id": trace_manager.current_trace_id}
-                )
-            
-            arguments = {
-                "jql": query,
-                "max_results": max_results
-            }
-            
-            if fields:
-                arguments["fields"] = fields
-            
-            result = await self._call_tool("jira_search", arguments)
-            
-            if "error" in result:
-                return result
-            
-            # Format the result for consistency
-            issues = result.get("issues", [])
-            return {
-                "jira_search_results": {
-                    "query": query,
-                    "total_found": result.get("total", len(issues)),
-                    "returned_count": len(issues),
-                    "issues": issues
-                },
-                "response_time": round(time.time() - start_time, 2)
-            }
-            
-        except Exception as e:
-            error_msg = f"Jira search failed: {str(e)}"
+            error_msg = f"MCP tool {tool_name} failed: {str(e)}"
             logger.error(error_msg)
-            return {"error": error_msg}
-    
-    async def get_jira_issue(self, issue_key: str) -> Dict[str, Any]:
-        """
-        Get detailed information about a specific Jira issue via MCP.
-        
-        Args:
-            issue_key: The Jira issue key (e.g., "PROJ-123")
-            
-        Returns:
-            Dict containing issue details
-        """
-        if not self.available:
-            return {
-                "error": "Atlassian tool not configured",
-                "message": "Atlassian credentials not available"
-            }
-        
-        start_time = time.time()
-        
-        try:
-            # Trace the operation
-            if trace_manager.current_trace_id:
-                await trace_manager.log_agent_operation(
-                    "atlassian_tool",
-                    f"jira_get_issue: {issue_key}",
-                    json.dumps({"issue_key": issue_key}),
-                    {"trace_id": trace_manager.current_trace_id}
-                )
-            
-            arguments = {
-                "issue_key": issue_key
-            }
-            
-            result = await self._call_tool("jira_get", arguments)
-            
-            if "error" in result:
-                return result
-            
-            return {
-                "jira_issue": result.get("issue", result),
-                "response_time": round(time.time() - start_time, 2)
-            }
-            
-        except Exception as e:
-            error_msg = f"Failed to get Jira issue: {str(e)}"
-            logger.error(error_msg)
-            return {"error": error_msg}
-    
-    async def search_confluence_pages(
-        self,
-        query: str,
-        space_key: Optional[str] = None,
-        max_results: int = 10
-    ) -> Dict[str, Any]:
-        """
-        Search for Confluence pages via MCP.
-        
-        Args:
-            query: Search terms
-            space_key: Optional space key to limit search
-            max_results: Maximum number of results to return
-            
-        Returns:
-            Dict containing search results
-        """
-        if not self.available:
-            return {
-                "error": "Atlassian tool not configured",
-                "message": "Atlassian credentials not available"
-            }
-        
-        start_time = time.time()
-        
-        try:
-            # Trace the operation
-            if trace_manager.current_trace_id:
-                await trace_manager.log_agent_operation(
-                    "atlassian_tool",
-                    f"confluence_search: {query}",
-                    json.dumps({"query": query, "space_key": space_key, "max_results": max_results}),
-                    {"trace_id": trace_manager.current_trace_id}
-                )
-            
-            arguments = {
-                "query": query,
-                "limit": max_results
-            }
-            
-            if space_key:
-                arguments["space_key"] = space_key
-            
-            result = await self._call_tool("confluence_search", arguments)
-            
-            if "error" in result:
-                return result
-            
-            pages = result.get("pages", result.get("results", []))
-            return {
-                "confluence_search_results": {
-                    "query": query,
-                    "space_key": space_key,
-                    "total_found": result.get("size", len(pages)),
-                    "returned_count": len(pages),
-                    "pages": pages
-                },
-                "response_time": round(time.time() - start_time, 2)
-            }
-            
-        except Exception as e:
-            error_msg = f"Confluence search failed: {str(e)}"
-            logger.error(error_msg)
-            return {"error": error_msg}
-    
-    async def get_confluence_page(self, page_id: str) -> Dict[str, Any]:
-        """
-        Get detailed information about a specific Confluence page via MCP.
-        
-        Args:
-            page_id: The Confluence page ID
-            
-        Returns:
-            Dict containing page details
-        """
-        if not self.available:
-            return {
-                "error": "Atlassian tool not configured",
-                "message": "Atlassian credentials not available"
-            }
-        
-        start_time = time.time()
-        
-        try:
-            # Trace the operation
-            if trace_manager.current_trace_id:
-                await trace_manager.log_agent_operation(
-                    "atlassian_tool",
-                    f"confluence_get_page: {page_id}",
-                    json.dumps({"page_id": page_id}),
-                    {"trace_id": trace_manager.current_trace_id}
-                )
-            
-            arguments = {
-                "page_id": page_id
-            }
-            
-            result = await self._call_tool("confluence_get", arguments)
-            
-            if "error" in result:
-                return result
-            
-            return {
-                "confluence_page": result.get("page", result),
-                "response_time": round(time.time() - start_time, 2)
-            }
-            
-        except Exception as e:
-            error_msg = f"Failed to get Confluence page: {str(e)}"
-            logger.error(error_msg)
-            return {"error": error_msg}
-    
-    async def create_jira_issue(
-        self,
-        project_key: str,
-        issue_type: str = "Task",
-        summary: str = "",
-        description: str = "",
-        priority: str = "Medium",
-        assignee: Optional[str] = None
-    ) -> Dict[str, Any]:
-        """
-        Create a new Jira issue via MCP.
-        
-        Args:
-            project_key: The project key
-            issue_type: Type of issue (Task, Bug, Story, etc.)
-            summary: Issue summary
-            description: Issue description
-            priority: Issue priority
-            assignee: Optional assignee username
-            
-        Returns:
-            Dict containing created issue details
-        """
-        if not self.available:
-            return {
-                "error": "Atlassian tool not configured",
-                "message": "Atlassian credentials not available"
-            }
-        
-        start_time = time.time()
-        
-        try:
-            # Trace the operation
-            if trace_manager.current_trace_id:
-                await trace_manager.log_agent_operation(
-                    "atlassian_tool",
-                    f"jira_create_issue: {project_key}",
-                    json.dumps({
-                        "project_key": project_key,
-                        "issue_type": issue_type,
-                        "summary": summary
-                    }),
-                    {"trace_id": trace_manager.current_trace_id}
-                )
-            
-            arguments = {
-                "project_key": project_key,
-                "issue_type": issue_type,
-                "summary": summary,
-                "description": description,
-                "priority": priority
-            }
-            
-            if assignee:
-                arguments["assignee"] = assignee
-            
-            result = await self._call_tool("jira_create", arguments)
-            
-            if "error" in result:
-                return result
-            
-            return {
-                "jira_issue_created": result.get("issue", result),
-                "response_time": round(time.time() - start_time, 2)
-            }
-            
-        except Exception as e:
-            error_msg = f"Failed to create Jira issue: {str(e)}"
-            logger.error(error_msg)
-            return {"error": error_msg}
+            return {"error": error_msg, "mcp_tool": tool_name}
     
     async def __aenter__(self):
         """Async context manager entry."""
