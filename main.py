@@ -118,6 +118,52 @@ async def health_check():
     """Health check endpoint"""
     return {"status": "healthy", "service": "autopilot-expert"}
 
+@app.post("/webhook-test")
+async def webhook_test(request: Request):
+    """Test endpoint to catch any webhook attempts"""
+    try:
+        headers = dict(request.headers)
+        raw_body = await request.body()
+        logger.info(f"🔍 WEBHOOK TEST ENDPOINT HIT - Headers: {headers}")
+        logger.info(f"🔍 WEBHOOK TEST BODY LENGTH: {len(raw_body)} bytes")
+        if raw_body:
+            try:
+                body_text = raw_body.decode('utf-8')[:500]  # First 500 chars
+                logger.info(f"🔍 WEBHOOK TEST BODY PREVIEW: {body_text}")
+            except:
+                pass
+        return {"status": "webhook_test_received", "timestamp": time.time()}
+    except Exception as e:
+        logger.error(f"Error in webhook test: {e}")
+        return {"error": str(e)}
+
+@app.api_route("/{path:path}", methods=["POST", "GET", "PUT", "DELETE"])
+async def catch_all_webhook(request: Request, path: str):
+    """Catch-all endpoint to capture webhook attempts to any path"""
+    try:
+        method = request.method
+        headers = dict(request.headers)
+        raw_body = await request.body()
+        logger.info(f"🎯 CATCH-ALL HIT: {method} /{path}")
+        logger.info(f"🎯 CATCH-ALL HEADERS: {headers}")
+        logger.info(f"🎯 CATCH-ALL BODY LENGTH: {len(raw_body)} bytes")
+        
+        # Check if this looks like a Slack webhook
+        user_agent = headers.get('user-agent', '').lower()
+        if 'slack' in user_agent:
+            logger.info(f"🔥 SLACK WEBHOOK DETECTED at /{path}!")
+            if raw_body:
+                try:
+                    body_text = raw_body.decode('utf-8')[:500]
+                    logger.info(f"🔥 SLACK WEBHOOK BODY: {body_text}")
+                except:
+                    pass
+        
+        return {"path": path, "method": method, "captured": True}
+    except Exception as e:
+        logger.error(f"Error in catch-all: {e}")
+        return {"error": str(e)}
+
 @app.post("/slack/events")
 async def slack_events(request: Request, background_tasks: BackgroundTasks):
     """
