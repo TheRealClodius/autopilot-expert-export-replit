@@ -70,7 +70,7 @@ async def test_orchestrator_mcp():
             # Test actual MCP execution
             print("\n3. Testing MCP Tool Execution:")
             try:
-                result = await atlassian_tool.execute_mcp_tool(
+                result = await orchestrator.atlassian_tool.execute_mcp_tool(
                     first_action.get('mcp_tool'),
                     first_action.get('arguments', {})
                 )
