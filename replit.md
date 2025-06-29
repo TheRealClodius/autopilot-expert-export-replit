@@ -436,6 +436,19 @@ The system uses environment variables for configuration management and supports 
 - **Files Modified**: main.py (slack_events and process_slack_message functions enhanced with complete timing framework)
 - **Status**: System now processes messages successfully with full timing visibility for production delay analysis
 
+✅ **June 29, 2025 - CRITICAL SLACK MENTION PROCESSING FIX IMPLEMENTED (PRODUCTION READY)**
+- **Root Cause Identified**: Slack Gateway was completely removing user mentions `<@USER123>` instead of preserving them in readable format
+- **Enhanced Text Cleaning**: Updated `_clean_message_text()` to convert `<@USER123>` → `@UserName` while preserving mention context
+- **User Information Resolution**: Added async user lookup to extract actual names from Slack API when available
+- **Graceful Fallbacks**: System converts mentions to `@Unknown` when user info unavailable, ensuring mentions are never lost
+- **Comprehensive Mention Support**: Added support for channel mentions, URL formatting, and proper whitespace handling
+- **API Integration**: Enhanced function to properly fetch user profiles and extract first names for natural mention display
+- **Fixed User Mention Bug**: Users can now tag people with `@person` and the agent will see and process those mentions correctly
+- **Files Modified**: agents/slack_gateway.py (enhanced `_clean_message_text` method with async user resolution)
+- **Testing Verified**: All mention formats properly converted to readable format while preserving context
+- **Slack Permissions Note**: Requires `users:read` scope for full name resolution, gracefully falls back to generic format
+- **Production Impact**: Eliminates the critical issue where user mentions were invisible to the agent
+
 ✅ **June 29, 2025 - GENERALIZED REACT PATTERN FOR ALL TOOLS IMPLEMENTED (PRODUCTION READY)**
 - **Universal Tool Retry System**: Implemented generalized ReAct pattern (Reason → Act → Observe → Reason → Act) for ALL tools, not just Atlassian-specific
 - **5-Loop Maximum with HITL**: System automatically retries failed tool operations up to 5 times, then escalates to Human-in-the-Loop intervention

@@ -2750,6 +2750,53 @@ async def test_atlassian_integration():
         logger.error(f"Atlassian integration test failed: {e}")
         return {"status": "error", "message": str(e)}
 
+@app.get("/admin/test-mention-processing")
+async def test_mention_processing(mention_text: str = "Hey @Sarah, can you help with the UiPath project?"):
+    """Admin endpoint to test user mention processing in agent responses"""
+    try:
+        if not orchestrator_agent:
+            return {"error": "Orchestrator agent not initialized"}
+        
+        # Create test message with mention format
+        test_message = ProcessedMessage(
+            text=mention_text,
+            user_id="U_TEST_USER",
+            user_name="TestUser",
+            user_first_name="John",
+            user_display_name="John Doe",
+            channel_id="C_TEST_CHANNEL",
+            channel_name="test-channel",
+            message_ts=f"{int(time.time())}.000001",
+            thread_ts=None,
+            is_dm=False,
+            thread_context=None
+        )
+        
+        start_time = time.time()
+        
+        # Process through orchestrator
+        response = await orchestrator_agent.process_query(test_message)
+        
+        processing_time = time.time() - start_time
+        
+        # Check if mentions were preserved in processing
+        response_text = response.get('text', '') if response else ''
+        mentions_preserved = '@' in response_text or '@' in mention_text
+        
+        return {
+            "status": "success",
+            "input_message": mention_text,
+            "mentions_detected": '@' in mention_text,
+            "response": response_text[:500] + "..." if len(response_text) > 500 else response_text,
+            "mentions_in_response": '@' in response_text,
+            "mentions_preserved": mentions_preserved,
+            "processing_time": round(processing_time, 2),
+            "suggestions": response.get('suggestions', []) if response else []
+        }
+        
+    except Exception as e:
+        return {"error": f"Test failed: {str(e)}"}
+
 @app.get("/admin/test-streaming-reasoning")
 async def test_streaming_reasoning(query: str = "How should I approach solving a complex problem?"):
     """Admin endpoint to test real-time streaming reasoning with progress updates"""

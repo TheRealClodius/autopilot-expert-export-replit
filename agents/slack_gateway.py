@@ -87,8 +87,8 @@ class SlackGateway:
                 message_ts=message_ts or "unknown"
             )
             
-            # Clean the message text (remove mentions)
-            clean_text = self._clean_message_text(text)
+            # Clean the message text while preserving user mentions with names
+            clean_text = await self._clean_message_text(text)
             
             # Get user information
             user_info = await self._get_user_info(user_id)
@@ -449,12 +449,43 @@ class SlackGateway:
             logger.error(f"Error checking bot thread participation: {e}")
             return False
     
-    def _clean_message_text(self, text: str) -> str:
-        """Clean message text by removing mentions and formatting"""
+    async def _clean_message_text(self, text: str) -> str:
+        """Clean message text while preserving user mentions with actual names"""
         import re
         
-        # Remove bot mentions
-        text = re.sub(r'<@[A-Z0-9]+>', '', text)
+        # Find all user mentions and replace with actual names
+        async def replace_user_mention(match):
+            user_id = match.group(1)
+            try:
+                user_info = await self._get_user_info(user_id)
+                # Get display name or real name, fallback to first name or username
+                profile = user_info.get("profile", {})
+                name = (profile.get("display_name") or 
+                       profile.get("real_name") or 
+                       profile.get("first_name") or 
+                       user_info.get("name", "user"))
+                
+                # If we have a full name, use just the first name for mentions
+                if name and " " in name:
+                    name = name.split()[0]
+                
+                return f"@{name}"
+            except Exception as e:
+                logger.debug(f"Could not resolve user mention {user_id}: {e}")
+                return "@user"
+        
+        # Replace user mentions with actual names
+        mentions = re.finditer(r'<@([A-Z0-9]+)>', text)
+        for match in mentions:
+            replacement = await replace_user_mention(match)
+            text = text.replace(match.group(0), replacement)
+        
+        # Convert channel mentions to readable format: <#C123|channel-name> -> #channel-name
+        text = re.sub(r'<#([A-Z0-9]+)\|([^>]+)>', r'#\2', text)
+        
+        # Convert URL formatting to readable format
+        text = re.sub(r'<(https?://[^|>]+)\|([^>]+)>', r'\2 (\1)', text)
+        text = re.sub(r'<(https?://[^>]+)>', r'\1', text)
         
         # Remove extra whitespace
         text = ' '.join(text.split())
