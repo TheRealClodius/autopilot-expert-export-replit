@@ -1,28 +1,27 @@
 """
-Atlassian Tool - Clean MCP-Only Implementation
-Direct MCP integration using the mcp-atlassian package without REST API fallbacks.
+Atlassian Tool - SSE Transport Implementation
+Uses HTTP/SSE transport instead of stdio to avoid handshake issues.
 """
 
 import asyncio
 import logging
 import os
 import time
+import subprocess
+import signal
 from typing import Dict, Any, Optional
-
-from mcp.client.session import ClientSession
-from mcp.client.stdio import stdio_client
-from mcp import StdioServerParameters
+import httpx
 
 logger = logging.getLogger(__name__)
 
 class AtlassianTool:
     """
-    Clean MCP-only Atlassian integration tool.
-    Communicates directly with mcp-atlassian server for all operations.
+    SSE-based Atlassian integration tool.
+    Starts MCP server with SSE transport and communicates over HTTP.
     """
     
     def __init__(self):
-        """Initialize clean MCP-only Atlassian tool."""
+        """Initialize SSE-based Atlassian tool."""
         # Load credentials from environment
         self.jira_url = os.getenv("ATLASSIAN_JIRA_URL", "")
         self.jira_username = os.getenv("ATLASSIAN_JIRA_USERNAME", "")
@@ -31,9 +30,10 @@ class AtlassianTool:
         self.confluence_username = os.getenv("ATLASSIAN_CONFLUENCE_USERNAME", "")
         self.confluence_token = os.getenv("ATLASSIAN_CONFLUENCE_TOKEN", "")
         
-        # MCP session management
-        self._session: Optional[ClientSession] = None
-        self._session_context = None
+        # SSE server management
+        self._server_process: Optional[subprocess.Popen] = None
+        self._server_port = 8001  # Use different port to avoid conflicts
+        self._server_url = f"http://localhost:{self._server_port}"
         
         # Tool availability
         self.available = bool(
@@ -51,115 +51,107 @@ class AtlassianTool:
         ] if self.available else []
         
         if self.available:
-            logger.info("Clean MCP-only Atlassian tool initialized successfully")
+            logger.info("SSE-based Atlassian tool initialized successfully")
         else:
             logger.warning("Atlassian tool unavailable - missing credentials")
     
-    async def _get_session(self) -> Optional[ClientSession]:
-        """Get or create MCP client session with timeout and retry logic."""
-        if self._session is not None:
-            return self._session
+    async def _start_server(self) -> bool:
+        """Start MCP server with SSE transport."""
+        if self._server_process is not None:
+            return True  # Already running
         
         if not self.available:
-            logger.error("Cannot create MCP session - credentials not available")
-            return None
+            logger.error("Cannot start MCP server - credentials not available")
+            return False
         
-        max_retries = 3
-        retry_count = 0
-        
-        while retry_count < max_retries:
+        try:
+            # Environment variables for MCP server
+            env_vars = os.environ.copy()
+            env_vars.update({
+                "JIRA_URL": self.jira_url,
+                "JIRA_USERNAME": self.jira_username,
+                "JIRA_API_TOKEN": self.jira_token,
+                "CONFLUENCE_URL": self.confluence_url,
+                "CONFLUENCE_USERNAME": self.confluence_username,
+                "CONFLUENCE_API_TOKEN": self.confluence_token,
+                "TRANSPORT": "sse",
+                "PORT": str(self._server_port),
+                "HOST": "127.0.0.1",  # Localhost only for security
+                "MCP_VERBOSE": "true"
+            })
+            
+            logger.info(f"Starting MCP server on port {self._server_port} with SSE transport")
+            
+            # Start server process
+            import shutil
+            uvx_path = shutil.which("uvx")
+            if not uvx_path:
+                logger.error("uvx not found in PATH")
+                return False
+            
+            self._server_process = subprocess.Popen(
+                [uvx_path, "mcp-atlassian"],
+                env=env_vars,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                preexec_fn=os.setsid  # Create new process group for clean shutdown
+            )
+            
+            # Wait for server to start
+            logger.info("Waiting for MCP server to start...")
+            await asyncio.sleep(15)  # Give server time to download deps and start
+            
+            # Test server health
+            return await self._test_server_health()
+            
+        except Exception as e:
+            logger.error(f"Failed to start MCP server: {e}")
+            await self._stop_server()
+            return False
+    
+    async def _test_server_health(self) -> bool:
+        """Test if MCP server is responding."""
+        try:
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                # Try health endpoint
+                response = await client.get(f"{self._server_url}/health")
+                if response.status_code == 200:
+                    logger.info("MCP server health check passed")
+                    return True
+                else:
+                    logger.warning(f"MCP server health check failed: {response.status_code}")
+                    return False
+                    
+        except Exception as e:
+            logger.warning(f"MCP server health check failed: {e}")
+            return False
+    
+    async def _stop_server(self):
+        """Stop MCP server."""
+        if self._server_process:
             try:
-                logger.info(f"Creating MCP session (attempt {retry_count + 1}/{max_retries})")
+                # Send SIGTERM to process group
+                os.killpg(os.getpgid(self._server_process.pid), signal.SIGTERM)
                 
-                # Set up environment variables for mcp-atlassian
-                env_vars = {
-                    "JIRA_URL": self.jira_url,
-                    "JIRA_USERNAME": self.jira_username,
-                    "JIRA_API_TOKEN": self.jira_token,
-                    "CONFLUENCE_URL": self.confluence_url,
-                    "CONFLUENCE_USERNAME": self.confluence_username,
-                    "CONFLUENCE_API_TOKEN": self.confluence_token,
-                    "MCP_VERBOSE": "true",  # Enable verbose logging
-                    "MCP_LOGGING_STDOUT": "true",  # Log to stdout
-                    "TRANSPORT": "stdio"  # Explicitly set transport mode
-                }
-                
-                logger.info(f"MCP command: uvx mcp-atlassian (using environment variables)")
-                logger.info(f"Environment: JIRA_URL={self.jira_url}, CONFLUENCE_URL={self.confluence_url}")
-                
-                server_params = StdioServerParameters(
-                    command="uvx",
-                    args=["mcp-atlassian"],
-                    env=env_vars
-                )
-                
+                # Wait for graceful shutdown
                 try:
-                    logger.info("Creating stdio client context...")
-                    self._session_context = stdio_client(server_params)
-                    
-                    logger.info("Entering session context...")
-                    read_stream, write_stream = await asyncio.wait_for(
-                        self._session_context.__aenter__(),
-                        timeout=45.0  # Allow time for uvx to download and start
-                    )
-                    
-                    logger.info("Creating ClientSession...")
-                    self._session = ClientSession(read_stream, write_stream)
-                    
-                    logger.info("Initializing session...")
-                    await asyncio.wait_for(
-                        self._session.initialize(),
-                        timeout=30.0
-                    )
-                    
-                    logger.info("MCP Atlassian session established successfully")
-                    return self._session
-                    
-                except asyncio.TimeoutError:
-                    logger.error(f"MCP session creation timed out (attempt {retry_count + 1})")
-                    await self._cleanup_session()
-                    retry_count += 1
-                    
-                    if retry_count < max_retries:
-                        await asyncio.sleep(2)  # Wait before retry
-                    continue
+                    self._server_process.wait(timeout=5)
+                except subprocess.TimeoutExpired:
+                    # Force kill if not responsive
+                    os.killpg(os.getpgid(self._server_process.pid), signal.SIGKILL)
+                    self._server_process.wait()
+                
+                logger.info("MCP server stopped")
                 
             except Exception as e:
-                logger.error(f"Failed to create MCP session (attempt {retry_count + 1}): {e}")
-                await self._cleanup_session()
-                retry_count += 1
-                
-                if retry_count < max_retries:
-                    await asyncio.sleep(2)
-                    continue
-                else:
-                    break
-        
-        logger.error(f"Failed to establish MCP session after {max_retries} attempts")
-        return None
-    
-    async def _cleanup_session(self):
-        """Clean up MCP session."""
-        try:
-            if self._session:
-                # Note: MCP ClientSession may not have a close() method
-                self._session = None
-                logger.debug("MCP session cleared")
+                logger.warning(f"Error stopping MCP server: {e}")
             
-            if self._session_context:
-                try:
-                    await self._session_context.__aexit__(None, None, None)
-                except Exception as e:
-                    logger.debug(f"Session context cleanup error (expected): {e}")
-                self._session_context = None
-                logger.debug("MCP session context cleaned up")
-                
-        except Exception as e:
-            logger.debug(f"Session cleanup error (non-critical): {e}")
+            finally:
+                self._server_process = None
     
     async def execute_mcp_tool(self, tool_name: str, arguments: Dict[str, Any]) -> Dict[str, Any]:
         """
-        Execute MCP tool directly with timeout and error handling.
+        Execute MCP tool via SSE/HTTP transport.
         
         Args:
             tool_name: MCP tool name (jira_search, confluence_search, etc.)
@@ -184,48 +176,61 @@ class AtlassianTool:
                 "response_time": round(time.time() - start_time, 2)
             }
         
-        session = await self._get_session()
-        if not session:
+        # Start server if not running
+        if not await self._start_server():
             return {
-                "error": "Failed to establish MCP session",
+                "error": "Failed to start MCP server",
                 "mcp_tool": tool_name,
                 "response_time": round(time.time() - start_time, 2)
             }
         
         try:
-            logger.info(f"Executing MCP tool: {tool_name} with args: {arguments}")
+            logger.info(f"Executing MCP tool via SSE: {tool_name} with args: {arguments}")
             
-            # Execute tool through MCP session
-            result = await asyncio.wait_for(
-                session.call_tool(tool_name, arguments),
-                timeout=30.0
-            )
-            
-            response_time = round(time.time() - start_time, 2)
-            logger.info(f"MCP tool {tool_name} completed in {response_time}s")
-            
-            # Add metadata to response
-            if isinstance(result, dict):
-                result["mcp_tool"] = tool_name
-                result["response_time"] = response_time
-                result["source"] = "mcp_server"
-                return result
-            else:
-                return {
-                    "result": result,
-                    "mcp_tool": tool_name,
-                    "response_time": response_time,
-                    "source": "mcp_server"
+            # Prepare MCP request payload
+            mcp_payload = {
+                "method": "tools/call",
+                "params": {
+                    "name": tool_name,
+                    "arguments": arguments
                 }
-                
-        except asyncio.TimeoutError:
-            logger.error(f"MCP tool {tool_name} timed out after 30s")
-            return {
-                "error": f"Tool execution timed out after 30 seconds",
-                "mcp_tool": tool_name,
-                "response_time": round(time.time() - start_time, 2)
             }
             
+            # Make HTTP request to MCP server
+            async with httpx.AsyncClient(timeout=30.0) as client:
+                response = await client.post(
+                    f"{self._server_url}/mcp",
+                    json=mcp_payload
+                )
+                
+                response_time = round(time.time() - start_time, 2)
+                
+                if response.status_code == 200:
+                    result = response.json()
+                    logger.info(f"MCP tool {tool_name} completed in {response_time}s")
+                    
+                    # Add metadata to response
+                    if isinstance(result, dict):
+                        result["mcp_tool"] = tool_name
+                        result["response_time"] = response_time
+                        result["source"] = "mcp_sse_server"
+                        return result
+                    else:
+                        return {
+                            "result": result,
+                            "mcp_tool": tool_name,
+                            "response_time": response_time,
+                            "source": "mcp_sse_server"
+                        }
+                else:
+                    error_text = response.text
+                    logger.error(f"MCP tool {tool_name} failed: HTTP {response.status_code} - {error_text}")
+                    return {
+                        "error": f"HTTP {response.status_code}: {error_text}",
+                        "mcp_tool": tool_name,
+                        "response_time": response_time
+                    }
+                    
         except Exception as e:
             logger.error(f"MCP tool {tool_name} execution failed: {e}")
             return {
@@ -236,8 +241,9 @@ class AtlassianTool:
     
     async def __aenter__(self):
         """Async context manager entry."""
+        await self._start_server()
         return self
     
     async def __aexit__(self, exc_type, exc_val, exc_tb):
         """Async context manager exit."""
-        await self._cleanup_session()
+        await self._stop_server()
