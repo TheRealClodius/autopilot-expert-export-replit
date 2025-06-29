@@ -137,6 +137,13 @@ async def slack_events(request: Request, background_tasks: BackgroundTasks):
         headers = dict(request.headers)
         logger.info(f"📋 WEBHOOK HEADERS: {headers}")
         
+        # Get raw body for debugging
+        try:
+            raw_body = await request.body()
+            logger.info(f"📄 RAW WEBHOOK BODY LENGTH: {len(raw_body)} bytes")
+        except:
+            pass
+        
         # ⏱️ STEP 2: Slack → Your app (HTTP POST received)
         logger.info(f"📥 STEP 2: Slack webhook received at {webhook_received_time:.6f}")
         
