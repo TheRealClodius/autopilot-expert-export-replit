@@ -243,8 +243,7 @@ class AtlassianTool:
                     {"trace_id": trace_manager.current_trace_id}
                 )
             
-            params = {"issueKey": issue_key}
-            result = await self._make_mcp_request("jira/issue", params)
+            result = await self._make_jira_request(f"/issue/{issue_key}")
             
             if "error" in result:
                 return result
@@ -320,7 +319,7 @@ class AtlassianTool:
                 "limit": max_results
             }
             
-            result = await self._make_mcp_request("confluence/search", params)
+            result = await self._make_confluence_request("/content/search", params)
             
             if "error" in result:
                 return result
