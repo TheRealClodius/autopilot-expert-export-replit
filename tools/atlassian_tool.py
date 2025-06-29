@@ -58,7 +58,7 @@ class AtlassianTool:
         
         try:
             # Build command for mcp-atlassian server
-            command = [
+            command_parts = [
                 "uvx", 
                 "mcp-atlassian",
                 "--jira-url", self.jira_url,
@@ -70,7 +70,12 @@ class AtlassianTool:
             ]
             
             # Create MCP session using stdio client
-            self._session_context = stdio_client(command)
+            from mcp.client.stdio import StdioServerParameters
+            server_params = StdioServerParameters(
+                command=command_parts[0],  # "uvx"
+                args=command_parts[1:]     # ["mcp-atlassian", "--jira-url", ...]
+            )
+            self._session_context = stdio_client(server_params)
             read_stream, write_stream = await self._session_context.__aenter__()
             
             self._session = ClientSession(read_stream, write_stream)
