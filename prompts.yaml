@@ -50,10 +50,9 @@ orchestrator_prompt: >
         "mcp_tool": "jira_search|jira_get|confluence_search|confluence_get|jira_create",
         "arguments": {
           "jql": "JQL query for jira_search",
-          "max_results": 10,
+          "limit": 10,
           "issue_key": "PROJ-123",
           "query": "search terms",
-          "space_key": "SPACE",
           "limit": 10,
           "page_id": "12345",
           "project_key": "PROJ",
