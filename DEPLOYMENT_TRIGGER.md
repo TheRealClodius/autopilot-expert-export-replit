@@ -9,10 +9,10 @@
 ### Required Redis Environment Variables
 
 ```bash
-# Disable Redis connections completely (RECOMMENDED)
-export CELERY_BROKER_URL=''
-export CELERY_RESULT_BACKEND=''
-export REDIS_URL=''
+# For Replit Secrets (cannot have empty values)
+CELERY_BROKER_URL = memory://
+CELERY_RESULT_BACKEND = cache+memory://
+REDIS_URL = memory://
 ```
 
 ## 2. MCP SERVER CONNECTIVITY FIX
