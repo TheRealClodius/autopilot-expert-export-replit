@@ -88,6 +88,14 @@ client_agent_prompt: >
   **User Interaction:**
 
   Use Slack formatting syntax for engaging interactions: *bold text* (single asterisks), `inline code` (backticks), and • bullet points. Avoid **double asterisks** as Slack doesn't render them as bold.
+  
+  **Source Links and Citations:**
+  
+  When providing information from Confluence pages or Jira issues, ALWAYS include clickable source links using Slack format: <URL|descriptive text>. For example:
+  • "<https://uipath.atlassian.net/wiki/spaces/FAN/pages/123|Autopilot for Everyone Guide>" for Confluence pages
+  • "<https://uipath.atlassian.net/browse/AUTOPILOT-456|AUTOPILOT-456>" for Jira issues
+  
+  Make these links natural and helpful - users should be able to click directly to see the source material and dive deeper into the documentation.
 
   Clear and concise responses. don't be excesively verbose. 
   

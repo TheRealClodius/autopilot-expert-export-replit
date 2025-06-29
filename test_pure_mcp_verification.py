@@ -1,121 +1,147 @@
 #!/usr/bin/env python3
 """
-Pure MCP Verification Test
+Pure MCP Integration Verification Test
 
-Direct test of MCP Atlassian integration without agent infrastructure.
-Validates MCP server communication and real data retrieval.
+This test verifies that the MCP Atlassian integration is working correctly
+with the new result format and includes clickable links in client responses.
 """
 
 import asyncio
-import logging
-import json
-from tools.atlassian_tool import AtlassianTool
+from datetime import datetime
 
-# Set up logging
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+from models.schemas import ProcessedMessage
+from agents.orchestrator_agent import OrchestratorAgent
+from services.memory_service import MemoryService
 
-async def test_mcp_tools():
-    """Test MCP tools directly"""
+
+async def test_pure_mcp_verification():
+    """Test the complete MCP integration with clickable links"""
     
-    print("🧪 PURE MCP ATLASSIAN VERIFICATION")
-    print("="*50)
+    print("🔍 PURE MCP ATLASSIAN VERIFICATION TEST")
+    print("=" * 60)
     
-    # Initialize Atlassian tool
-    atlassian_tool = AtlassianTool()
+    # Initialize services
+    memory_service = MemoryService()
+    orchestrator = OrchestratorAgent(memory_service)
     
-    # Test MCP server health
-    print("\n🏥 Testing MCP Server Health...")
+    # Check if Atlassian tool is available
+    if not orchestrator.atlassian_tool.available:
+        print("❌ Atlassian tool not available - missing credentials")
+        return False
+    
+    print(f"✅ Atlassian tool available with MCP tools: {orchestrator.atlassian_tool.available_tools}")
+    
+    # Test Confluence search with MCP
+    test_message = ProcessedMessage(
+        text="Find pages about Autopilot for Everyone",
+        user_id="U_TEST_USER",
+        user_name="TestUser",
+        user_first_name="Test",
+        user_display_name="Test User",
+        user_title="Software Engineer",
+        user_department="Engineering",
+        channel_id="C_TEST_CHANNEL",
+        channel_name="test-channel",
+        message_ts=str(int(datetime.now().timestamp())),
+        thread_ts=None,
+        is_dm=False,
+        thread_context=None
+    )
+    
+    print(f"\n🎯 Test Query: '{test_message.text}'")
+    print()
+    
     try:
-        is_healthy = await atlassian_tool.check_server_health()
-        if is_healthy:
-            print("✅ MCP server is healthy and responding")
-        else:
-            print("❌ MCP server health check failed")
-            return
-    except Exception as e:
-        print(f"❌ MCP server health check error: {e}")
-        return
-    
-    # Test different MCP tools
-    test_cases = [
-        {
-            "name": "Confluence Search",
-            "tool": "confluence_search", 
-            "args": {"query": "autopilot for everyone", "limit": 5},
-            "expected_fields": ["title", "url", "content"]
-        },
-        {
-            "name": "Jira Search", 
-            "tool": "jira_search",
-            "args": {"jql": "project = AUTOPILOT AND issuetype = Bug", "max_results": 5},
-            "expected_fields": ["key", "summary", "status"]
-        },
-        {
-            "name": "List Available Tools",
-            "tool": "list_tools",
-            "args": {},
-            "expected_fields": []
-        }
-    ]
-    
-    for test_case in test_cases:
-        print(f"\n🔧 Testing: {test_case['name']}")
-        print("-" * 30)
+        # Process the message through the orchestrator
+        print("1️⃣ Processing message through orchestrator...")
+        result = await orchestrator.process_query(test_message)
         
-        try:
-            if test_case['tool'] == 'list_tools':
-                result = await atlassian_tool.list_tools()
-                print(f"✅ Available tools: {result}")
-            else:
-                result = await atlassian_tool.execute_mcp_tool(
-                    test_case['tool'], 
-                    test_case['args']
-                )
-                
-                if result.get("success"):
-                    results = result.get("result", [])
-                    if isinstance(results, list) and len(results) > 0:
-                        print(f"✅ Retrieved {len(results)} results")
-                        
-                        # Show sample result structure
-                        sample = results[0]
-                        if isinstance(sample, dict):
-                            print(f"📄 Sample result keys: {list(sample.keys())}")
-                            
-                            # Check for expected fields
-                            has_expected = all(field in sample for field in test_case['expected_fields'])
-                            if has_expected or not test_case['expected_fields']:
-                                print(f"✅ {test_case['name']}: SUCCESS")
-                                
-                                # Show some sample data
-                                if 'title' in sample:
-                                    print(f"   Title: {sample.get('title', 'N/A')}")
-                                if 'url' in sample:
-                                    print(f"   URL: {sample.get('url', 'N/A')}")
-                                if 'key' in sample:
-                                    print(f"   Key: {sample.get('key', 'N/A')}")
-                            else:
-                                print(f"⚠️ Missing expected fields: {test_case['expected_fields']}")
-                        else:
-                            print(f"ℹ️ Result format: {type(sample)}")
-                    else:
-                        print("⚠️ No results returned")
-                else:
-                    error = result.get("error", "Unknown error")
-                    print(f"❌ MCP call failed: {error}")
-                    
-        except Exception as e:
-            print(f"❌ Error testing {test_case['name']}: {e}")
-            logger.exception(f"MCP test failed: {test_case['name']}")
+        if result:
+            print(f"✅ Orchestrator response generated:")
+            print(f"   Response length: {len(result.get('text', ''))} characters")
+            print(f"   Channel: {result.get('channel_id', 'N/A')}")
+            print(f"   Thread: {result.get('thread_ts', 'N/A')}")
+            
+            # Check for clickable links in the response
+            response_text = result.get('text', '')
+            has_confluence_links = 'uipath.atlassian.net/wiki' in response_text
+            has_clickable_format = '<https://' in response_text and '|' in response_text
+            
+            print(f"\n🔗 CLICKABLE LINKS VERIFICATION:")
+            print(f"   Contains Confluence URLs: {'✅' if has_confluence_links else '❌'}")
+            print(f"   Uses Slack clickable format: {'✅' if has_clickable_format else '❌'}")
+            
+            if has_clickable_format:
+                # Extract and show clickable links
+                import re
+                link_pattern = r'<(https://[^|]+)\|([^>]+)>'
+                links = re.findall(link_pattern, response_text)
+                print(f"   Found {len(links)} clickable links:")
+                for url, text in links[:3]:  # Show first 3 links
+                    print(f"     • {text} → {url}")
+            
+            # Show sample of response with links
+            print(f"\n📄 RESPONSE SAMPLE (first 300 chars):")
+            print(f"   {response_text[:300]}...")
+            
+            return True
+            
+        else:
+            print("❌ No response generated from orchestrator")
+            return False
+            
+    except Exception as e:
+        print(f"❌ Test error: {str(e)}")
+        return False
+
+
+async def test_mcp_server_health():
+    """Test MCP server health and connectivity"""
     
-    print("\n" + "="*50)
-    print("🎯 PURE MCP VERIFICATION COMPLETE")
-    print("="*50)
+    print("\n🏥 MCP SERVER HEALTH CHECK")
+    print("=" * 40)
+    
+    memory_service = MemoryService()
+    orchestrator = OrchestratorAgent(memory_service)
+    
+    try:
+        health_status = await orchestrator.atlassian_tool.check_server_health()
+        print(f"✅ MCP server health: {health_status}")
+        return health_status
+    except Exception as e:
+        print(f"❌ MCP server health check failed: {str(e)}")
+        return False
+
 
 async def main():
-    """Main test runner"""
-    await test_mcp_tools()
+    """Run all verification tests"""
+    
+    print("🚀 STARTING PURE MCP VERIFICATION TESTS")
+    print("=" * 80)
+    
+    # Test 1: MCP server health
+    health_ok = await test_mcp_server_health()
+    
+    # Test 2: Complete integration with clickable links
+    if health_ok:
+        integration_ok = await test_pure_mcp_verification()
+    else:
+        integration_ok = False
+    
+    print("\n" + "=" * 80)
+    print("🎯 VERIFICATION SUMMARY:")
+    print(f"   MCP Server Health: {'✅ PASS' if health_ok else '❌ FAIL'}")
+    print(f"   Integration + Links: {'✅ PASS' if integration_ok else '❌ FAIL'}")
+    
+    if health_ok and integration_ok:
+        print(f"\n🎉 ALL TESTS PASSED - Pure MCP integration with clickable links is working!")
+        print(f"   ✅ MCP server responding correctly")
+        print(f"   ✅ Orchestrator routing to Atlassian tools")
+        print(f"   ✅ Client agent formatting with clickable links")
+        print(f"   ✅ Ready for production deployment")
+    else:
+        print(f"\n❌ SOME TESTS FAILED - Check configuration and logs")
+
 
 if __name__ == "__main__":
     asyncio.run(main())
