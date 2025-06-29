@@ -1,102 +1,159 @@
 #!/usr/bin/env python3
 """
-Test MCP Connectivity in Deployment Environment
-
-Diagnose the specific networking issue causing "mcp_server_unreachable" in deployment
+Test MCP connectivity specifically for deployment environment
 """
 
 import asyncio
-import httpx
+import logging
+from tools.atlassian_tool import AtlassianTool
+from agents.orchestrator_agent import OrchestratorAgent
+from models.schemas import ProcessedMessage
+from services.trace_manager import TraceManager
+from services.memory_service import MemoryService
 import os
-from config import settings
 
-async def test_deployment_mcp():
-    """Test MCP connectivity in deployment environment"""
-    print("🔍 Deployment MCP Connectivity Test")
-    print("=" * 50)
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+async def test_deployment_mcp_connectivity():
+    """Test MCP connectivity in deployment-like conditions"""
     
-    mcp_url = settings.MCP_SERVER_URL
-    print(f"Testing MCP URL: {mcp_url}")
+    print("=" * 80)
+    print("🚀 DEPLOYMENT MCP CONNECTIVITY TEST")
+    print("=" * 80)
     
-    # Test 1: Basic HTTP connectivity
-    print("\n1. Basic HTTP Connectivity:")
-    test_endpoints = [
-        "/",
-        "/health", 
-        "/healthz",
-        "/mcp",
-        "/mcp/sse"
+    # Test environment variables
+    required_vars = [
+        "ATLASSIAN_JIRA_URL", "ATLASSIAN_JIRA_USERNAME", "ATLASSIAN_JIRA_TOKEN",
+        "ATLASSIAN_CONFLUENCE_URL", "ATLASSIAN_CONFLUENCE_USERNAME", "ATLASSIAN_CONFLUENCE_TOKEN"
     ]
     
-    for endpoint in test_endpoints:
-        try:
-            async with httpx.AsyncClient(timeout=5.0) as client:
-                response = await client.get(f"{mcp_url}{endpoint}")
-                print(f"✅ {endpoint}: {response.status_code}")
-        except httpx.ConnectError as e:
-            print(f"❌ {endpoint}: Connection Error - {e}")
-        except httpx.TimeoutException:
-            print(f"❌ {endpoint}: Timeout")
-        except Exception as e:
-            print(f"❌ {endpoint}: {type(e).__name__}: {e}")
+    print("🔍 Checking environment variables...")
+    missing_vars = []
+    for var in required_vars:
+        if not os.getenv(var):
+            missing_vars.append(var)
     
-    # Test 2: Alternative URLs
-    print("\n2. Alternative URL Tests:")
-    alternative_urls = [
-        "http://localhost:8001",
-        "http://127.0.0.1:8001",
-        "http://0.0.0.0:8001"
-    ]
+    if missing_vars:
+        print(f"❌ Missing environment variables: {missing_vars}")
+        return
+    else:
+        print("✅ All Atlassian environment variables present")
     
-    for alt_url in alternative_urls:
-        try:
-            async with httpx.AsyncClient(timeout=5.0) as client:
-                response = await client.get(f"{alt_url}/mcp/sse", headers={'Accept': 'text/event-stream'})
-                print(f"✅ {alt_url}: {response.status_code}")
-                if response.status_code == 200:
-                    print(f"   SUCCESS: {alt_url} is reachable!")
-                    return alt_url
-        except Exception as e:
-            print(f"❌ {alt_url}: {type(e).__name__}: {e}")
+    # Test MCP server URL configuration
+    mcp_server_url = os.getenv("MCP_SERVER_URL", "http://localhost:8001")
+    print(f"🌐 MCP Server URL: {mcp_server_url}")
     
-    # Test 3: Check if MCP server process is actually responding
-    print("\n3. Process and Port Analysis:")
-    import subprocess
+    # Test AtlassianTool directly
+    print("\n🔧 Testing AtlassianTool direct connectivity...")
+    atlassian_tool = AtlassianTool()
+    
+    if not atlassian_tool.available:
+        print("❌ AtlassianTool not available")
+        return
+    
+    # Test 1: Confluence search (most reliable)
+    print("\n📄 Test 1: Confluence search for UiPath documentation")
     try:
-        # Check processes
-        result = subprocess.run(['ps', 'aux'], capture_output=True, text=True)
-        mcp_processes = [line for line in result.stdout.split('\n') if 'run_mcp_server' in line]
-        if mcp_processes:
-            print("✅ MCP server process found:")
-            for proc in mcp_processes:
-                print(f"   {proc}")
-        else:
-            print("❌ No MCP server process found")
+        confluence_result = await atlassian_tool.execute_mcp_tool("confluence_search", {
+            "query": "Autopilot Framework",
+            "limit": 3
+        })
         
-        # Check port binding
-        result = subprocess.run(['netstat', '-tulpn'], capture_output=True, text=True)
-        port_8001 = [line for line in result.stdout.split('\n') if ':8001' in line]
-        if port_8001:
-            print("✅ Port 8001 binding found:")
-            for binding in port_8001:
-                print(f"   {binding}")
+        if "error" in confluence_result:
+            print(f"❌ Confluence search failed: {confluence_result['error']}")
         else:
-            print("❌ No process bound to port 8001")
+            print("✅ Confluence search successful")
+            content = confluence_result.get("content", [])
+            if content and len(content) > 0:
+                print(f"📄 Retrieved {len(content)} Confluence pages")
             
     except Exception as e:
-        print(f"❌ Process check failed: {e}")
+        print(f"❌ Confluence search exception: {e}")
     
-    return None
-
-async def main():
-    working_url = await test_deployment_mcp()
+    # Test 2: Jira search with project restriction (deployment-safe)
+    print("\n🎫 Test 2: Jira search with project restriction")
+    try:
+        jira_result = await atlassian_tool.execute_mcp_tool("jira_search", {
+            "jql": "project = DESIGN AND text ~ 'template'",
+            "limit": 3
+        })
+        
+        if "error" in jira_result:
+            print(f"❌ Jira search failed: {jira_result['error']}")
+        else:
+            print("✅ Jira search successful")
+            content = jira_result.get("content", [])
+            if content and len(content) > 0:
+                text_content = content[0].get("text", "")
+                if "Error calling tool" in text_content:
+                    print("⚠️ JQL restriction - normal behavior in enterprise environment")
+                else:
+                    print(f"🎫 Retrieved {len(content)} Jira issues")
+            
+    except Exception as e:
+        print(f"❌ Jira search exception: {e}")
     
-    if working_url:
-        print(f"\n🎉 SOLUTION FOUND:")
-        print(f"Update MCP_SERVER_URL to: {working_url}")
-    else:
-        print(f"\n❌ MCP server connectivity issue detected")
-        print("Check if MCP Atlassian Server workflow is running properly")
+    # Test 3: Full orchestrator integration
+    print("\n🤖 Test 3: Full orchestrator integration with MCP")
+    try:
+        # Initialize services
+        memory_service = MemoryService()
+        trace_manager = TraceManager()
+        
+        # Initialize orchestrator
+        orchestrator = OrchestratorAgent(
+            memory_service=memory_service,
+            trace_manager=trace_manager
+        )
+        
+        # Create test message
+        test_message = ProcessedMessage(
+            text="Find me information about UiPath Autopilot templates",
+            user_id="test_user",
+            user_name="Test User",
+            channel_id="test_channel",
+            channel_name="test",
+            message_ts="test_ts",
+            is_dm=False,
+            is_mention=True,
+            is_thread_reply=False
+        )
+        
+        print("🧠 Executing orchestrator query analysis...")
+        result = await orchestrator.process_query(test_message)
+        
+        if result and "orchestrator_analysis" in result:
+            analysis = result["orchestrator_analysis"]
+            tools_used = analysis.get("tools_used", [])
+            
+            if "atlassian_search" in tools_used:
+                print("✅ Orchestrator correctly routed to MCP Atlassian tools")
+                
+                # Check for actual results
+                search_results = analysis.get("search_results", [])
+                if search_results:
+                    print(f"📊 Retrieved {len(search_results)} results via orchestrator")
+                else:
+                    print("⚠️ No search results in orchestrator analysis")
+            else:
+                print(f"⚠️ Orchestrator used tools: {tools_used} (expected atlassian_search)")
+        else:
+            print("❌ Orchestrator execution failed")
+            
+    except Exception as e:
+        print(f"❌ Orchestrator integration exception: {e}")
+    
+    print("\n" + "=" * 80)
+    print("🎯 DEPLOYMENT MCP CONNECTIVITY TEST COMPLETE")
+    print("=" * 80)
+    print("Key Deployment Readiness Indicators:")
+    print("1. Environment variables configured correctly")
+    print("2. MCP server connectivity working")
+    print("3. Direct AtlassianTool execution functional")
+    print("4. Orchestrator routing to MCP tools correctly")
+    print("\nIf all tests pass, MCP integration will work in deployment.")
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    asyncio.run(test_deployment_mcp_connectivity())
