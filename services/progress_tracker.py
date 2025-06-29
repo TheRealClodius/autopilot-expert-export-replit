@@ -64,7 +64,8 @@ class ProgressEvent:
                 "weighing": "I am weighing the available options",
                 "determining": "I am determining the best course of action",
                 "thinking": "I am thinking through this systematically",
-                "streaming": "{context}"  # Direct streaming content from model
+                "streaming": "{context}",  # Direct streaming content from model
+                "direct_streaming": "{context}"  # Direct streaming content without template
             },
             ProgressEventType.CONSIDERING: {
                 "options": "I am considering various options",
@@ -120,6 +121,11 @@ class ProgressEvent:
                 "retry_generation": "Regenerating response with alternative approach"
             }
         }
+        
+        # Handle direct streaming content specially (bypass template system)
+        if (self.event_type == ProgressEventType.REASONING and 
+            self.action == "direct_streaming" and self.context):
+            return self.context  # Return direct content without additional formatting
         
         # Get base phrase
         type_phrases = action_phrases.get(self.event_type, {})
@@ -357,10 +363,10 @@ class StreamingReasoningEmitter:
             # Display the cleaned streaming content from the model
             formatted_message = f"_{user_friendly_text}_"
             
-            # Emit the reasoning content as progress
+            # Emit the reasoning content as progress with direct message
             await self.tracker.emit_progress(
                 ProgressEventType.REASONING,
-                "streaming",
+                "direct_streaming",
                 formatted_message
             )
             self.last_reasoning_time = now
