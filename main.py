@@ -311,6 +311,30 @@ async def process_slack_message(event_data: SlackEvent):
             logger.error("❌ STEP 4 ERROR: Services not initialized")
             return
         
+        # CRITICAL: Verify MCP server is ready before processing
+        try:
+            import httpx
+            async with httpx.AsyncClient(timeout=3.0) as client:
+                health_response = await client.get("http://localhost:8001/healthz")
+                if health_response.status_code != 200:
+                    logger.error(f"❌ MCP server not healthy: {health_response.status_code}")
+                    # Send error message to user explaining the issue
+                    await slack_gateway.send_message(
+                        channel_id=event_data.event['channel'],
+                        text="I'm having trouble accessing the knowledge systems right now. Please try again in a moment.",
+                        thread_ts=event_data.event.get('thread_ts')
+                    )
+                    return
+        except Exception as e:
+            logger.error(f"❌ MCP server health check failed: {e}")
+            # Send error message to user explaining the issue
+            await slack_gateway.send_message(
+                channel_id=event_data.event['channel'],
+                text="The knowledge systems are starting up. Please try again in a moment.",
+                thread_ts=event_data.event.get('thread_ts')
+            )
+            return
+        
         # ⏱️ STEP 4A: Gateway processing with optimizations
         gateway_start = time.time()
         logger.info(f"🔄 STEP 4A: Gateway processing starts at {gateway_start:.6f}")
