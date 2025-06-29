@@ -4,151 +4,73 @@ Test MCP server with Atlassian credentials to verify real UiPath data retrieval
 """
 import asyncio
 import httpx
-import json
+from tools.atlassian_tool import AtlassianTool
+from agents.orchestrator_agent import OrchestratorAgent
+from services.memory_service import MemoryService
+from models.schemas import ProcessedMessage
 
 async def test_mcp_atlassian():
     """Test MCP server with Atlassian credentials"""
     
-    mcp_url = "https://remote-mcp-server-andreiclodius.replit.app"
+    print("🔧 Testing MCP Atlassian Integration...")
     
+    # Test 1: AtlassianTool discovery
+    print("\n1. Testing AtlassianTool discovery:")
+    atlassian_tool = AtlassianTool()
+    tools = await atlassian_tool.discover_available_tools()
+    
+    print(f"✅ Connected to MCP server: {atlassian_tool.mcp_server_url}")
+    print(f"✅ Discovered {len(tools)} total tools")
+    print(f"✅ Atlassian tools: {atlassian_tool.available_tools}")
+    
+    # Test 2: Orchestrator using dynamic tools
+    print("\n2. Testing Orchestrator with dynamic tools:")
+    memory_service = MemoryService()
+    orchestrator = OrchestratorAgent(memory_service)
+    
+    # Create a test message for UiPath Autopilot query
+    test_message = ProcessedMessage(
+        text="Show me open bugs in the AUTOPILOT project",
+        user_id="test_user",
+        user_name="Test User",
+        channel_id="test_channel", 
+        channel_name="test-channel",
+        message_ts="1234567890.123",
+        thread_ts=None,
+        is_dm=False,
+        thread_context=None
+    )
+    
+    # Test orchestrator analysis with dynamic tools
+    analysis = await orchestrator._analyze_query_and_plan(test_message)
+    
+    if analysis:
+        print(f"✅ Orchestrator analysis completed")
+        if 'atlassian_actions' in analysis:
+            actions = analysis['atlassian_actions']
+            print(f"✅ Generated {len(actions)} MCP actions:")
+            for i, action in enumerate(actions, 1):
+                tool_name = action.get('mcp_tool', 'unknown')
+                print(f"   {i}. Tool: {tool_name}")
+                print(f"      Args: {action.get('arguments', {})}")
+        else:
+            print("❌ No atlassian_actions found in analysis")
+    else:
+        print("❌ Orchestrator analysis failed")
+    
+    # Test 3: Quick health check
+    print("\n3. Testing remote MCP server health:")
     try:
-        async with httpx.AsyncClient(timeout=60.0) as client:
-            
-            # Test 1: Get available tools
-            print("🛠️ Getting available tools...")
-            tools_request = {
-                "jsonrpc": "2.0",
-                "id": 1,
-                "method": "tools/list",
-                "params": {}
-            }
-            
-            tools_response = await client.post(f"{mcp_url}/mcp", json=tools_request)
-            
-            if tools_response.status_code == 200:
-                tools_data = tools_response.json()
-                if 'result' in tools_data and 'tools' in tools_data['result']:
-                    tools = tools_data['result']['tools']
-                    print(f"Available tools ({len(tools)}):")
-                    
-                    atlassian_tools = []
-                    for tool in tools:
-                        name = tool.get('name', 'unnamed')
-                        desc = tool.get('description', 'No description')
-                        print(f"  📌 {name}: {desc}")
-                        
-                        if any(keyword in name.lower() for keyword in ['jira', 'confluence', 'atlassian']):
-                            atlassian_tools.append(name)
-                    
-                    print(f"\n🎯 Found {len(atlassian_tools)} Atlassian tools: {atlassian_tools}")
-                    
-                    # Test 2: Try calling get_jira_issues with AUTOPILOT project
-                    if 'get_jira_issues' in atlassian_tools:
-                        print(f"\n🔍 Testing get_jira_issues with AUTOPILOT project...")
-                        
-                        jira_request = {
-                            "jsonrpc": "2.0",
-                            "id": 2,
-                            "method": "tools/call",
-                            "params": {
-                                "name": "get_jira_issues",
-                                "arguments": {
-                                    "jql": "project = AUTOPILOT AND issuetype = Bug",
-                                    "max_results": 5
-                                }
-                            }
-                        }
-                        
-                        jira_response = await client.post(f"{mcp_url}/mcp", json=jira_request)
-                        print(f"Jira call status: {jira_response.status_code}")
-                        
-                        if jira_response.status_code == 200:
-                            jira_data = jira_response.json()
-                            
-                            if 'result' in jira_data:
-                                result = jira_data['result']
-                                print("✅ Success! Jira data retrieved:")
-                                
-                                if 'content' in result:
-                                    content = result['content']
-                                    if 'issues' in content:
-                                        issues = content['issues']
-                                        print(f"  Found {len(issues)} issues in AUTOPILOT project")
-                                        
-                                        for i, issue in enumerate(issues[:3], 1):
-                                            key = issue.get('key', 'N/A')
-                                            fields = issue.get('fields', {})
-                                            summary = fields.get('summary', 'No summary')
-                                            status = fields.get('status', {}).get('name', 'No status')
-                                            print(f"    {i}. {key}: {summary} [{status}]")
-                                    
-                                    if 'total' in content:
-                                        print(f"  Total issues in project: {content['total']}")
-                                        
-                                    if 'jira_url' in content:
-                                        print(f"  Connected to: {content['jira_url']}")
-                                
-                                print(f"  Full result: {str(result)[:200]}...")
-                                
-                            elif 'error' in jira_data:
-                                error = jira_data['error']
-                                print(f"❌ MCP Error: {error}")
-                        else:
-                            print(f"❌ HTTP Error: {jira_response.text}")
-                    
-                    # Test 3: Try Confluence search
-                    if 'get_confluence_pages' in atlassian_tools:
-                        print(f"\n🔍 Testing get_confluence_pages...")
-                        
-                        confluence_request = {
-                            "jsonrpc": "2.0",
-                            "id": 3,
-                            "method": "tools/call",
-                            "params": {
-                                "name": "get_confluence_pages",
-                                "arguments": {
-                                    "query": "autopilot",
-                                    "limit": 3
-                                }
-                            }
-                        }
-                        
-                        confluence_response = await client.post(f"{mcp_url}/mcp", json=confluence_request)
-                        print(f"Confluence call status: {confluence_response.status_code}")
-                        
-                        if confluence_response.status_code == 200:
-                            confluence_data = confluence_response.json()
-                            
-                            if 'result' in confluence_data:
-                                result = confluence_data['result']
-                                print("✅ Success! Confluence data retrieved:")
-                                
-                                if 'content' in result:
-                                    content = result['content']
-                                    if 'results' in content:
-                                        pages = content['results']
-                                        print(f"  Found {len(pages)} pages matching 'autopilot'")
-                                        
-                                        for i, page in enumerate(pages[:3], 1):
-                                            title = page.get('title', 'No title')
-                                            url = page.get('_links', {}).get('webui', 'No URL')
-                                            print(f"    {i}. {title}")
-                                            if url and url != 'No URL':
-                                                print(f"       URL: {url}")
-                                
-                                print(f"  Full result: {str(result)[:200]}...")
-                                
-                            elif 'error' in confluence_data:
-                                error = confluence_data['error']
-                                print(f"❌ MCP Error: {error}")
-                        else:
-                            print(f"❌ HTTP Error: {confluence_response.text}")
-                            
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            response = await client.get(f"{atlassian_tool.mcp_server_url}/health")
+            if response.status_code == 200:
+                print(f"✅ MCP server health check passed: {response.status_code}")
             else:
-                print(f"❌ Failed to get tools: {tools_response.text}")
-                
+                print(f"⚠️  MCP server health check returned: {response.status_code}")
     except Exception as e:
-        print(f"❌ Error testing MCP: {e}")
+        print(f"❌ MCP server health check failed: {e}")
+    
+    return tools
 
 if __name__ == "__main__":
     asyncio.run(test_mcp_atlassian())

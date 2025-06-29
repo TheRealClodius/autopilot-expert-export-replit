@@ -29,9 +29,19 @@ class AtlassianTool:
     Connects to running MCP server via SSE transport.
     """
     
+    def _get_mcp_server_url(self) -> str:
+        """Get the MCP server URL from configuration"""
+        base_url = settings.MCP_SERVER_URL.strip() if settings.MCP_SERVER_URL else ""
+        
+        if base_url and base_url.startswith(("http://", "https://")):
+            logger.info(f"Using configured MCP server URL: {base_url}")
+            return base_url
+        else:
+            raise ValueError(f"Invalid or missing MCP_SERVER_URL: {base_url}. Expected format: http://... or https://...")
+    
     def __init__(self, trace_manager=None):
         """Initialize HTTP-based Atlassian tool"""
-        self.mcp_server_url = settings.DEPLOYMENT_AWARE_MCP_URL
+        self.mcp_server_url = self._get_mcp_server_url()
         self.sse_endpoint = f"{self.mcp_server_url}/mcp/sse"
         self.session_id = None
         self.messages_endpoint = None
@@ -91,37 +101,6 @@ class AtlassianTool:
         except Exception as e:
             logger.error(f"Error discovering available tools: {e}")
             return []
-    
-    def _get_deployment_aware_mcp_url(self) -> str:
-        """
-        Get MCP server URL with deployment environment awareness.
-        
-        In Replit deployment environments, container networking may be different
-        from local development. This method provides smart URL detection.
-        """
-        base_url = settings.MCP_SERVER_URL.strip() if settings.MCP_SERVER_URL else ""
-        
-        # Detect deployment environment
-        replit_domains = os.getenv("REPLIT_DOMAINS", "")
-        is_deployment = any([
-            os.getenv("REPLIT_DEPLOYMENT") == "1",
-            os.getenv("DEPLOYMENT_ENV") == "production", 
-            os.getenv("PORT") and os.getenv("PORT") != "5000",
-            "replit.app" in replit_domains,
-            "replit.dev" in replit_domains,
-            len(replit_domains) > 0 and ("riker." in replit_domains or "wolf." in replit_domains)
-        ])
-        
-        if is_deployment:
-            # In deployment, try to use the configured URL or fallback to localhost
-            if base_url and "localhost" not in base_url and "127.0.0.1" not in base_url:
-                return base_url
-            else:
-                # For Replit deployments, both services run in same container
-                return "http://localhost:8001"
-        else:
-            # Local development
-            return base_url
     
     def _map_tool_name(self, our_tool_name: str) -> str:
         """Map our tool names to official MCP tool names
