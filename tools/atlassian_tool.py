@@ -24,7 +24,7 @@ class AtlassianTool:
     def __init__(self):
         """Initialize HTTP-based Atlassian tool"""
         self.mcp_server_url = settings.MCP_SERVER_URL
-        self.sse_endpoint = f"{self.mcp_server_url}/sse"
+        self.sse_endpoint = f"{self.mcp_server_url}/mcp/sse"
         self.session_id = None
         self.messages_endpoint = None
         self.available_tools = [
@@ -73,9 +73,13 @@ class AtlassianTool:
             return self.messages_endpoint
             
         try:
+            headers = {
+                'Accept': 'text/event-stream',
+                'Cache-Control': 'no-cache'
+            }
             async with httpx.AsyncClient(timeout=10.0) as client:
                 # Get SSE endpoint to obtain session info
-                response = await client.get(self.sse_endpoint)
+                response = await client.get(self.sse_endpoint, headers=headers)
                 
                 # Parse the SSE response to get the endpoint
                 lines = response.text.strip().split('\n')
