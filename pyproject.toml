@@ -23,6 +23,21 @@ dependencies = [
     "redis>=6.2.0",
     "slack-sdk>=3.35.0",
     "uvicorn>=0.34.3",
+    "python-dotenv>=1.1.1",
+    "markdownify>=1.1.0",
+    "click>=8.2.1",
+    "starlette>=0.46.2",
+    "python-dateutil>=2.9.0.post0",
+    "requests>=2.32.4",
+    "beautifulsoup4>=4.13.4",
+    "fastmcp>=2.3.5",
+    "markdown-to-confluence>=0.3.5",
+    "thefuzz>=0.22.1",
+    "trio>=0.30.0",
+    "keyring>=25.6.0",
+    "cachetools>=5.5.2",
+    "atlassian-python-api>=4.0.4",
+    "markdown>=3.8.2",
 ]
 
 [build-system]

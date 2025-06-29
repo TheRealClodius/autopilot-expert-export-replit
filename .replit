@@ -2,7 +2,7 @@ modules = ["python-3.11", "python3", "nodejs-20"]
 
 [nix]
 channel = "stable-24_05"
-packages = ["libxcrypt", "libyaml", "redis", "docker"]
+packages = ["coreutils", "docker", "libxcrypt", "libyaml", "redis"]
 
 [workflows]
 runButton = "Project"

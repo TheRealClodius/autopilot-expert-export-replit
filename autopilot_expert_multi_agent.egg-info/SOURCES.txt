@@ -24,6 +24,8 @@ services/trace_manager_old.py
 services/trace_manager_old_broken.py
 services/webhook_cache.py
 tools/atlassian_tool.py
+tools/atlassian_tool_old.py
+tools/atlassian_tool_stdio.py
 tools/outlook_meeting.py
 tools/perplexity_search.py
 tools/vector_search.py
