@@ -2610,45 +2610,49 @@ async def test_atlassian_integration():
         memory_service = MemoryService()
         orchestrator = OrchestratorAgent(memory_service)
         
-        # Test scenarios for Atlassian tool integration
+        # Test scenarios for MCP Atlassian tool integration
         test_scenarios = [
             {
                 "name": "Jira Issue Search Query",
                 "query": "What are the open bugs in project AUTOPILOT?",
                 "expected_tool": "atlassian_search",
-                "expected_action": "search_jira_issues"
+                "expected_mcp_tool": "jira_search"
             },
             {
                 "name": "Confluence Documentation Search",
                 "query": "Find documentation about API endpoints in our Confluence",
                 "expected_tool": "atlassian_search",
-                "expected_action": "search_confluence_pages"
+                "expected_mcp_tool": "confluence_search"
             },
             {
                 "name": "Create Jira Issue Request",
                 "query": "Create a new task for fixing the login issue in project AUTOPILOT",
                 "expected_tool": "atlassian_search",
-                "expected_action": "create_jira_issue"
+                "expected_mcp_tool": "jira_create"
             },
             {
                 "name": "Specific Issue Lookup",
                 "query": "Get details for issue AUTOPILOT-123",
                 "expected_tool": "atlassian_search",
-                "expected_action": "get_jira_issue"
+                "expected_mcp_tool": "jira_get"
             }
         ]
         
         test_results = {
             "tool_initialization": {
                 "atlassian_tool_available": orchestrator.atlassian_tool.available,
-                "credentials_configured": bool(
-                    orchestrator.atlassian_tool.jira_url and 
-                    orchestrator.atlassian_tool.jira_username and 
-                    orchestrator.atlassian_tool.jira_token
-                )
+                "mcp_server_health": False,
+                "credentials_configured": orchestrator.atlassian_tool.available
             },
             "orchestrator_integration_test": []
         }
+        
+        # Test MCP server health
+        try:
+            server_health = await orchestrator.atlassian_tool.check_server_health()
+            test_results["tool_initialization"]["mcp_server_health"] = server_health
+        except Exception as e:
+            test_results["tool_initialization"]["mcp_health_error"] = str(e)
         
         # Test each scenario
         for scenario in test_scenarios:
