@@ -37,3 +37,4 @@ Requires-Dist: keyring>=25.6.0
 Requires-Dist: cachetools>=5.5.2
 Requires-Dist: atlassian-python-api>=4.0.4
 Requires-Dist: markdown>=3.8.2
+Requires-Dist: google-generativeai>=0.8.5

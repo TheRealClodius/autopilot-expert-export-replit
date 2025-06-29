@@ -38,6 +38,7 @@ dependencies = [
     "cachetools>=5.5.2",
     "atlassian-python-api>=4.0.4",
     "markdown>=3.8.2",
+    "google-generativeai>=0.8.5",
 ]
 
 [build-system]

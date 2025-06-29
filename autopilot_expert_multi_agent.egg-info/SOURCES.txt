@@ -17,14 +17,17 @@ services/lazy_loader.py
 services/memory_service.py
 services/performance_optimizer.py
 services/prewarming_service.py
+services/production_logger.py
 services/progress_tracker.py
 services/slack_connector.py
 services/trace_manager.py
 services/trace_manager_old.py
 services/trace_manager_old_broken.py
 services/webhook_cache.py
+tools/atlassian_direct.py
 tools/atlassian_tool.py
 tools/atlassian_tool_old.py
+tools/atlassian_tool_sse_backup.py
 tools/atlassian_tool_stdio.py
 tools/outlook_meeting.py
 tools/perplexity_search.py
