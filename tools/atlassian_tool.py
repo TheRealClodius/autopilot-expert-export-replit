@@ -143,11 +143,48 @@ class AtlassianTool:
                         "message": f"Failed to initialize MCP session: {session_response.text}"
                     }
                 
-                # Extract session endpoint from successful response
+                # Extract session info from SSE response
+                session_id = session_response.headers.get("mcp-session-id")
                 session_url = session_response.url
-                logger.debug(f"Session established at: {session_url}")
+                response_text = session_response.text
                 
-                # Step 2: Call the tool using the session URL
+                # Parse SSE response to extract JSON result
+                logger.debug(f"Session response text: {response_text}")
+                session_result = None
+                for line in response_text.split('\n'):
+                    if line.startswith('data: '):
+                        try:
+                            json_data = line[6:]  # Remove 'data: ' prefix
+                            session_result = json.loads(json_data)
+                            break
+                        except json.JSONDecodeError:
+                            continue
+                
+                if not session_result:
+                    logger.error("Failed to parse session initialization response")
+                    return {
+                        "error": "session_parse_failed",
+                        "message": "Could not parse session initialization response"
+                    }
+                
+                logger.debug(f"Session established: ID={session_id}, URL={session_url}")
+                
+                # Step 2: Send initialized notification to complete handshake
+                initialized_request = {
+                    "jsonrpc": "2.0",
+                    "method": "notifications/initialized"
+                }
+                
+                # Add session ID to headers if available
+                initialized_headers = headers.copy()
+                if session_id:
+                    initialized_headers["mcp-session-id"] = session_id
+                
+                logger.debug(f"Sending initialized notification: {initialized_request}")
+                init_response = await client.post(str(session_url), json=initialized_request, headers=initialized_headers)
+                logger.debug(f"Initialized response: {init_response.status_code}")
+                
+                # Step 3: Call the tool using the session URL with session headers
                 tool_request = {
                     "jsonrpc": "2.0",
                     "id": str(uuid.uuid4()),
@@ -158,11 +195,42 @@ class AtlassianTool:
                     }
                 }
                 
+                # Add session ID to headers if available
+                tool_headers = headers.copy()
+                if session_id:
+                    tool_headers["mcp-session-id"] = session_id
+                
                 logger.debug(f"Calling MCP tool with request: {tool_request}")
-                response = await client.post(str(session_url), json=tool_request, headers=headers)
+                response = await client.post(str(session_url), json=tool_request, headers=tool_headers)
+                
+                logger.debug(f"Tool call response status: {response.status_code}")
+                logger.debug(f"Tool call response headers: {response.headers}")
                 
                 if response.status_code == 200:
-                    result_data = response.json()
+                    # Handle SSE response for tool calls too
+                    if response.headers.get("content-type", "").startswith("text/event-stream"):
+                        response_text = response.text
+                        logger.debug(f"Tool response SSE text: {response_text}")
+                        
+                        # Parse SSE response
+                        result_data = None
+                        for line in response_text.split('\n'):
+                            if line.startswith('data: '):
+                                try:
+                                    json_data = line[6:]  # Remove 'data: ' prefix
+                                    result_data = json.loads(json_data)
+                                    break
+                                except json.JSONDecodeError:
+                                    continue
+                        
+                        if not result_data:
+                            logger.error("Failed to parse tool response from SSE")
+                            return {
+                                "error": "tool_response_parse_failed",
+                                "message": "Could not parse tool response from SSE stream"
+                            }
+                    else:
+                        result_data = response.json()
                     
                     # Check for MCP protocol error
                     if "error" in result_data:
@@ -186,7 +254,6 @@ class AtlassianTool:
                                 text_content = item.get("text", "")
                                 try:
                                     # Try to parse as JSON
-                                    import json
                                     parsed_data = json.loads(text_content)
                                     return {
                                         "success": True,
