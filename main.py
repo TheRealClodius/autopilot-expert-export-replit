@@ -131,6 +131,13 @@ async def slack_events(request: Request, background_tasks: BackgroundTasks):
     try:
         # ⏱️ STEP 2: Slack → Your app (HTTP POST received)
         webhook_received_time = time.time()
+        logger.info(f"📥 SLACK WEBHOOK RECEIVED: {webhook_received_time:.6f}")
+        
+        # Log all headers for debugging
+        headers = dict(request.headers)
+        logger.info(f"📋 WEBHOOK HEADERS: {headers}")
+        
+        # ⏱️ STEP 2: Slack → Your app (HTTP POST received)
         logger.info(f"📥 STEP 2: Slack webhook received at {webhook_received_time:.6f}")
         
         # ⏱️ STEP 3A: Framework routing/parsing starts
