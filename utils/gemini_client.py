@@ -310,7 +310,7 @@ class GeminiClient:
             reasoning_steps = []
             complete_text = ""
             
-            async for chunk in stream:
+            for chunk in stream:
                 if chunk and hasattr(chunk, 'text') and chunk.text:
                     chunk_text = chunk.text
                     complete_text += chunk_text
