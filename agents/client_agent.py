@@ -311,90 +311,93 @@ class ClientAgent:
                 
                 prompt_parts.append("")
             
-            # Atlassian Results
+            # Atlassian Results (MCP format)
             if atlassian_results:
                 prompt_parts.append("Atlassian Actions:")
                 for i, result in enumerate(atlassian_results, 1):
-                    action_type = result.get("action_type", "unknown")
+                    # Handle both old format (action_type) and new MCP format (mcp_tool)
+                    action_type = result.get("action_type") or result.get("mcp_tool", "unknown")
                     success = result.get("success", False)
                     
                     if success:
-                        atlassian_data = result.get("result", {})
+                        # MCP results are stored directly in the result array
+                        atlassian_data = result.get("result", [])
                         prompt_parts.append(f"  {i}. {action_type.replace('_', ' ').title()}: SUCCESS")
                         
-                        if action_type == "search_jira_issues":
-                            search_results = atlassian_data.get("jira_search_results", {})
-                            query = search_results.get("query", "")
-                            total_found = search_results.get("total_found", 0)
-                            issues = search_results.get("issues", [])
-                            prompt_parts.append(f"     Query: {query}")
-                            prompt_parts.append(f"     Found: {total_found} issues (showing {len(issues)})")
-                            for issue in issues[:3]:  # Show top 3 issues
-                                key = issue.get("key", "")
-                                summary = issue.get("summary", "")[:50]
-                                status = issue.get("status", "")
-                                url = issue.get("url", "")
-                                if url:
-                                    prompt_parts.append(f"     - <{url}|{key}>: {summary}... ({status})")
+                        # Handle MCP result format for different tools
+                        if action_type in ["jira_search", "search_jira_issues"]:
+                            # MCP jira_search returns array of issues directly
+                            if isinstance(atlassian_data, list):
+                                issues = atlassian_data
+                                prompt_parts.append(f"     Found: {len(issues)} issues")
+                                for issue in issues[:3]:  # Show top 3 issues
+                                    key = issue.get("key", "")
+                                    summary = issue.get("summary", "")[:60]
+                                    status = issue.get("status", {}).get("name", "") if isinstance(issue.get("status"), dict) else issue.get("status", "")
+                                    # Build Jira URL from base URL and key
+                                    if key:
+                                        url = f"https://uipath.atlassian.net/browse/{key}"
+                                        prompt_parts.append(f"     - <{url}|{key}>: {summary}... ({status})")
+                                    else:
+                                        prompt_parts.append(f"     - {summary}... ({status})")
+                        
+                        elif action_type in ["jira_get", "get_jira_issue"]:
+                            # MCP jira_get returns single issue object
+                            if isinstance(atlassian_data, dict):
+                                key = atlassian_data.get("key", "")
+                                summary = atlassian_data.get("summary", "")
+                                status = atlassian_data.get("status", {}).get("name", "") if isinstance(atlassian_data.get("status"), dict) else atlassian_data.get("status", "")
+                                assignee = atlassian_data.get("assignee", {}).get("displayName", "Unassigned") if isinstance(atlassian_data.get("assignee"), dict) else atlassian_data.get("assignee", "Unassigned")
+                                if key:
+                                    url = f"https://uipath.atlassian.net/browse/{key}"
+                                    prompt_parts.append(f"     Issue: <{url}|{key}>")
                                 else:
-                                    prompt_parts.append(f"     - {key}: {summary}... ({status})")
+                                    prompt_parts.append(f"     Issue: {summary}")
+                                prompt_parts.append(f"     Summary: {summary}")
+                                prompt_parts.append(f"     Status: {status}")
+                                prompt_parts.append(f"     Assignee: {assignee}")
                         
-                        elif action_type == "get_jira_issue":
-                            issue_data = atlassian_data.get("jira_issue", {})
-                            key = issue_data.get("key", "")
-                            summary = issue_data.get("summary", "")
-                            status = issue_data.get("status", "")
-                            assignee = issue_data.get("assignee", "")
-                            url = issue_data.get("url", "")
-                            if url:
-                                prompt_parts.append(f"     Issue: <{url}|{key}>")
-                            else:
-                                prompt_parts.append(f"     Issue: {key}")
-                            prompt_parts.append(f"     Summary: {summary}")
-                            prompt_parts.append(f"     Status: {status}")
-                            prompt_parts.append(f"     Assignee: {assignee}")
+                        elif action_type in ["confluence_search", "search_confluence_pages"]:
+                            # MCP confluence_search returns array of pages directly
+                            if isinstance(atlassian_data, list):
+                                pages = atlassian_data
+                                prompt_parts.append(f"     Found: {len(pages)} pages")
+                                for page in pages[:3]:  # Show top 3 pages
+                                    title = page.get("title", "")[:60]
+                                    space_info = page.get("space", {})
+                                    space_name = space_info.get("name", "") if isinstance(space_info, dict) else ""
+                                    url = page.get("url", "")
+                                    if url:
+                                        prompt_parts.append(f"     - <{url}|{title}>... (Space: {space_name})")
+                                    else:
+                                        prompt_parts.append(f"     - {title}... (Space: {space_name})")
                         
-                        elif action_type == "search_confluence_pages":
-                            search_results = atlassian_data.get("confluence_search_results", {})
-                            query = search_results.get("query", "")
-                            total_found = search_results.get("total_found", 0)
-                            pages = search_results.get("pages", [])
-                            prompt_parts.append(f"     Query: {query}")
-                            prompt_parts.append(f"     Found: {total_found} pages (showing {len(pages)})")
-                            for page in pages[:3]:  # Show top 3 pages
-                                title = page.get("title", "")[:50]
-                                space = page.get("space_name", "")
-                                url = page.get("url", "")
+                        elif action_type in ["confluence_get", "get_confluence_page"]:
+                            # MCP confluence_get returns single page object
+                            if isinstance(atlassian_data, dict):
+                                title = atlassian_data.get("title", "")
+                                space_info = atlassian_data.get("space", {})
+                                space_name = space_info.get("name", "") if isinstance(space_info, dict) else ""
+                                url = atlassian_data.get("url", "")
                                 if url:
-                                    prompt_parts.append(f"     - <{url}|{title}>... (Space: {space})")
+                                    prompt_parts.append(f"     Page: <{url}|{title}>")
                                 else:
-                                    prompt_parts.append(f"     - {title}... (Space: {space})")
+                                    prompt_parts.append(f"     Page: {title}")
+                                prompt_parts.append(f"     Space: {space_name}")
                         
-                        elif action_type == "get_confluence_page":
-                            page_data = atlassian_data.get("confluence_page", {})
-                            title = page_data.get("title", "")
-                            space = page_data.get("space_name", "")
-                            author = page_data.get("author", "")
-                            url = page_data.get("url", "")
-                            if url:
-                                prompt_parts.append(f"     Page: <{url}|{title}>")
-                            else:
-                                prompt_parts.append(f"     Page: {title}")
-                            prompt_parts.append(f"     Space: {space}")
-                            prompt_parts.append(f"     Author: {author}")
-                        
-                        elif action_type == "create_jira_issue":
-                            issue_data = atlassian_data.get("jira_issue_created", {})
-                            key = issue_data.get("key", "")
-                            summary = issue_data.get("summary", "")
-                            project = issue_data.get("project", "")
-                            url = issue_data.get("url", "")
-                            if url:
-                                prompt_parts.append(f"     Created: <{url}|{key}>")
-                            else:
-                                prompt_parts.append(f"     Created: {key}")
-                            prompt_parts.append(f"     Summary: {summary}")
-                            prompt_parts.append(f"     Project: {project}")
+                        elif action_type in ["jira_create", "create_jira_issue"]:
+                            # MCP jira_create returns created issue object
+                            if isinstance(atlassian_data, dict):
+                                key = atlassian_data.get("key", "")
+                                summary = atlassian_data.get("summary", "")
+                                project = atlassian_data.get("project", {}).get("name", "") if isinstance(atlassian_data.get("project"), dict) else ""
+                                if key:
+                                    url = f"https://uipath.atlassian.net/browse/{key}"
+                                    prompt_parts.append(f"     Created: <{url}|{key}>")
+                                else:
+                                    prompt_parts.append(f"     Created: {summary}")
+                                prompt_parts.append(f"     Summary: {summary}")
+                                prompt_parts.append(f"     Project: {project}")
                     else:
                         error_msg = result.get("error", "Unknown error")
                         prompt_parts.append(f"  {i}. {action_type.replace('_', ' ').title()}: FAILED")
