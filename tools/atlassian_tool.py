@@ -8,7 +8,6 @@ import logging
 import time
 import asyncio
 import httpx
-import re
 from typing import Dict, Any, List, Optional, Union
 from datetime import datetime
 from config import settings
@@ -360,8 +359,7 @@ class AtlassianTool:
         self,
         query: str,
         space_key: Optional[str] = None,
-        max_results: int = 10,
-        fetch_content: bool = True
+        max_results: int = 10
     ) -> Dict[str, Any]:
         """
         Search for Confluence pages.
@@ -437,41 +435,17 @@ class AtlassianTool:
             processed_pages = []
             
             for page in pages:
-                # Construct proper full URL from relative webui path
-                webui_path = page.get("_links", {}).get("webui", "")
-                if webui_path:
-                    # Base URL without /wiki suffix + /wiki + webui path
-                    base_url = self.confluence_url.rstrip('/wiki')
-                    full_url = f"{base_url}/wiki{webui_path}" if webui_path.startswith('/') else f"{base_url}/wiki/{webui_path}"
-                else:
-                    full_url = None
-                
                 processed_page = {
                     "id": page.get("id"),
                     "title": page.get("title"),
                     "space_key": page.get("space", {}).get("key"),
                     "space_name": page.get("space", {}).get("name"),
                     "excerpt": page.get("excerpt", ""),
-                    "url": full_url,
+                    "url": page.get("_links", {}).get("webui"),
                     "last_modified": page.get("lastModified"),
                     "version": page.get("version", {}).get("number")
                 }
                 processed_pages.append(processed_page)
-            
-            # If fetch_content is True, get detailed content from top 3 pages
-            detailed_pages = []
-            if fetch_content and processed_pages:
-                top_pages = processed_pages[:3]  # Get content from top 3 most relevant pages
-                
-                for page in top_pages:
-                    page_id = page.get("id")
-                    if page_id:
-                        page_content = await self.get_confluence_page(page_id)
-                        if page_content and not page_content.get("error"):
-                            detailed_pages.append(page_content.get("confluence_page", {}))
-                        
-                        # Add small delay to avoid rate limiting
-                        await asyncio.sleep(0.1)
             
             return {
                 "confluence_search_results": {
@@ -479,8 +453,7 @@ class AtlassianTool:
                     "space_key": space_key,
                     "total_found": result.get("totalSize", 0),
                     "returned_count": len(processed_pages),
-                    "pages": processed_pages,
-                    "detailed_content": detailed_pages if fetch_content else []
+                    "pages": processed_pages
                 },
                 "response_time": round(time.time() - start_time, 2)
             }

@@ -721,16 +721,6 @@ Current Query: "{message.text}"
                 # ACT: Execute the action using the appropriate tool
                 result = await self._execute_single_tool_action(tool_name, action)
                 
-                # Log tool result to LangSmith for tracing visibility
-                if trace_manager.current_trace_id:
-                    await trace_manager.log_agent_operation(
-                        f"{tool_name}_tool",
-                        f"{action_type}: {action.get('query', action.get('issue_key', 'action'))}",
-                        json.dumps(action, default=str),
-                        {"trace_id": trace_manager.current_trace_id},
-                        result  # Log the actual result output
-                    )
-                
                 # OBSERVE: Check if action succeeded
                 if result and not result.get("error"):
                     # Success - return result
