@@ -2425,36 +2425,34 @@ Please be thorough in explaining your thought process."""
             temperature=0.7
         )
         
-        # Also test with reasoning-focused prompt
-        reasoning_prompt = """Think step by step about this question. Show your work:
+        # Test streaming response to capture reasoning steps
+        reasoning_prompt = f"""Think step by step about this question. Please show your reasoning process as you work through it:
 
-<thinking>
-[Your reasoning process here]
-</thinking>
+Question: {query}
 
-<answer>
-[Your final answer here]
-</answer>
-
-Question: """ + query
+Please think through this systematically, showing each step of your reasoning."""
         
-        reasoning_response = await gemini_client.generate_response(
-            system_prompt="You are a helpful AI that shows detailed reasoning.",
+        streaming_response = await gemini_client.generate_streaming_response(
+            system_prompt="You are a helpful AI that thinks step by step and shows your reasoning process clearly.",
             user_prompt=reasoning_prompt,
-            model="gemini-2.5-pro",
-            include_reasoning=True
+            model="gemini-2.5-pro"
         )
         
         return {
             "status": "success",
             "query": query,
             "detailed_response": detailed_response,
-            "reasoning_focused_response": reasoning_response,
+            "streaming_response": streaming_response,
             "analysis": {
+                "streaming_chunks": streaming_response.get("streaming_stats", {}).get("total_chunks", 0),
+                "reasoning_steps_found": len(streaming_response.get("reasoning_steps", [])),
+                "reasoning_step_samples": [
+                    step.get("text", "")[:100] + "..." if len(step.get("text", "")) > 100 else step.get("text", "")
+                    for step in streaming_response.get("reasoning_steps", [])[:3]
+                ],
+                "token_usage": streaming_response.get("usage_metadata", {}),
                 "has_multiple_parts": len(detailed_response.get("candidates", [])) > 0 and 
-                                    len(detailed_response["candidates"][0].get("parts", [])) > 1 if detailed_response.get("candidates") else False,
-                "token_usage": detailed_response.get("usage_metadata", {}),
-                "response_structure": detailed_response.get("raw_response_structure", {})
+                                    len(detailed_response["candidates"][0].get("parts", [])) > 1 if detailed_response.get("candidates") else False
             }
         }
         

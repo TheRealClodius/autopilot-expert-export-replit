@@ -224,30 +224,45 @@ Current Query: "{message.text}"
             # Track LLM call timing for LangSmith
             llm_start = time.time()
             
-            # Add timeout protection for API call
+            # Add timeout protection for API call with streaming reasoning capture
             try:
-                response = await asyncio.wait_for(
-                    self.gemini_client.generate_structured_response(
+                # Use streaming to capture reasoning steps as they're generated
+                streaming_response = await asyncio.wait_for(
+                    self.gemini_client.generate_streaming_response(
                         system_prompt,
                         user_prompt,
-                        response_format="json",
-                        model=self.gemini_client.pro_model  # Orchestrator uses Pro model for complex planning
+                        model=self.gemini_client.pro_model,  # Orchestrator uses Pro model for complex planning
+                        max_tokens=2000,
+                        temperature=0.7
                     ),
-                    timeout=15.0  # 15 second timeout
+                    timeout=20.0  # 20 second timeout for streaming
                 )
+                
+                response = streaming_response.get("text") if streaming_response else None
+                reasoning_steps = streaming_response.get("reasoning_steps", []) if streaming_response else []
+                
+                # Log reasoning steps if found
+                if reasoning_steps:
+                    logger.info(f"Captured {len(reasoning_steps)} reasoning steps from Gemini 2.5 Pro")
+                    for i, step in enumerate(reasoning_steps[:3]):  # Log first 3 steps
+                        logger.debug(f"Reasoning step {i+1}: {step.get('text', '')[:100]}...")
+                else:
+                    logger.debug("No explicit reasoning steps detected in response")
+                
             except asyncio.TimeoutError:
                 logger.error("Gemini API call timed out after 15 seconds")
                 if self.progress_tracker:
                     await emit_warning(self.progress_tracker, "api_timeout", "analysis taking longer than expected")
                 response = None
+                reasoning_steps = []
             
-            # Log LLM call to LangSmith
+            # Log LLM call to LangSmith with reasoning steps
             llm_duration = time.time() - llm_start
             if response:
                 await trace_manager.log_llm_call(
                     model=self.gemini_client.pro_model,
                     prompt=f"SYSTEM: {system_prompt}\n\nUSER: {user_prompt}",
-                    response=response,
+                    response=f"REASONING: {reasoning_steps}\n\nRESPONSE: {response}" if reasoning_steps else response,
                     duration=llm_duration
                 )
             

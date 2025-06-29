@@ -261,6 +261,109 @@ class GeminiClient:
                 "error": str(e)
             }
     
+    async def generate_streaming_response(
+        self,
+        system_prompt: str,
+        user_prompt: str,
+        model: str = None,
+        max_tokens: int = 1000,
+        temperature: float = 0.7
+    ) -> Dict[str, Any]:
+        """
+        Generate a streaming response to capture reasoning steps as they're generated.
+        
+        Returns:
+            Dictionary containing:
+            - text: The complete final response
+            - reasoning_steps: List of reasoning chunks as they were generated
+            - streaming_chunks: Raw streaming data
+            - usage_metadata: Token usage information
+        """
+        try:
+            model_name = model or self.flash_model
+            
+            # Simple rate limiting
+            import time
+            current_time = time.time()
+            time_since_last = current_time - self._last_request_time
+            if time_since_last < 0.1:
+                await asyncio.sleep(0.1 - time_since_last)
+            
+            # Use streaming to capture intermediate reasoning steps
+            stream = self.client.models.generate_content_stream(
+                model=model_name,
+                contents=[
+                    types.Content(role="user", parts=[types.Part(text=user_prompt)])
+                ],
+                config=types.GenerateContentConfig(
+                    system_instruction=system_prompt,
+                    max_output_tokens=max_tokens,
+                    temperature=temperature
+                )
+            )
+            
+            self._last_request_time = time.time()
+            
+            # Collect streaming chunks
+            streaming_chunks = []
+            reasoning_steps = []
+            complete_text = ""
+            
+            async for chunk in stream:
+                if chunk and hasattr(chunk, 'text') and chunk.text:
+                    chunk_text = chunk.text
+                    complete_text += chunk_text
+                    
+                    # Store each chunk as a potential reasoning step
+                    chunk_info = {
+                        "text": chunk_text,
+                        "timestamp": time.time(),
+                        "chunk_index": len(streaming_chunks)
+                    }
+                    
+                    streaming_chunks.append(chunk_info)
+                    
+                    # If this looks like a reasoning step (contains thinking patterns)
+                    if any(pattern in chunk_text.lower() for pattern in [
+                        "step", "first", "second", "next", "then", "because", 
+                        "therefore", "let me", "i need to", "considering", 
+                        "thinking", "reasoning", "analysis"
+                    ]):
+                        reasoning_steps.append(chunk_info)
+                
+                # Extract usage metadata from final chunk
+                usage_metadata = {}
+                if hasattr(chunk, 'usage_metadata'):
+                    usage_metadata = {
+                        "prompt_token_count": getattr(chunk.usage_metadata, 'prompt_token_count', 0),
+                        "candidates_token_count": getattr(chunk.usage_metadata, 'candidates_token_count', 0),
+                        "total_token_count": getattr(chunk.usage_metadata, 'total_token_count', 0)
+                    }
+            
+            logger.debug(f"Streaming response completed: {len(streaming_chunks)} chunks, {len(reasoning_steps)} reasoning steps")
+            
+            return {
+                "text": complete_text.strip(),
+                "reasoning_steps": reasoning_steps,
+                "streaming_chunks": streaming_chunks,
+                "usage_metadata": usage_metadata,
+                "streaming_stats": {
+                    "total_chunks": len(streaming_chunks),
+                    "reasoning_chunks": len(reasoning_steps),
+                    "completion_time": time.time()
+                }
+            }
+            
+        except Exception as e:
+            logger.error(f"Error in streaming Gemini response: {e}")
+            return {
+                "text": "",
+                "reasoning_steps": [],
+                "streaming_chunks": [],
+                "usage_metadata": {},
+                "error": str(e)
+            }
+    
     async def analyze_query_intent(
         self,
         query: str,
