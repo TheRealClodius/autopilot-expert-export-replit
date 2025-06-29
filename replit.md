@@ -562,6 +562,17 @@ The system uses environment variables for configuration management and supports 
 - **Test Infrastructure**: Created test_pure_mcp_verification.py for end-to-end integration testing with link verification
 - **Status**: Complete MCP integration with enhanced user experience through clickable source links ready for production deployment
 
+✅ **June 29, 2025 - CRITICAL ORCHESTRATOR ROUTING FIX IMPLEMENTED (PRODUCTION READY)**
+- **Root Cause Identified**: LangSmith traces revealed orchestrator incorrectly choosing vector search over MCP for UiPath/Autopilot queries causing response clipping
+- **Priority-Based Tool Selection**: Updated orchestrator prompt with clear priority order: atlassian_search FIRST for ANY UiPath, Autopilot, project management queries
+- **Enhanced Routing Logic**: Added explicit instruction "Always try atlassian_search BEFORE vector_search for any work-related queries"
+- **Scope Clarification**: Restricted vector_search to ONLY general technical concepts, programming help, or when Atlassian search finds nothing
+- **Comprehensive Testing**: Verified fix with multiple test queries - orchestrator now correctly routes "Autopilot features" and "UiPath design system" to MCP
+- **Production Validation**: Live tested orchestrator correctly generating `{"mcp_tool": "confluence_search", "arguments": {...}}` for Autopilot queries
+- **LangSmith Compatibility**: Fix ensures proper trace completion and eliminates response clipping issues identified in user's shared traces
+- **Files Modified**: prompts.yaml (enhanced tool selection priority and routing logic)
+- **Status**: Orchestrator routing issue completely resolved - system now prioritizes MCP for all UiPath/Autopilot content ensuring full responses
+
 ✅ **June 29, 2025 - OUTLOOK MEETING INTEGRATION IMPLEMENTED (WRITE OPERATIONS ENABLED)**
 - **Complete Microsoft Graph API Integration**: Built comprehensive Outlook meeting tool with Microsoft Graph API authentication and calendar operations
 - **Meeting Management Capabilities**: Schedule meetings, check availability, find meeting times, and retrieve calendar events with Teams integration

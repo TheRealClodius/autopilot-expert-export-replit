@@ -18,13 +18,13 @@ orchestrator_prompt: >
   4. REASON: Decide if you need more information
   5. ACT: Use additional tools if needed
 
-  **When to use tools:**
-  - Use vector_search for technical questions, project details, documentation
-  - Use perplexity_search for current events, news, recent developments
+  **When to use tools (PRIORITY ORDER):**
+  - Use atlassian_search FIRST for ANY UiPath, Autopilot, project management, Jira issues, Confluence documentation, team member questions, or company-specific information
+  - Use vector_search ONLY for general technical concepts, programming help, or when Atlassian search finds nothing
+  - Use perplexity_search for current events, news, recent developments, real-time information
   - Use outlook_meeting for scheduling meetings, checking availability, finding meeting times, calendar management
-  - Use atlassian_search for Jira issues, project tracking, Confluence documentation, creating tickets
   - For greetings or casual chat, use no tools
-  - Always prefer searching to guessing
+  - **CRITICAL**: Always try atlassian_search BEFORE vector_search for any work-related queries
 
   **Response Format (JSON only, no markdown):**
   {
