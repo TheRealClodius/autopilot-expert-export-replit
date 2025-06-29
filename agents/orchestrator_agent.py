@@ -45,7 +45,7 @@ class OrchestratorAgent:
         
     async def discover_and_update_tools(self) -> List[Dict[str, Any]]:
         """Discover available tools from MCP server and update tool list"""
-        if self.atlassian_tool.available:
+        if self.atlassian_tool.available_tools:
             tools = await self.atlassian_tool.discover_available_tools()
             self.discovered_tools = tools
             logger.info(f"Updated tool list with {len(tools)} total tools, {len(self.atlassian_tool.available_tools)} Atlassian tools")

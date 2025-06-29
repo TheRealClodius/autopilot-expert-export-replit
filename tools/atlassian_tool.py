@@ -33,7 +33,8 @@ class AtlassianTool:
     def _get_mcp_server_url(self) -> str:
         """Get the MCP server URL from configuration"""
         url = settings.MCP_SERVER_URL or "https://remote-mcp-server-andreiclodius.replit.app"
-        # Ensure URL has proper protocol
+        # Clean any whitespace and ensure URL has proper protocol
+        url = url.strip()
         if not url.startswith(('http://', 'https://')):
             url = f"https://{url}"
         return url.rstrip('/')

@@ -2705,9 +2705,9 @@ async def test_atlassian_integration():
         
         test_results = {
             "tool_initialization": {
-                "atlassian_tool_available": orchestrator.atlassian_tool.available,
+                "atlassian_tool_available": bool(orchestrator.atlassian_tool.available_tools),
                 "mcp_server_health": False,
-                "credentials_configured": orchestrator.atlassian_tool.available
+                "credentials_configured": bool(orchestrator.atlassian_tool.available_tools)
             },
             "orchestrator_integration_test": []
         }
@@ -3138,9 +3138,9 @@ async def diagnose_deployment_errors():
         
         # Initialize tool
         tool = AtlassianTool()
-        results["production_execution"]["tool_available"] = tool.available
+        results["production_execution"]["tool_available"] = bool(tool.available_tools)
         
-        if tool.available:
+        if tool.available_tools:
             # Test actual execution that fails in production
             start_time = time.time()
             
