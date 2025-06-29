@@ -378,16 +378,18 @@ Current Query: "{message.text}"
                             await emit_searching(self.progress_tracker, "vector_search", search_topic)
                         
                         try:
-                            results = await self.vector_tool.search(
-                                query=query,
-                                top_k=5,
-                                filters={}
-                            )
-                            if results:
-                                gathered_info["vector_results"].extend(results)
+                            # Use generalized retry pattern for vector search
+                            vector_action = {"type": "search", "query": query, "top_k": 5, "filters": {}}
+                            result = await self._execute_tool_action_with_generalized_retry("vector_search", vector_action, message)
+                            
+                            if result and not result.get("error"):
+                                gathered_info["vector_results"].extend(result if isinstance(result, list) else [result])
                             elif self.progress_tracker:
-                                # Emit warning if no results found
-                                await emit_warning(self.progress_tracker, "limited_results", f"no matches for '{query[:20]}...'")
+                                # Emit warning if no results found or HITL required
+                                if result.get("hitl_required"):
+                                    await emit_error(self.progress_tracker, "hitl_required", f"vector search requires human intervention")
+                                else:
+                                    await emit_warning(self.progress_tracker, "limited_results", f"no matches for '{query[:20]}...'")
                         except Exception as search_error:
                             logger.error(f"Vector search error for query '{query}': {search_error}")
                             if self.progress_tracker:
@@ -488,37 +490,8 @@ Current Query: "{message.text}"
                             await emit_processing(self.progress_tracker, "atlassian_action", f"processing {action_type} request")
                         
                         try:
-                            if action_type == "search_jira_issues":
-                                result = await self.atlassian_tool.search_jira_issues(
-                                    query=action.get("query", ""),
-                                    max_results=action.get("max_results", 10),
-                                    fields=action.get("fields")
-                                )
-                            elif action_type == "get_jira_issue":
-                                result = await self.atlassian_tool.get_jira_issue(
-                                    issue_key=action.get("issue_key", "")
-                                )
-                            elif action_type == "search_confluence_pages":
-                                result = await self.atlassian_tool.search_confluence_pages(
-                                    query=action.get("query", ""),
-                                    space_key=action.get("space_key"),
-                                    max_results=action.get("max_results", 10)
-                                )
-                            elif action_type == "get_confluence_page":
-                                result = await self.atlassian_tool.get_confluence_page(
-                                    page_id=action.get("page_id", "")
-                                )
-                            elif action_type == "create_jira_issue":
-                                result = await self.atlassian_tool.create_jira_issue(
-                                    project_key=action.get("project_key", ""),
-                                    issue_type=action.get("issue_type", "Task"),
-                                    summary=action.get("summary", ""),
-                                    description=action.get("description", ""),
-                                    priority=action.get("priority", "Medium"),
-                                    assignee=action.get("assignee")
-                                )
-                            else:
-                                result = {"error": f"Unknown Atlassian action type: {action_type}"}
+                            # Execute action with generalized retry pattern
+                            result = await self._execute_tool_action_with_generalized_retry("atlassian", action, message)
                             
                             # Store result
                             if result and not result.get("error"):
@@ -716,4 +689,288 @@ Current Query: "{message.text}"
         except Exception as e:
             logger.error(f"Error triggering observation: {e}")
     
+    async def _execute_tool_action_with_generalized_retry(self, tool_name: str, action: Dict[str, Any], message: ProcessedMessage) -> Dict[str, Any]:
+        """
+        Generalized ReAct pattern for ANY tool: Reason → Act → Observe → Reason → Act
+        Automatically observes tool failures and reasons about corrections. 5 loops max, then HITL.
+        
+        Args:
+            tool_name: Name of the tool (atlassian, vector_search, perplexity, etc.)
+            action: The action to execute  
+            message: Original processed message for context
+            
+        Returns:
+            Result from successful execution, final error, or HITL escalation
+        """
+        action_type = action.get("type", "unknown_action")
+        max_retries = 5  # 5 loops max as specified
+        
+        for attempt in range(max_retries):
+            try:
+                # REASON: Determine what action to take based on current attempt
+                if attempt == 0:
+                    if self.progress_tracker:
+                        await emit_reasoning(self.progress_tracker, "executing_action", f"attempting {tool_name} {action_type}")
+                else:
+                    if self.progress_tracker:
+                        await emit_reasoning(self.progress_tracker, "retry_reasoning", f"analyzing failure and adjusting approach (attempt {attempt + 1}/{max_retries})")
+                
+                # ACT: Execute the action using the appropriate tool
+                result = await self._execute_single_tool_action(tool_name, action)
+                
+                # OBSERVE: Check if action succeeded
+                if result and not result.get("error"):
+                    # Success - return result
+                    if attempt > 0 and self.progress_tracker:
+                        await emit_processing(self.progress_tracker, "retry_success", f"{tool_name} {action_type} succeeded after {attempt + 1} attempts")
+                    return result
+                else:
+                    # OBSERVE: Action failed - analyze the error
+                    error_msg = result.get("error", "Unknown error") if result else "No result returned"
+                    
+                    if self.progress_tracker:
+                        await emit_warning(self.progress_tracker, "action_failed", f"{tool_name} {action_type} failed: {error_msg[:50]}...")
+                    
+                    # REASON: Analyze failure and determine if retry is worthwhile
+                    should_retry, adjusted_action = await self._generalized_failure_reasoning(tool_name, action, error_msg, attempt, message)
+                    
+                    if should_retry and attempt < max_retries - 1:
+                        # Update action for next attempt based on reasoning
+                        action = adjusted_action
+                        if self.progress_tracker:
+                            await emit_retry(self.progress_tracker, "intelligent_retry", f"retrying {tool_name} {action_type} with corrected approach")
+                        continue
+                    else:
+                        # Final failure after all retries
+                        if attempt == max_retries - 1:
+                            # HITL: Human-in-the-loop escalation
+                            hitl_msg = f"After {max_retries} attempts, {tool_name} {action_type} failed. Last error: {error_msg[:100]}... This may require human intervention to resolve the underlying issue."
+                            if self.progress_tracker:
+                                await emit_error(self.progress_tracker, "hitl_escalation", "escalating to human intervention after max retries")
+                            return {"error": hitl_msg, "hitl_required": True}
+                        else:
+                            return result
+                        
+            except Exception as e:
+                logger.error(f"{tool_name} action {action_type} attempt {attempt + 1} failed: {str(e)}")
+                if attempt == max_retries - 1:
+                    hitl_msg = f"All retry attempts failed due to technical errors: {str(e)}. Human intervention may be required."
+                    return {"error": hitl_msg, "hitl_required": True}
+                elif self.progress_tracker:
+                    await emit_warning(self.progress_tracker, "execution_error", f"attempt {attempt + 1} encountered technical issue")
+        
+        return {"error": f"Maximum retries ({max_retries}) exceeded", "hitl_required": True}
+    
+    async def _execute_single_tool_action(self, tool_name: str, action: Dict[str, Any]) -> Dict[str, Any]:
+        """Execute a single tool action without retry logic"""
+        action_type = action.get("type")
+        
+        if tool_name == "atlassian":
+            if action_type == "search_jira_issues":
+                return await self.atlassian_tool.search_jira_issues(
+                    query=action.get("query", ""),
+                    max_results=action.get("max_results", 10),
+                    fields=action.get("fields")
+                )
+            elif action_type == "get_jira_issue":
+                return await self.atlassian_tool.get_jira_issue(
+                    issue_key=action.get("issue_key", "")
+                )
+            elif action_type == "search_confluence_pages":
+                return await self.atlassian_tool.search_confluence_pages(
+                    query=action.get("query", ""),
+                    space_key=action.get("space_key"),
+                    max_results=action.get("max_results", 10)
+                )
+            elif action_type == "get_confluence_page":
+                return await self.atlassian_tool.get_confluence_page(
+                    page_id=action.get("page_id", "")
+                )
+            elif action_type == "create_jira_issue":
+                return await self.atlassian_tool.create_jira_issue(
+                    project_key=action.get("project_key", ""),
+                    issue_type=action.get("issue_type", "Task"),
+                    summary=action.get("summary", ""),
+                    description=action.get("description", ""),
+                    priority=action.get("priority", "Medium"),
+                    assignee=action.get("assignee")
+                )
+            else:
+                return {"error": f"Unknown Atlassian action type: {action_type}"}
+        
+        elif tool_name == "vector_search":
+            results = await self.vector_tool.search(
+                query=action.get("query", ""),
+                top_k=action.get("top_k", 5),
+                filters=action.get("filters", {})
+            )
+            # Vector search returns a list, but we need to wrap it as a dict for consistency
+            return {"results": results, "success": True} if results else {"results": [], "success": True}
+        
+        elif tool_name == "perplexity_search":
+            return await self.perplexity_tool.search(
+                query=action.get("query", ""),
+                max_tokens=action.get("max_tokens", 1000),
+                temperature=action.get("temperature", 0.2)
+            )
+        
+        elif tool_name == "outlook_meeting":
+            # Handle different Outlook meeting actions
+            if action_type == "check_availability":
+                return await self.outlook_tool.check_availability(
+                    email_addresses=action.get("emails", []),
+                    start_time=action.get("start_time"),
+                    end_time=action.get("end_time"),
+                    timezone=action.get("timezone", "UTC")
+                )
+            elif action_type == "schedule_meeting":
+                return await self.outlook_tool.schedule_meeting(
+                    subject=action.get("subject", "Meeting"),
+                    attendee_emails=action.get("attendees", []),
+                    start_time=action.get("start_time"),
+                    end_time=action.get("end_time"),
+                    body=action.get("body", ""),
+                    location=action.get("location", ""),
+                    timezone=action.get("timezone", "UTC"),
+                    is_online_meeting=action.get("is_online", True)
+                )
+            # Add other meeting actions...
+            else:
+                return {"error": f"Unknown Outlook meeting action: {action_type}"}
+        
+        else:
+            return {"error": f"Unknown tool: {tool_name}"}
+    
+    async def _generalized_failure_reasoning(self, tool_name: str, action: Dict[str, Any], error_msg: str, attempt: int, message: ProcessedMessage) -> tuple[bool, Dict[str, Any]]:
+        """
+        Generalized reasoning about ANY tool failure using AI.
+        This implements the "Observe → Reason" part of the ReAct pattern for all tools.
+        
+        Args:
+            tool_name: Name of the tool that failed
+            action: Original action that failed
+            error_msg: Error message from the failed action
+            attempt: Current attempt number
+            message: Original message for context
+            
+        Returns:
+            Tuple of (should_retry: bool, adjusted_action: Dict[str, Any])
+        """
+        try:
+            # REASON: Use AI to analyze the failure and determine correction strategy
+            reasoning_prompt = f"""
+            OBSERVE: A tool action failed with the following details:
+            - Tool: {tool_name}
+            - Action: {action.get('type', 'unknown')} 
+            - Parameters: {action}
+            - Error: {error_msg}
+            - Attempt: {attempt + 1}/5
+            - Original user query: {message.text}
+            
+            REASON: Analyze this failure and determine:
+            1. Is this error recoverable with a different approach?
+            2. What specifically went wrong (syntax, parameters, logic)?
+            3. How should the action be modified for the next attempt?
+            
+            Common patterns to check:
+            - Syntax errors (incorrect query format, CQL issues, API parameter format)
+            - Parameter validation (missing required fields, wrong data types)
+            - Authentication/permission issues
+            - Rate limiting or temporary service issues
+            - Query scope issues (too broad/narrow)
+            
+            Respond with JSON:
+            {{
+                "should_retry": true/false,
+                "reasoning": "clear explanation of what went wrong",
+                "corrections": {{
+                    "parameter_changes": {{"param_name": "corrected_value"}},
+                    "query_fix": "corrected query if applicable",
+                    "approach": "alternative approach description"
+                }}
+            }}
+            """
+            
+            # Get AI reasoning about the failure
+            response = await self.gemini_client.generate_response(
+                system_prompt="You are an expert at analyzing tool failures and determining retry strategies. Focus on correcting syntax errors and parameter issues.",
+                user_prompt=reasoning_prompt,
+                model=self.gemini_client.flash_model,  # Use flash for quick reasoning
+                max_tokens=500,
+                temperature=0.1  # Low temperature for consistent reasoning
+            )
+            
+            if response:
+                try:
+                    # Parse AI reasoning
+                    reasoning_result = json.loads(response)
+                    should_retry = reasoning_result.get("should_retry", False)
+                    corrections = reasoning_result.get("corrections", {})
+                    
+                    if should_retry and corrections:
+                        # Apply AI-suggested corrections to action
+                        adjusted_action = action.copy()
+                        
+                        # Apply parameter changes
+                        param_changes = corrections.get("parameter_changes", {})
+                        for param, value in param_changes.items():
+                            adjusted_action[param] = value
+                        
+                        # Apply query fixes
+                        if corrections.get("query_fix"):
+                            adjusted_action["query"] = corrections["query_fix"]
+                        
+                        # Log the reasoning for transparency
+                        reasoning_explanation = reasoning_result.get("reasoning", "AI analysis")
+                        logger.info(f"AI retry reasoning for {tool_name}: {reasoning_explanation}")
+                        
+                        return should_retry, adjusted_action
+                        
+                except json.JSONDecodeError:
+                    logger.warning("Failed to parse AI reasoning response")
+            
+            # Fallback: Simple heuristic-based reasoning
+            return self._fallback_heuristic_reasoning(tool_name, action, error_msg, attempt)
+            
+        except Exception as e:
+            logger.error(f"Error in AI failure reasoning: {e}")
+            # Fallback to simple heuristics
+            return self._fallback_heuristic_reasoning(tool_name, action, error_msg, attempt)
+    
+    def _fallback_heuristic_reasoning(self, tool_name: str, action: Dict[str, Any], error_msg: str, attempt: int) -> tuple[bool, Dict[str, Any]]:
+        """Fallback heuristic reasoning for any tool when AI reasoning fails"""
+        action_type = action.get("type", "unknown")
+        original_query = action.get("query", "")
+        
+        # Common failure patterns across tools
+        if "400" in error_msg or "Bad Request" in error_msg or "syntax" in error_msg.lower():
+            # Likely syntax error - try common fixes
+            if tool_name == "atlassian" and action_type == "search_confluence_pages":
+                if "created by" in original_query.lower() or "creator" in original_query.lower():
+                    # Try converting to proper creator CQL
+                    adjusted_action = action.copy()
+                    query_lower = original_query.lower()
+                    if "created by" in query_lower:
+                        name_part = original_query.split("created by", 1)[1].strip()
+                        adjusted_action["query"] = f'creator = "{name_part.lower()}"'
+                        return True, adjusted_action
+            
+            # For vector search, try simpler query
+            elif tool_name == "vector_search" and len(original_query) > 100:
+                adjusted_action = action.copy()
+                # Truncate very long queries
+                adjusted_action["query"] = original_query[:50].strip()
+                return True, adjusted_action
+        
+        # If authentication error, don't retry (likely needs HITL)
+        if "auth" in error_msg.lower() or "permission" in error_msg.lower() or "forbidden" in error_msg.lower():
+            return False, action
+        
+        # For other cases, retry with original action if it's the first attempt
+        if attempt == 0:
+            return True, action
+        
+        # Otherwise don't retry
+        return False, action
+
 
