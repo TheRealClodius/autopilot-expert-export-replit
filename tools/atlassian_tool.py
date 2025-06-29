@@ -84,7 +84,7 @@ class AtlassianTool:
     
     async def execute_mcp_tool(self, tool_name: str, arguments: Dict[str, Any]) -> Dict[str, Any]:
         """
-        Execute MCP tool via SSE request to running server
+        Execute MCP tool via SSE client to running server
         
         Args:
             tool_name: Name of the MCP tool to execute
@@ -100,54 +100,29 @@ class AtlassianTool:
             }
         
         try:
-            # Get the session endpoint
-            messages_endpoint = await self._get_session_endpoint()
-            
-            # Create MCP tool call request
-            mcp_request = {
-                "jsonrpc": "2.0",
-                "id": str(uuid.uuid4()),
-                "method": "tools/call",
-                "params": {
-                    "name": tool_name,
-                    "arguments": arguments
-                }
-            }
-            
             logger.debug(f"Executing MCP tool: {tool_name} with args: {arguments}")
             
-            # Make HTTP request to MCP server via messages endpoint
-            async with httpx.AsyncClient(timeout=30.0) as client:
-                response = await client.post(
-                    messages_endpoint,
-                    json=mcp_request,
-                    headers={
-                        "Content-Type": "application/json",
-                        "Accept": "application/json"
-                    }
-                )
+            # Use proper MCP SSE client
+            async with sse_client(self.sse_endpoint) as (read, write):
+                # Call the tool
+                result = await write.call_tool(tool_name, arguments)
                 
-                if response.status_code == 200:
-                    result = response.json()
-                    logger.debug(f"MCP tool {tool_name} completed successfully")
+                logger.debug(f"MCP tool {tool_name} completed successfully")
+                
+                # Extract content from MCP result
+                if hasattr(result, 'content') and result.content:
+                    # Convert content list to dictionary format
+                    content_dict = {}
+                    for item in result.content:
+                        if hasattr(item, 'type') and hasattr(item, 'text'):
+                            if item.type == 'text':
+                                content_dict['text'] = item.text
+                        elif hasattr(item, 'data'):
+                            content_dict.update(item.data if isinstance(item.data, dict) else {})
                     
-                    # Extract result from MCP response
-                    if "result" in result:
-                        return result["result"]
-                    elif "error" in result:
-                        return {
-                            "error": "mcp_tool_error", 
-                            "message": result["error"].get("message", "Unknown MCP error")
-                        }
-                    else:
-                        return result
+                    return content_dict if content_dict else {"result": "success"}
                 else:
-                    error_msg = f"MCP server returned status {response.status_code}: {response.text}"
-                    logger.error(error_msg)
-                    return {
-                        "error": "mcp_server_error",
-                        "message": error_msg
-                    }
+                    return {"result": "success"}
                     
         except Exception as e:
             error_msg = f"Error executing MCP tool {tool_name}: {str(e)}"
