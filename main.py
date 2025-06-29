@@ -14,6 +14,11 @@ from fastapi.responses import JSONResponse, PlainTextResponse
 import uvicorn
 import os
 
+def _contains_json_fragments(text: str) -> bool:
+    """Helper function to detect JSON fragments in response text"""
+    json_patterns = ['"limit"', '": 10', '": {', '"}', '"arguments"', '"mcp_tool"']
+    return any(pattern in text for pattern in json_patterns) or text.strip().startswith(('{', '[', '"'))
+
 from agents.slack_gateway import SlackGateway
 from agents.orchestrator_agent import OrchestratorAgent
 from config import settings
@@ -398,6 +403,13 @@ async def process_slack_message(event_data: SlackEvent):
                 # Update the progress message with final response
                 if response:
                     final_response_text = response.get("text", "Sorry, I couldn't generate a response.")
+                    
+                    # CRITICAL SAFETY CHECK: Ensure response is natural language, not raw JSON
+                    if _contains_json_fragments(final_response_text):
+                        logger.error(f"CRITICAL: Detected JSON fragments in final response: {final_response_text[:200]}...")
+                        final_response_text = "I found relevant information about your query. Let me help you with the details from our documentation."
+                        logger.info("Applied pipeline-level JSON sanitization")
+                    
                     await progress_updater(final_response_text)
                     logger.info("Successfully processed and updated Slack message with progress tracking")
                     

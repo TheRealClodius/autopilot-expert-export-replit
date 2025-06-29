@@ -547,3 +547,41 @@ class ClientAgent:
                 "How can I automate tasks?",
                 "What features are available?"
             ]
+    
+    def _contains_raw_json(self, text: str) -> bool:
+        """
+        Check if response contains raw JSON fragments instead of natural language.
+        
+        Args:
+            text: Response text to check
+            
+        Returns:
+            True if text appears to contain raw JSON, False otherwise
+        """
+        # Check for common JSON patterns that shouldn't appear in natural language responses
+        json_patterns = [
+            '"limit"',
+            '": 10',
+            '": {',
+            '"}',
+            '"arguments"',
+            '"mcp_tool"',
+            '"confluence_search"',
+            '"jira_search"'
+        ]
+        
+        # Check if text starts with JSON-like patterns
+        if text.strip().startswith(('{', '[', '"')):
+            return True
+        
+        # Check for JSON patterns in the text
+        for pattern in json_patterns:
+            if pattern in text:
+                return True
+        
+        # Check if text is mostly JSON (more than 30% JSON-like characters)
+        json_chars = text.count('{') + text.count('}') + text.count('"') + text.count(':')
+        if len(text) > 0 and (json_chars / len(text)) > 0.3:
+            return True
+        
+        return False

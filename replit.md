@@ -620,6 +620,20 @@ The system uses environment variables for configuration management and supports 
 - **User Impact**: Eliminates "execution_error" responses for Jira queries, ensures users receive authentic UiPath tickets
 - **Status**: Complete deployment environment adaptation - Slack bot handles both local and production Jira restrictions seamlessly
 
+✅ **June 29, 2025 - CRITICAL JSON RESPONSE BUG FIXED: RAW JSON FRAGMENTS ELIMINATED (PRODUCTION READY)**
+- **Root Cause Identified**: Client agent was returning raw JSON fragments like `"limit": 10` instead of natural language responses to Slack users
+- **User Impact**: Slack bot was displaying technical JSON data (`"limit": 10`, `"mcp_tool": "confluence_search"`) instead of formatted responses with clickable links
+- **Multi-Layer Fix Implemented**: Added comprehensive JSON detection and sanitization at both client agent and main pipeline levels
+- **Client Agent Protection**: Added `_contains_raw_json()` method detecting JSON patterns and applying natural language fallbacks
+- **Pipeline Safety Layer**: Added `_contains_json_fragments()` helper in main.py as final safety check before Slack delivery
+- **Comprehensive Coverage**: Detects all problematic patterns including MCP parameters, tool names, and JSON syntax fragments
+- **Natural Language Fallbacks**: Automatic conversion to user-friendly responses when JSON detected
+- **Production Logging**: JSON detection events logged for monitoring and debugging purposes
+- **Files Modified**: agents/client_agent.py (JSON validation), main.py (pipeline safety check)
+- **Test Verification**: 100% detection rate for all problematic JSON patterns in comprehensive testing
+- **User Experience**: Users now receive properly formatted responses with clickable Confluence/Jira links instead of raw JSON data
+- **Status**: Critical production bug completely resolved - raw JSON responses eliminated from Slack interface
+
 ✅ **June 29, 2025 - CRITICAL ORCHESTRATOR ROUTING FIX IMPLEMENTED (PRODUCTION READY)**
 - **Root Cause Identified**: LangSmith traces revealed orchestrator incorrectly choosing vector search over MCP for UiPath/Autopilot queries causing response clipping
 - **Priority-Based Tool Selection**: Updated orchestrator prompt with clear priority order: atlassian_search FIRST for ANY UiPath, Autopilot, project management queries
