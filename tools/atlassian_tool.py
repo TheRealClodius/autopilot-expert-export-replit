@@ -110,7 +110,7 @@ class AtlassianTool:
                 "Accept": "application/json, text/event-stream"
             }
             
-            async with httpx.AsyncClient(timeout=60.0, follow_redirects=False) as client:
+            async with httpx.AsyncClient(timeout=60.0, follow_redirects=True) as client:
                 # Step 1: Create session via redirect handling
                 session_request = {
                     "jsonrpc": "2.0",
