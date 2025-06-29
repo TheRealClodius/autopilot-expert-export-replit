@@ -36,7 +36,7 @@ class WebhookCache:
         # Cache configuration
         self.cache_ttl = 300  # 5 minutes default TTL
         self.max_cache_size = 1000
-        self.duplicate_window = 30  # 30 seconds for duplicate detection
+        self.duplicate_window = 10  # 10 seconds for duplicate detection (Slack retries only)
         
         # Performance tracking
         self.stats = {
@@ -66,13 +66,18 @@ class WebhookCache:
         return hashlib.md5(key_string.encode()).hexdigest()
     
     def _generate_duplicate_key(self, event_data: Dict[str, Any]) -> str:
-        """Generate key for duplicate detection (less specific than cache key)"""
+        """Generate key for duplicate detection using Slack's unique event identifiers"""
+        # Use Slack's unique event ID and timestamp for true duplicate detection
+        event = event_data.get("event", {})
         duplicate_fields = {
-            "user": event_data.get("event", {}).get("user"),
-            "text": event_data.get("event", {}).get("text"),
-            "channel": event_data.get("event", {}).get("channel")
+            "event_id": event_data.get("event_id"),  # Slack's unique event identifier
+            "event_ts": event.get("event_ts"),       # Slack's event timestamp
+            "ts": event.get("ts"),                   # Message timestamp
+            "user": event.get("user"),
+            "channel": event.get("channel")
         }
         
+        # Only consider it a duplicate if we have the same event_id or exact same ts
         key_string = json.dumps(duplicate_fields, sort_keys=True)
         return f"dup_{hashlib.md5(key_string.encode()).hexdigest()}"
     
@@ -146,7 +151,9 @@ class WebhookCache:
                 if key.startswith("dup_") and current_time - entry.timestamp <= self.duplicate_window:
                     if key == duplicate_key:
                         self.stats["duplicates_prevented"] += 1
-                        logger.info(f"🔄 Duplicate webhook detected - preventing reprocessing")
+                        time_since = current_time - entry.timestamp
+                        event_id = event_data.get("event_id", "unknown")
+                        logger.info(f"🔄 TRUE duplicate detected - Event ID: {event_id}, time since: {time_since:.1f}s")
                         return True
             
             # Mark this request to prevent future duplicates

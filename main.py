@@ -417,9 +417,10 @@ async def process_slack_message(event_data: SlackEvent):
                     production_logger.complete_trace(trace_id, final_result=response)
                     
                     # WEBHOOK CACHE: Store successful response for future use
-                    if webhook_cache and webhook_cache.should_cache_response(event_data.dict(), {"status": "success", "response": response}):
+                    event_dict = event_data.model_dump() if hasattr(event_data, 'model_dump') else event_data.dict()
+                    if webhook_cache and webhook_cache.should_cache_response(event_dict, {"status": "success", "response": response}):
                         await webhook_cache.cache_response(
-                            event_data.dict(), 
+                            event_dict, 
                             {"status": "success", "response": response},
                             total_processing_time
                         )
