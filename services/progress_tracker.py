@@ -53,10 +53,10 @@ class ProgressEvent:
         # Contextual and explicit action phrases (no emojis)
         action_phrases = {
             ProgressEventType.THINKING: {
-                "analyzing": "Analyzing your request to understand what you need",
-                "planning": "Planning the best approach to answer your question",
-                "understanding": "Understanding the context and requirements",
-                "preparing": "Preparing to gather the information you need"
+                "analyzing": "I am analyzing your request to understand what you need",
+                "planning": "I am planning the best approach to answer your question",
+                "understanding": "I am understanding the context and requirements",
+                "preparing": "I am preparing to gather the information you need"
             },
             ProgressEventType.REASONING: {
                 "step": "I am considering the next steps",
