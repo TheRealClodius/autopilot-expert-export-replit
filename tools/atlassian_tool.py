@@ -1,13 +1,14 @@
 """
-Simplified HTTP-based Atlassian Tool
+Direct REST API Atlassian Tool
 
-Connects to the MCP Atlassian server via direct HTTP tool calls,
-bypassing complex session management.
+Uses direct Atlassian REST API calls with your credentials
+instead of the remote MCP server that lacks working credentials.
 """
 
 import asyncio
 import json
 import logging
+import base64
 import uuid
 from typing import Dict, Any, List, Optional
 import httpx
@@ -18,17 +19,18 @@ logger = logging.getLogger(__name__)
 
 class AtlassianTool:
     """
-    Simplified HTTP-based Atlassian integration tool.
-    Connects to MCP server via direct tool calls.
+    Direct REST API Atlassian integration tool.
+    Uses your actual Atlassian credentials for real data retrieval.
     """
 
     def __init__(self, trace_manager=None):
-        """Initialize simplified HTTP-based Atlassian tool"""
-        self.available_tools = []
-        self.mcp_server_url = self._get_mcp_server_url()
+        """Initialize direct REST API Atlassian tool"""
+        self.available_tools = ["get_jira_issues", "create_jira_issue", "get_confluence_pages", "create_confluence_page"]
         self.trace_manager = trace_manager
-        logger.info(f"Using configured MCP server URL: {self.mcp_server_url}")
-        logger.info("HTTP-based Atlassian tool initialized successfully")
+        self.jira_url = settings.ATLASSIAN_JIRA_URL
+        self.confluence_url = settings.ATLASSIAN_CONFLUENCE_URL
+        self.auth = self._get_auth_header()
+        logger.info("Direct REST API Atlassian tool initialized successfully")
     
     @property
     def available(self):
