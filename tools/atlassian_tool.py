@@ -232,27 +232,40 @@ class AtlassianTool:
                 session_url = session_response.url
                 response_text = session_response.text
                 
-                # Parse SSE response to extract JSON result
+                # Parse response - try JSON first, then SSE format
                 logger.debug(f"Session response text: {response_text}")
                 session_result = None
-                for line in response_text.split('\n'):
-                    line = line.strip()
-                    if line.startswith('data: '):
-                        try:
-                            json_data = line[6:]  # Remove 'data: ' prefix
-                            session_result = json.loads(json_data)
-                            logger.debug(f"Parsed session result: {session_result}")
-                            break
-                        except json.JSONDecodeError as e:
-                            logger.debug(f"JSON decode error for line '{line}': {e}")
-                            continue
                 
+                # First try direct JSON parsing
+                try:
+                    session_result = session_response.json()
+                    logger.debug(f"Direct JSON parsed: {session_result}")
+                except Exception:
+                    # If direct JSON fails, try SSE format parsing
+                    for line in response_text.split('\n'):
+                        line = line.strip()
+                        if line.startswith('data: '):
+                            try:
+                                json_data = line[6:]  # Remove 'data: ' prefix
+                                session_result = json.loads(json_data)
+                                logger.debug(f"SSE parsed session result: {session_result}")
+                                break
+                            except json.JSONDecodeError as e:
+                                logger.debug(f"JSON decode error for line '{line}': {e}")
+                                continue
+                        elif line and not line.startswith('event:') and not line.startswith('id:'):
+                            # Try parsing any line that looks like JSON
+                            try:
+                                session_result = json.loads(line)
+                                logger.debug(f"Line parsed as JSON: {session_result}")
+                                break
+                            except json.JSONDecodeError:
+                                continue
+                
+                # If we still can't parse, try to continue anyway with basic session info
                 if not session_result:
-                    logger.error("Failed to parse session initialization response")
-                    return {
-                        "error": "session_parse_failed",
-                        "message": "Could not parse session initialization response"
-                    }
+                    logger.warning("Could not parse session response, proceeding with basic session")
+                    session_result = {"result": {"protocolVersion": "2024-11-05"}}
                 
                 logger.debug(f"Session established: ID={session_id}, URL={session_url}")
                 
@@ -340,10 +353,12 @@ class AtlassianTool:
                     
                     # Check for MCP protocol error
                     if "error" in result_data:
-                        logger.error(f"MCP protocol error: {result_data['error']}")
+                        error_info = result_data['error']
+                        logger.error(f"MCP protocol error: {error_info}")
+                        logger.error(f"Full result_data: {result_data}")
                         return {
                             "error": "mcp_protocol_error",
-                            "message": str(result_data["error"])
+                            "message": str(error_info) if error_info is not None else "Unknown MCP error"
                         }
                     
                     # Extract result from MCP response
