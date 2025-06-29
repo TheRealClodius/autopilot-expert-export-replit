@@ -782,8 +782,7 @@ Current Query: "{message.text}"
     async def _execute_mcp_action_direct(self, action: Dict[str, Any]) -> Dict[str, Any]:
         """
         Direct MCP execution bypassing complex retry logic.
-        Uses the proven working pattern from the successful MCP tests.
-        Includes deployment-specific error handling for Jira restrictions.
+        Uses the proven working pattern for all Atlassian MCP commands.
         """
         try:
             mcp_tool = action.get("mcp_tool")
@@ -795,30 +794,7 @@ Current Query: "{message.text}"
             # Direct call to Atlassian tool using working pattern
             result = await self.atlassian_tool.execute_mcp_tool(mcp_tool, arguments)
             
-            # Handle deployment-specific Jira errors
-            if result and result.get("error"):
-                error_msg = result.get("error", "")
-                
-                # Handle "Unbounded JQL queries" deployment restriction
-                if "Unbounded JQL queries are not allowed" in error_msg:
-                    if mcp_tool == "jira_search":
-                        # Try with a more restricted query
-                        fallback_args = arguments.copy()
-                        if "jql" in fallback_args:
-                            original_jql = fallback_args["jql"]
-                            # Add project restriction if missing
-                            if "project" not in original_jql.lower():
-                                fallback_args["jql"] = "project = DESIGN AND " + original_jql
-                            else:
-                                # Try with a simpler, more restricted query
-                                fallback_args["jql"] = "project = DESIGN ORDER BY created DESC"
-                            
-                            if self.progress_tracker:
-                                await emit_warning(self.progress_tracker, "jira_restriction", 
-                                                 "adjusting query for deployment environment")
-                            
-                            # Retry with fallback query
-                            result = await self.atlassian_tool.execute_mcp_tool(mcp_tool, fallback_args)
+
             
             # Return result in expected format
             if result and result.get("success"):
