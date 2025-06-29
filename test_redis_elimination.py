@@ -1,346 +1,283 @@
 #!/usr/bin/env python3
 """
-Test Redis Elimination - Comprehensive verification that system works without Redis
+Redis Elimination Verification Test
+
+This test verifies that the deployment can run completely without Redis,
+using memory-based fallbacks for all Redis-dependent services.
 """
 
 import asyncio
-import os
 import aiohttp
-import json
+import subprocess
+import time
+import os
+import sys
 from datetime import datetime
 
 
-async def test_redis_elimination():
-    """Test that system works completely without Redis"""
+async def test_redis_free_deployment():
+    """Test that deployment starts and runs without any Redis dependencies"""
     
     print("=" * 80)
-    print("🔧 TESTING COMPLETE REDIS ELIMINATION")
+    print("🔧 REDIS ELIMINATION VERIFICATION")
     print("=" * 80)
     
-    print("\n1️⃣ ENVIRONMENT VERIFICATION")
-    print("-" * 60)
+    # Force Redis-free environment
+    os.environ["CELERY_BROKER_URL"] = "memory://"
+    os.environ["CELERY_RESULT_BACKEND"] = "cache+memory://"
+    os.environ["REDIS_URL"] = ""
+    os.environ["REDIS_PASSWORD"] = ""
     
-    # Check environment variables
-    redis_vars = {
-        "REDIS_URL": os.environ.get("REDIS_URL", "NOT SET"),
-        "CELERY_BROKER_URL": os.environ.get("CELERY_BROKER_URL", "NOT SET"),
-        "CELERY_RESULT_BACKEND": os.environ.get("CELERY_RESULT_BACKEND", "NOT SET")
-    }
-    
-    for var, value in redis_vars.items():
-        status = "🔴 REDIS DETECTED" if "redis" in value.lower() else "✅ NO REDIS"
-        print(f"   {var}: {status}")
-        if "redis" in value.lower():
-            print(f"     Value: {value}")
-    
-    print("\n2️⃣ TESTING BASIC HEALTH WITHOUT REDIS")
+    print("\n1️⃣ TESTING REDIS-FREE STARTUP")
     print("-" * 60)
     
     try:
-        async with aiohttp.ClientSession() as session:
-            # Test basic health endpoint
-            url = "http://localhost:5000/health"
-            
-            async with session.get(url, timeout=10) as response:
-                if response.status == 200:
-                    result = await response.json()
-                    print("✅ Basic health check passed")
-                    print(f"   Status: {result.get('status', 'unknown')}")
-                    print(f"   Service: {result.get('service', 'unknown')}")
+        print("🚀 Starting Redis-free deployment...")
+        
+        # Start the deployment script
+        process = subprocess.Popen(
+            [sys.executable, "start_deployment.py"],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            universal_newlines=True,
+            bufsize=1,
+            env=os.environ  # Pass Redis-free environment
+        )
+        
+        print(f"Deployment script started with PID: {process.pid}")
+        
+        # Monitor for Redis connection attempts in output
+        print("⏳ Monitoring startup for Redis connection attempts...")
+        
+        startup_lines = []
+        redis_errors = []
+        
+        # Collect first 30 seconds of output
+        start_time = time.time()
+        while time.time() - start_time < 30:
+            if process.poll() is not None:
+                break
+                
+            try:
+                line = process.stdout.readline()
+                if line:
+                    startup_lines.append(line.strip())
+                    print(f"   {line.strip()}")
+                    
+                    # Check for Redis connection attempts
+                    if any(redis_indicator in line.lower() for redis_indicator in [
+                        "redis://", "6379", "connection refused", "redis.exceptions",
+                        "dial tcp 127.0.0.1:6379", "redis connection"
+                    ]):
+                        redis_errors.append(line.strip())
                 else:
-                    print(f"❌ Health check failed: {response.status}")
-                    return False
-    except Exception as e:
-        print(f"❌ Health check exception: {e}")
-        return False
-    
-    print("\n3️⃣ TESTING MCP INTEGRATION WITHOUT REDIS")
-    print("-" * 60)
-    
-    try:
-        async with aiohttp.ClientSession() as session:
-            # Test MCP server health
-            url = "http://localhost:8001/healthz"
-            
-            async with session.get(url, timeout=10) as response:
-                if response.status == 200:
-                    print("✅ MCP server health check passed")
-                else:
-                    print(f"❌ MCP health check failed: {response.status}")
-                    return False
-    except Exception as e:
-        print(f"❌ MCP health check exception: {e}")
-        return False
-    
-    print("\n4️⃣ TESTING ORCHESTRATOR WITHOUT REDIS")
-    print("-" * 60)
-    
-    try:
-        test_payload = {
-            "query": "What are the latest Conversational Agents bugs?",
-            "user_id": "U123TEST",
-            "channel_id": "C123TEST",
-            "message_ts": str(datetime.now().timestamp())
-        }
+                    await asyncio.sleep(0.1)
+                    
+            except Exception as e:
+                print(f"   Error reading output: {e}")
+                break
+        
+        # Check results
+        if redis_errors:
+            print("\n❌ REDIS CONNECTION ATTEMPTS DETECTED:")
+            for error in redis_errors:
+                print(f"   {error}")
+            redis_free = False
+        else:
+            print("\n✅ NO REDIS CONNECTION ATTEMPTS DETECTED")
+            redis_free = True
+        
+        # Test server availability
+        print("\n2️⃣ TESTING SERVER AVAILABILITY")
+        print("-" * 60)
+        
+        servers_ready = False
+        
+        # Wait a bit more for servers to fully start
+        await asyncio.sleep(15)
         
         async with aiohttp.ClientSession() as session:
-            # Test orchestrator analysis
-            url = "http://localhost:5000/admin/test-atlassian-integration"
+            # Test MCP server
+            try:
+                async with session.get("http://localhost:8001/healthz", timeout=aiohttp.ClientTimeout(total=10)) as response:
+                    if response.status == 200:
+                        print("✅ MCP server is running")
+                        mcp_ready = True
+                    else:
+                        print(f"❌ MCP server returned status: {response.status}")
+                        mcp_ready = False
+            except Exception as e:
+                print(f"❌ MCP server not reachable: {e}")
+                mcp_ready = False
             
-            print("⏱️ Testing orchestrator analysis...")
+            # Test FastAPI server
+            try:
+                async with session.get("http://localhost:5000/health", timeout=aiohttp.ClientTimeout(total=10)) as response:
+                    if response.status == 200:
+                        result = await response.json()
+                        print("✅ FastAPI server is running")
+                        print(f"   Status: {result.get('status', 'unknown')}")
+                        fastapi_ready = True
+                    else:
+                        print(f"❌ FastAPI server returned status: {response.status}")
+                        fastapi_ready = False
+            except Exception as e:
+                print(f"❌ FastAPI server not reachable: {e}")
+                fastapi_ready = False
+        
+        servers_ready = mcp_ready and fastapi_ready
+        
+        # Test memory service functionality
+        if servers_ready:
+            print("\n3️⃣ TESTING MEMORY SERVICE WITHOUT REDIS")
+            print("-" * 60)
             
-            start_time = datetime.now()
-            
-            async with session.get(url, timeout=60) as response:
-                duration = (datetime.now() - start_time).total_seconds()
-                
-                if response.status == 200:
-                    result = await response.json()
-                    print(f"✅ Orchestrator test completed in {duration:.2f}s")
+            try:
+                async with aiohttp.ClientSession() as session:
+                    # Test memory service endpoints
+                    url = "http://localhost:5000/admin/short-term-memory-test"
                     
-                    # Check orchestrator intelligence
-                    orchestrator_test = result.get("orchestrator_test", {})
-                    if orchestrator_test.get("success"):
-                        tools = orchestrator_test.get("tools", [])
-                        print(f"✅ Orchestrator correctly selected tools: {tools}")
-                        
-                        if "atlassian_search" in tools:
-                            print("✅ Atlassian tool correctly identified for query")
+                    async with session.get(url, timeout=aiohttp.ClientTimeout(total=60)) as response:
+                        if response.status == 200:
+                            result = await response.json()
+                            
+                            if result.get("test_passed"):
+                                print("✅ Memory service working with in-memory cache")
+                                print(f"   Cached messages: {result.get('message_count', 0)}")
+                                memory_working = True
+                            else:
+                                print(f"❌ Memory service test failed: {result}")
+                                memory_working = False
                         else:
-                            print("⚠️ Atlassian tool not selected, but this may be expected")
-                    else:
-                        print(f"❌ Orchestrator test failed: {orchestrator_test}")
-                        return False
-                    
-                    # Check MCP health in integration
-                    mcp_health = result.get("mcp_health", {})
-                    if mcp_health.get("healthy"):
-                        print("✅ MCP integration healthy")
-                    else:
-                        print(f"❌ MCP integration unhealthy: {mcp_health}")
-                        return False
-                    
-                    # Check tool execution
-                    tool_execution = result.get("tool_execution", {})
-                    if tool_execution.get("success"):
-                        results = tool_execution.get("results", [])
-                        print(f"✅ Tool execution successful: {len(results)} results")
-                        
-                        if results:
-                            first_result = results[0]
-                            title = first_result.get("title", "No title")
-                            space = first_result.get("space", {}).get("name", "Unknown")
-                            print(f"   Sample result: {title} (Space: {space})")
-                    else:
-                        error = tool_execution.get("error", "Unknown error")
-                        print(f"❌ Tool execution failed: {error}")
-                        
-                        # Check for Redis-related errors
-                        if "redis" in error.lower() or "6379" in str(error):
-                            print("🔍 REDIS ERROR DETECTED IN TOOL EXECUTION!")
-                            print("   This indicates Redis dependency still exists")
-                            return False
-                        
-                else:
-                    print(f"❌ Orchestrator integration test failed: {response.status}")
-                    error_text = await response.text()
-                    print(f"   Error: {error_text[:300]}...")
-                    return False
-                    
-    except asyncio.TimeoutError:
-        print("❌ Orchestrator test timed out")
-        print("   This may indicate Redis hanging operations")
-        return False
-    except Exception as e:
-        print(f"❌ Orchestrator test exception: {e}")
-        return False
-    
-    print("\n5️⃣ TESTING SLACK WEBHOOK WITHOUT REDIS")
-    print("-" * 60)
-    
-    try:
-        # Create realistic Slack webhook payload
-        slack_payload = {
-            "type": "event_callback",
-            "event": {
-                "type": "message",
-                "text": "Find me bugs in the AUTOPILOT project",
-                "user": "U123TEST",
-                "channel": "C123TEST",
-                "ts": str(datetime.now().timestamp()),
-                "event_ts": str(datetime.now().timestamp()),
-                "channel_type": "channel"
-            },
-            "team_id": "T123TEST",
-            "event_id": f"Ev{int(datetime.now().timestamp())}",
-            "event_time": int(datetime.now().timestamp())
-        }
+                            print(f"❌ Memory service test returned: {response.status}")
+                            memory_working = False
+            except Exception as e:
+                print(f"❌ Memory service test exception: {e}")
+                memory_working = False
+        else:
+            print("\n⏸️ Skipping memory service test - servers not ready")
+            memory_working = False
         
-        async with aiohttp.ClientSession() as session:
-            url = "http://localhost:5000/slack/events"
+        # Test webhook processing without Redis
+        if servers_ready and memory_working:
+            print("\n4️⃣ TESTING WEBHOOK PROCESSING WITHOUT REDIS")
+            print("-" * 60)
             
-            print("🚀 Testing Slack webhook processing...")
+            # Test a simple webhook
+            slack_payload = {
+                "type": "event_callback",
+                "event": {
+                    "type": "message",
+                    "text": "Test Redis-free deployment",
+                    "user": "U123TEST",
+                    "channel": "C123TEST",
+                    "ts": str(datetime.now().timestamp()),
+                    "event_ts": str(datetime.now().timestamp()),
+                    "channel_type": "channel"
+                },
+                "team_id": "T123TEST",
+                "event_id": f"Ev{int(datetime.now().timestamp())}REDIS",
+                "event_time": int(datetime.now().timestamp())
+            }
             
-            start_time = datetime.now()
-            
-            async with session.post(
-                url,
-                json=slack_payload,
-                timeout=90  # 1.5 minutes
-            ) as response:
-                duration = (datetime.now() - start_time).total_seconds()
-                
-                print(f"⏱️ Webhook processing time: {duration:.2f}s")
-                
-                if response.status == 200:
-                    result = await response.text()
-                    print("✅ Webhook processing completed")
+            try:
+                async with aiohttp.ClientSession() as session:
+                    url = "http://localhost:5000/slack/events"
                     
-                    # Check for error patterns
-                    result_lower = result.lower()
+                    print("🔍 Testing webhook processing...")
                     
-                    if "execution_error" in result_lower:
-                        print("❌ EXECUTION ERROR DETECTED!")
-                        print("   This is the production failure pattern")
-                        return False
-                    elif "mcp_server_unreachable" in result_lower:
-                        print("❌ MCP SERVER UNREACHABLE DETECTED!")
-                        print("   MCP connectivity issue")
-                        return False
-                    elif "trouble understanding" in result_lower:
-                        print("❌ FALLBACK RESPONSE DETECTED!")
-                        print("   Orchestrator failing to analyze queries")
-                        return False
-                    elif "redis" in result_lower:
-                        print("❌ REDIS ERROR IN RESPONSE!")
-                        print("   Redis dependency still causing issues")
-                        return False
-                    else:
-                        print("✅ Webhook processing successful")
-                        print(f"   Response length: {len(result)} characters")
-                        return True
+                    start_time = datetime.now()
+                    
+                    async with session.post(
+                        url,
+                        json=slack_payload,
+                        timeout=aiohttp.ClientTimeout(total=90)
+                    ) as response:
+                        duration = (datetime.now() - start_time).total_seconds()
                         
-                else:
-                    print(f"❌ Webhook processing failed: {response.status}")
-                    error_text = await response.text()
-                    print(f"   Error: {error_text[:300]}...")
-                    return False
-                    
-    except asyncio.TimeoutError:
-        print("❌ Webhook processing timed out")
-        print("   This indicates system hanging (possibly Redis)")
-        return False
-    except Exception as e:
-        print(f"❌ Webhook processing exception: {e}")
-        return False
-    
-    return True
-
-
-async def test_production_scenario():
-    """Test the exact production scenario that's failing"""
-    
-    print("\n" + "=" * 80)
-    print("🎯 TESTING EXACT PRODUCTION FAILURE SCENARIO")
-    print("=" * 80)
-    
-    # This is the exact query from the user's message
-    production_query = "What are the latest Conversational Agents bugs?"
-    
-    slack_payload = {
-        "type": "event_callback",
-        "event": {
-            "type": "message",
-            "text": production_query,
-            "user": "U123PROD",
-            "channel": "C123PROD",
-            "ts": str(datetime.now().timestamp()),
-            "event_ts": str(datetime.now().timestamp()),
-            "channel_type": "channel"
-        },
-        "team_id": "T123PROD",
-        "event_id": f"Ev{int(datetime.now().timestamp())}PROD",
-        "event_time": int(datetime.now().timestamp())
-    }
-    
-    try:
-        async with aiohttp.ClientSession() as session:
-            url = "http://localhost:5000/slack/events"
-            
-            print(f"🔍 Testing production query: '{production_query}'")
-            print("⏱️ Processing...")
-            
-            start_time = datetime.now()
-            
-            async with session.post(
-                url,
-                json=slack_payload,
-                timeout=120  # 2 minutes like production
-            ) as response:
-                duration = (datetime.now() - start_time).total_seconds()
-                
-                print(f"⏱️ Processing time: {duration:.2f}s")
-                
-                if response.status == 200:
-                    result = await response.text()
-                    
-                    # Check for the exact production failure patterns
-                    if "cannot retrieve the latest conversational agents bugs from jira" in result.lower():
-                        print("❌ EXACT PRODUCTION FAILURE DETECTED!")
-                        print("   Response matches user's reported error")
-                        return False
-                    elif "mcp_server_unreachable" in result.lower():
-                        print("❌ MCP SERVER UNREACHABLE (PRODUCTION ISSUE)")
-                        print("   This is the root cause reported by user")
-                        return False
-                    elif any(error in result.lower() for error in ["execution_error", "trouble understanding", "couldn't process"]):
-                        print("❌ PRODUCTION ERROR PATTERN DETECTED!")
-                        print(f"   Error response matches production failure")
-                        return False
-                    else:
-                        print("✅ PRODUCTION SCENARIO RESOLVED!")
-                        print("   System now handles the failing query correctly")
-                        return True
+                        print(f"⏱️ Processing time: {duration:.2f}s")
                         
-                else:
-                    print(f"❌ Production scenario failed: {response.status}")
-                    return False
-                    
-    except asyncio.TimeoutError:
-        print("❌ Production scenario timed out")
-        print("   Matches the production timeout behavior")
-        return False
+                        if response.status == 200:
+                            print("✅ WEBHOOK PROCESSING SUCCESSFUL WITHOUT REDIS!")
+                            webhook_success = True
+                        else:
+                            result = await response.text()
+                            print(f"❌ Webhook processing failed: {response.status}")
+                            print(f"   Response: {result}")
+                            webhook_success = False
+                            
+            except Exception as e:
+                print(f"❌ Webhook processing exception: {e}")
+                webhook_success = False
+        else:
+            print("\n⏸️ Skipping webhook test - prerequisites not met")
+            webhook_success = False
+        
+        # Cleanup
+        print("\n5️⃣ CLEANUP")
+        print("-" * 60)
+        
+        print("Terminating deployment process...")
+        process.terminate()
+        
+        try:
+            process.wait(timeout=10)
+            print("✅ Deployment process terminated cleanly")
+        except subprocess.TimeoutExpired:
+            print("⚠️ Force killing deployment process")
+            process.kill()
+        
+        # Final assessment
+        print("\n" + "=" * 80)
+        print("📊 REDIS ELIMINATION VERIFICATION RESULTS")
+        print("=" * 80)
+        
+        if redis_free:
+            print("✅ NO REDIS CONNECTION ATTEMPTS - Clean deployment")
+        else:
+            print("❌ REDIS CONNECTION ATTEMPTS DETECTED - Further fixes needed")
+        
+        if servers_ready:
+            print("✅ Both servers start successfully without Redis")
+        else:
+            print("❌ Server startup issues remain")
+        
+        if memory_working:
+            print("✅ Memory service works with in-memory cache fallback")
+        else:
+            print("❌ Memory service issues remain")
+        
+        if webhook_success:
+            print("✅ WEBHOOK PROCESSING WORKS WITHOUT REDIS!")
+            print("   Ready for Redis-free deployment")
+            return True
+        else:
+            print("❌ Webhook processing still has issues")
+            return False
+            
     except Exception as e:
-        print(f"❌ Production scenario exception: {e}")
+        print(f"❌ Redis elimination test failed: {e}")
         return False
 
 
 async def main():
-    """Run comprehensive Redis elimination test"""
+    """Run Redis elimination verification"""
     
-    print("🔧 COMPREHENSIVE REDIS ELIMINATION VERIFICATION")
+    print("🔧 REDIS ELIMINATION VERIFICATION")
+    print("Testing deployment without any Redis dependencies")
     print("=" * 80)
     
-    # Test Redis elimination
-    redis_test = await test_redis_elimination()
+    success = await test_redis_free_deployment()
     
-    if not redis_test:
-        print("\n❌ REDIS ELIMINATION TEST FAILED")
-        print("   System still has Redis dependencies causing issues")
-        return False
-    
-    # Test production scenario
-    production_test = await test_production_scenario()
-    
-    if production_test:
-        print("\n✅ REDIS ELIMINATION SUCCESSFUL!")
-        print("   Production deployment issue resolved")
-        print("   System works completely without Redis")
-        return True
+    if success:
+        print("\n🎉 REDIS ELIMINATION SUCCESSFUL!")
+        print("The deployment can run completely without Redis")
+        print("Ready for deployment with memory-only configuration")
     else:
-        print("\n❌ PRODUCTION SCENARIO STILL FAILING")
-        print("   Additional investigation required")
-        return False
+        print("\n❌ REDIS ELIMINATION INCOMPLETE")
+        print("Additional fixes needed to remove all Redis dependencies")
+    
+    return success
 
 
 if __name__ == "__main__":

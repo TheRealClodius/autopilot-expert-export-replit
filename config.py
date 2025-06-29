@@ -47,13 +47,13 @@ class Settings(BaseSettings):
     # MCP Server Configuration (deployment-aware)
     MCP_SERVER_URL: str = os.getenv("MCP_SERVER_URL", "http://localhost:8001")
     
-    # Redis Configuration (optional - fallback to in-memory cache if not available)
-    REDIS_URL: str = os.getenv("REDIS_URL", "")
-    REDIS_PASSWORD: Optional[str] = os.getenv("REDIS_PASSWORD")
+    # Redis Configuration (DISABLED for deployment - using memory-only fallbacks)
+    REDIS_URL: str = ""  # Intentionally empty to force memory cache
+    REDIS_PASSWORD: Optional[str] = None
     
-    # Celery Configuration (disabled for Cloud Run deployment)
-    CELERY_BROKER_URL: str = os.getenv("CELERY_BROKER_URL", "")
-    CELERY_RESULT_BACKEND: str = os.getenv("CELERY_RESULT_BACKEND", "")
+    # Celery Configuration (DISABLED for deployment - using memory transport)
+    CELERY_BROKER_URL: str = ""  # Intentionally empty to force memory transport
+    CELERY_RESULT_BACKEND: str = ""  # Intentionally empty to force memory backend
     
     # System Configuration
     MAX_CHUNK_SIZE: int = int(os.getenv("MAX_CHUNK_SIZE", "1000"))

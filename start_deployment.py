@@ -2,6 +2,7 @@
 """
 Deployment startup script that launches both FastAPI server and MCP server
 This solves the critical issue where deployment only runs main.py but not the MCP server
+Redis-free deployment configuration for Autoscale compatibility
 """
 
 import os
@@ -12,6 +13,12 @@ import signal
 import asyncio
 import aiohttp
 from datetime import datetime
+
+# Force memory-only configuration for deployment
+os.environ.setdefault("CELERY_BROKER_URL", "memory://")
+os.environ.setdefault("CELERY_RESULT_BACKEND", "cache+memory://")
+os.environ.setdefault("REDIS_URL", "")
+os.environ.setdefault("REDIS_PASSWORD", "")
 
 
 def log_message(message):

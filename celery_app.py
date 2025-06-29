@@ -15,43 +15,15 @@ logger = logging.getLogger(__name__)
 # Determine broker URL with fallback for deployment
 def get_broker_url():
     """Get Celery broker URL with fallback for deployment environments"""
-    broker_url = getattr(settings, 'CELERY_BROKER_URL', '') or ''
-    
-    # Enhanced Redis detection and blocking
-    if not broker_url or broker_url.strip() == "":
-        logger.info("No Celery broker URL configured, using memory transport")
-        return 'memory://'
-    
-    # Block ANY Redis URLs to prevent deployment connection attempts
-    broker_lower = broker_url.lower()
-    redis_indicators = ['redis://', 'rediss://', '127.0.0.1', 'localhost', ':6379']
-    
-    if any(indicator in broker_lower for indicator in redis_indicators):
-        logger.info(f"Detected Redis URL, forcing memory transport: {broker_url}")
-        return 'memory://'
-    
-    # Additional validation for deployment environments
-    if os.environ.get('REPLIT_DOMAINS') or os.environ.get('REPLIT_DEPLOYMENT'):
-        logger.info("Deployment environment detected, using memory transport")
-        return 'memory://'
-        
-    return broker_url
+    # Force memory transport for all deployments to avoid Redis connection attempts
+    logger.info("Using memory transport for deployment compatibility")
+    return 'memory://'
 
 def get_result_backend():
     """Get Celery result backend with fallback for deployment environments"""
-    backend_url = getattr(settings, 'CELERY_RESULT_BACKEND', '') or ''
-    
-    # Force memory backend in deployment to avoid any Redis connections
-    if not backend_url or backend_url.strip() == "" or backend_url.strip().startswith('redis://127.0.0.1'):
-        logger.info(f"Using cache+memory backend (backend_url='{backend_url}')")
-        return 'cache+memory://'
-    
-    # Additional check for localhost Redis URLs  
-    if 'localhost' in backend_url or '127.0.0.1' in backend_url:
-        logger.info(f"Detected localhost Redis URL, using memory backend instead: {backend_url}")
-        return 'cache+memory://'
-        
-    return backend_url
+    # Force memory backend for all deployments to avoid Redis connection attempts
+    logger.info("Using cache+memory backend for deployment compatibility")
+    return 'cache+memory://'
 
 # Create Celery application with deployment-safe configuration
 celery_app = Celery(
