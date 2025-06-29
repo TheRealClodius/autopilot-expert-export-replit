@@ -163,12 +163,15 @@ class AtlassianTool:
                 logger.debug(f"Session response text: {response_text}")
                 session_result = None
                 for line in response_text.split('\n'):
+                    line = line.strip()
                     if line.startswith('data: '):
                         try:
                             json_data = line[6:]  # Remove 'data: ' prefix
                             session_result = json.loads(json_data)
+                            logger.debug(f"Parsed session result: {session_result}")
                             break
-                        except json.JSONDecodeError:
+                        except json.JSONDecodeError as e:
+                            logger.debug(f"JSON decode error for line '{line}': {e}")
                             continue
                 
                 if not session_result:
