@@ -38,7 +38,7 @@ async def test_confluence_autopilot():
             "confluence_search",
             {
                 "query": "Autopilot for Everyone",
-                "max_results": 10
+                "limit": 10
             }
         )
         
