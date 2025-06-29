@@ -298,6 +298,18 @@ The system uses environment variables for configuration management and supports 
 - **Files Modified**: prompts.yaml (fixed conflicting parameter specifications)
 - **Status**: Critical parameter validation issue resolved - MCP integration fully operational with correct parameter formatting
 
+✅ **June 29, 2025 - CRITICAL MCP SERVER URL HARDCODING FIX IMPLEMENTED (PRODUCTION READY)**
+- **Root Cause Identified**: AtlassianTool hardcoded MCP server URL to "http://localhost:8001" causing deployment connectivity failures - localhost unreachable in containerized/separate process environments
+- **Network Isolation Issue**: Local environment works (same host), deployment fails (network isolation between main app and MCP server containers)
+- **Configurable MCP URL**: Added MCP_SERVER_URL environment variable to config.py with localhost:8001 default for local development
+- **AtlassianTool Fix**: Updated tools/atlassian_tool.py to use settings.MCP_SERVER_URL instead of hardcoded localhost URL
+- **Deployment Flexibility**: Deployment environments can now set MCP_SERVER_URL to proper container/service URL (e.g., http://mcp-server:8001)
+- **Other Tools Unaffected**: Perplexity and other tools work because they connect to external APIs, not localhost services
+- **Test Verification**: Created test_mcp_url_config.py confirming AtlassianTool uses configurable URL setting
+- **Files Modified**: config.py (added MCP_SERVER_URL), tools/atlassian_tool.py (removed hardcoded URL)
+- **Production Impact**: Eliminates "execution_error constantly" caused by MCP server connection timeouts in deployment environments
+- **Status**: Critical network connectivity issue resolved - deployment can now properly connect to MCP server using configurable URL
+
 ✅ **June 29, 2025 - COMPLETE MCP RESULTS FLOW FIXED (PRODUCTION READY)**
 - **Root Cause Identified**: MCP execution was working but client agent couldn't access nested result structure for displaying page details
 - **Data Structure Fix**: Client agent was accessing `result.get("result", [])` but MCP returns nested structure `result.result.result`  

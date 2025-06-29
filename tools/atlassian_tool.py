@@ -31,7 +31,7 @@ class AtlassianTool:
     
     def __init__(self, trace_manager=None):
         """Initialize HTTP-based Atlassian tool"""
-        self.mcp_server_url = self._get_deployment_aware_mcp_url()
+        self.mcp_server_url = settings.DEPLOYMENT_AWARE_MCP_URL
         self.sse_endpoint = f"{self.mcp_server_url}/mcp/sse"
         self.session_id = None
         self.messages_endpoint = None

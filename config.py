@@ -77,6 +77,27 @@ class Settings(BaseSettings):
     # MCP Server Configuration
     MCP_SERVER_URL: str = os.getenv("MCP_SERVER_URL", "http://localhost:8001")
     
+    @property
+    def DEPLOYMENT_AWARE_MCP_URL(self) -> str:
+        """Get deployment-aware MCP server URL"""
+        # Detect deployment environment
+        replit_domains = os.getenv("REPLIT_DOMAINS", "")
+        is_deployment = any([
+            os.getenv("REPLIT_DEPLOYMENT") == "1",
+            os.getenv("DEPLOYMENT_ENV") == "production",
+            os.getenv("PORT") and os.getenv("PORT") != "5000",
+            "replit.app" in replit_domains,
+            "replit.dev" in replit_domains,
+            len(replit_domains) > 0 and ("riker." in replit_domains or "wolf." in replit_domains)
+        ])
+        
+        if is_deployment:
+            # In deployment environments, ensure localhost URL for same-container services
+            return "http://localhost:8001"
+        else:
+            # Local development uses configured URL
+            return self.MCP_SERVER_URL
+    
     def get_monitored_channels(self) -> List[str]:
         """Get list of channels to monitor for data ingestion"""
         if not self.SLACK_CHANNELS_TO_MONITOR:
