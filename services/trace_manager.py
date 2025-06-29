@@ -10,9 +10,11 @@ import logging
 import traceback
 import time
 import uuid
+import functools
 from typing import Optional, Dict, Any, List, Union
 from datetime import datetime, timedelta
 from contextlib import asynccontextmanager
+from concurrent.futures import ThreadPoolExecutor
 
 try:
     from langsmith import Client
