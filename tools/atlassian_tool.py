@@ -133,6 +133,86 @@ class AtlassianTool:
             logger.error(f"Jira API request failed: {e}")
             return {"error": f"Jira API request failed: {str(e)}"}
     
+    def _build_smart_cql_query(self, query: str) -> str:
+        """
+        Build intelligent CQL query based on the type of request.
+        Handles creator searches, title searches, and general text searches.
+        """
+        query_lower = query.lower()
+        
+        # Handle creator-based searches
+        if any(phrase in query_lower for phrase in ["created by", "authored by", "made by", "by "]):
+            # Extract creator name from query
+            for phrase in ["created by ", "authored by ", "made by ", "by "]:
+                if phrase in query_lower:
+                    creator_name = query_lower.split(phrase)[1].strip()
+                    # Remove common trailing words
+                    creator_name = creator_name.replace(" pages", "").replace(" documents", "").strip()
+                    return f'creator = "{creator_name}"'
+        
+        # Handle title-specific searches
+        elif any(phrase in query_lower for phrase in ["title:", "titled ", "named ", "called "]):
+            # Extract title from query
+            title_part = query
+            for phrase in ["title:", "titled ", "named ", "called "]:
+                if phrase.lower() in query_lower:
+                    title_part = query_lower.split(phrase.lower())[1].strip()
+                    break
+            return f'title ~ "{title_part}"'
+        
+        # Handle space-specific searches
+        elif any(phrase in query_lower for phrase in ["in space", "space:"]):
+            # This would be handled by the space_key parameter, so do general search
+            return f'text ~ "{query}"'
+        
+        # Default to general text search
+        else:
+            return f'text ~ "{query}"'
+    
+    def _get_alternative_cql_queries(self, original_query: str, failed_cql: str) -> List[str]:
+        """
+        Generate alternative CQL queries when the original fails.
+        Handles common CQL syntax issues and provides fallback options.
+        """
+        alternatives = []
+        query_lower = original_query.lower()
+        
+        # If the failed query was a creator search, try variations
+        if 'creator =' in failed_cql:
+            # Extract the creator name and try different formats
+            creator_match = failed_cql.split('creator = "')[1].split('"')[0]
+            
+            # Try with displayName
+            alternatives.append(f'creator.displayName = "{creator_match}"')
+            
+            # Try with accountId approach (less likely to work without knowing the accountId)
+            # alternatives.append(f'creator.accountId = "{creator_match}"')
+            
+            # Fall back to text search that includes the creator name
+            alternatives.append(f'text ~ "{creator_match}"')
+            
+            # Try searching in the content for the name
+            alternatives.append(f'title ~ "{creator_match}" or text ~ "{creator_match}"')
+        
+        # If it was a text search that failed, try simpler approaches
+        elif 'text ~' in failed_cql:
+            search_term = failed_cql.split('text ~ "')[1].split('"')[0]
+            
+            # Try title search
+            alternatives.append(f'title ~ "{search_term}"')
+            
+            # Try a more specific search
+            alternatives.append(f'title ~ "{search_term}" or label = "{search_term}"')
+        
+        # Always fall back to the most basic search if nothing else works
+        if not alternatives:
+            # Extract key terms and do a simple text search
+            key_terms = original_query.replace("created by", "").replace("by", "").strip()
+            if key_terms:
+                alternatives.append(f'text ~ "{key_terms}"')
+        
+        return alternatives
+    
     async def search_jira_issues(
         self,
         query: str,
@@ -310,7 +390,8 @@ class AtlassianTool:
                     {"trace_id": trace_manager.current_trace_id}
                 )
             
-            cql_query = f"text ~ \"{query}\""
+            # Smart CQL query construction based on query type
+            cql_query = self._build_smart_cql_query(query)
             if space_key:
                 cql_query += f" and space = \"{space_key}\""
                 
@@ -321,7 +402,32 @@ class AtlassianTool:
             
             result = await self._make_confluence_request("/content/search", params)
             
-            if "error" in result:
+            # If we get an error and it looks like a CQL syntax issue, try alternative approaches
+            if "error" in result and "400" in str(result.get("error", "")):
+                logger.info(f"CQL query failed, trying alternative approach: {cql_query}")
+                
+                # Try alternative CQL approaches for common failures
+                alternative_queries = self._get_alternative_cql_queries(query, cql_query)
+                
+                for alt_query in alternative_queries:
+                    logger.info(f"Trying alternative CQL: {alt_query}")
+                    alt_params = {
+                        "cql": alt_query,
+                        "limit": max_results
+                    }
+                    if space_key:
+                        alt_params["cql"] += f" and space = \"{space_key}\""
+                    
+                    alt_result = await self._make_confluence_request("/content/search", alt_params)
+                    
+                    if "error" not in alt_result:
+                        logger.info(f"Alternative CQL query succeeded: {alt_query}")
+                        result = alt_result
+                        break
+                else:
+                    # If all alternatives failed, return the original error
+                    return result
+            elif "error" in result:
                 return result
             
             # Process results
