@@ -69,7 +69,7 @@ class AtlassianTool:
         In Replit deployment environments, container networking may be different
         from local development. This method provides smart URL detection.
         """
-        base_url = settings.MCP_SERVER_URL
+        base_url = settings.MCP_SERVER_URL.strip() if settings.MCP_SERVER_URL else ""
         
         # Detect deployment environment
         replit_domains = os.getenv("REPLIT_DOMAINS", "")
@@ -180,7 +180,7 @@ class AtlassianTool:
             }
             
             # Use the configured MCP server URL directly (for remote separate project)
-            working_url = self.mcp_server_url
+            working_url = self.mcp_server_url.strip()
             base_endpoint = f"{working_url}/mcp"
             
             logger.info(f"Connecting to remote MCP server at: {working_url}")
