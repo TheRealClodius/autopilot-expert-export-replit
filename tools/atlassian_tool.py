@@ -491,8 +491,9 @@ class AtlassianTool:
                     {"trace_id": trace_manager.current_trace_id}
                 )
             
-            params = {"pageId": page_id, "expand": "body.storage,space,version"}
-            result = await self._make_mcp_request("confluence/page", params)
+            result = await self._make_confluence_request(f"/content/{page_id}", {
+                "expand": "body.storage,space,version,history"
+            })
             
             if "error" in result:
                 return result
@@ -573,8 +574,7 @@ class AtlassianTool:
             if assignee:
                 issue_data["assignee"] = {"name": assignee}
             
-            params = {"fields": issue_data}
-            result = await self._make_mcp_request("jira/create", params)
+            result = await self._make_jira_request("/issue", method="POST", data={"fields": issue_data})
             
             if "error" in result:
                 return result
