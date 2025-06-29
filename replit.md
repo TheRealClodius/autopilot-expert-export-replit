@@ -15,6 +15,9 @@ The system follows a multi-agent architecture with specialized agents handling d
 
 The architecture supports both real-time message processing and background knowledge updates through Celery workers.
 
+## CRITICAL RULE: MCP Integration
+**NEVER replace MCP with REST API implementations. Always use MCP protocol for Atlassian integration. This is a hard requirement.**
+
 ## Key Components
 
 ### Agents
