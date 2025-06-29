@@ -79,6 +79,17 @@ The system uses environment variables for configuration management and supports 
 
 ## Recent Changes
 
+✅ **June 29, 2025 - CRITICAL DEPLOYMENT FIXES IMPLEMENTED (PRODUCTION READY)**
+- **Missing Deployment Script**: Created `start_deployment.py` file that was referenced in deployment configuration but didn't exist
+- **Cloud Run Single Port Fix**: Deployment now uses only port 5000 to comply with Autoscale single-port requirement
+- **Redis Connection Prevention**: Configured Celery to use `memory://` broker and `cache+memory://` backend preventing Redis connection attempts
+- **Deployment Environment Setup**: Added deployment-specific environment variable configuration in startup script
+- **MCP Server URL Configuration**: Automatically configures remote MCP server URL for deployment environment
+- **Graceful Shutdown**: Added timeout configurations for proper Cloud Run deployment lifecycle management
+- **Verification Complete**: All deployment components tested and working - FastAPI app starts successfully with memory transport
+- **Files Created**: start_deployment.py (comprehensive deployment startup script)
+- **Status**: All deployment blockers resolved - system ready for Cloud Run deployment with single port, no Redis dependencies
+
 ✅ **June 29, 2025 - DYNAMIC TOOL DISCOVERY IMPLEMENTED (PRODUCTION READY)**
 - **Complete Dynamic System**: Removed all hardcoded tool mappings in favor of runtime discovery from remote MCP server
 - **Remote MCP Integration**: Successfully connecting to deployed MCP server at https://remote-mcp-server-andreiclodius.replit.app

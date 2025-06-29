@@ -39,4 +39,4 @@ externalPort = 3000
 
 [deployment]
 deploymentTarget = "cloudrun"
-run = ["sh", "-c", "python start_deployment.py"]
+run = ["sh", "-c", "python main.py"]
