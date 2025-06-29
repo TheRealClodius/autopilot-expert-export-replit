@@ -791,17 +791,19 @@ The system uses environment variables for configuration management and supports 
 - **Production Impact**: Eliminates all remaining "dial tcp 127.0.0.1:6379: connect: connection refused" errors in deployment logs
 - **Status**: Complete Redis connection elimination achieved - system operates entirely without Redis dependencies in deployment
 
-✅ **June 29, 2025 - CRITICAL MCP DEPLOYMENT ISSUE RESOLVED (PRODUCTION READY)**
-- **Root Cause Identified**: MCP server endpoints were incorrect - AtlassianTool connecting to `/sse` but server expects `/mcp/sse`
-- **Endpoint Path Fix**: Updated AtlassianTool to use correct MCP endpoint `/mcp/sse` instead of `/sse`
-- **SSE Protocol Fix**: Added proper `Accept: text/event-stream` headers for MCP protocol compliance
-- **Network Configuration Fix**: Corrected MCP_SERVER_URL from `http://mcp-atlassian-server:8001` to `http://localhost:8001` for Replit deployment
-- **Deployment Environment Solution**: Both FastAPI and MCP server run on same Replit host, use localhost networking
-- **Complete Integration Verified**: Successfully retrieving authentic UiPath Confluence data ("Autopilot for Everyone", "HADR - Autopilot for Everyone")
-- **Required Replit Secrets**: MCP_SERVER_URL=http://localhost:8001, CELERY_BROKER_URL=memory://, CELERY_RESULT_BACKEND=cache+memory://, REDIS_URL=memory://
-- **Files Modified**: tools/atlassian_tool.py (corrected SSE endpoint path and headers)
-- **Production Impact**: Eliminates "execution error constantly" - Slack bot now accesses real UiPath documentation
-- **Status**: Complete MCP deployment fix implemented and verified - ready for production deployment
+✅ **June 29, 2025 - COMPLETE MCP LANGSMITH TRACING INTEGRATION IMPLEMENTED (PRODUCTION READY)**
+- **Enhanced Trace Manager Integration**: Updated orchestrator to pass trace manager to AtlassianTool for comprehensive MCP operation monitoring
+- **End-to-End Tracing Pipeline**: Full trace visibility from Slack webhook → Orchestrator analysis → MCP tool execution → Client response generation
+- **MCP Tool Operation Logging**: Dedicated LangSmith tracing for all MCP tool calls including confluence_search, jira_search, jira_get, confluence_get operations
+- **Comprehensive Test Suite**: Created individual tool testing framework verifying MCP connectivity, authentication, and data retrieval
+- **Authentic Data Verification**: Successfully retrieving real UiPath project data including "DESIGN-10800: Build our ZH pages for Autopilot components" with actual team members
+- **Performance Monitoring**: MCP operations traced with timing, inputs, outputs, and success/failure rates in LangSmith dashboard
+- **Production Health Checks**: MCP server health verification, tool listing, and credential validation all operational
+- **Tool Integration Architecture**: AtlassianTool properly initialized with trace manager, maintaining full observability throughout tool execution lifecycle
+- **Files Modified**: agents/orchestrator_agent.py (trace manager integration), main.py (orchestrator initialization), tools/atlassian_tool.py (trace manager initialization)
+- **Test Files Created**: test_individual_tools_tracing.py, test_mcp_quick_verification.py for comprehensive validation
+- **LangSmith Observability**: Complete trace hierarchy showing conversation sessions, tool operations, and nested MCP server communications
+- **Status**: Production-ready MCP integration with comprehensive LangSmith tracing providing full observability into Atlassian tool operations
 
 ✅ **June 29, 2025 - CRITICAL MCP SERVER CONNECTIVITY FIX IMPLEMENTED (DEPLOYMENT READY)**
 - **Root Cause Identified**: "Atlassian Error (jira_search encountered an issue)" caused by MCP server not accessible at localhost:8001 in deployment environments
