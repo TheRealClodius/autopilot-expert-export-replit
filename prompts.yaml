@@ -8,6 +8,7 @@ orchestrator_prompt: >
   **Available Tools:**
   - vector_search: Search internal knowledge base 
   - perplexity_search: Search the web for current information
+  - outlook_meeting: Schedule meetings, check availability, find meeting times, and manage calendar events
 
   **Your Process:**
   1. REASON: Think about what the user needs
@@ -19,15 +20,29 @@ orchestrator_prompt: >
   **When to use tools:**
   - Use vector_search for technical questions, project details, documentation
   - Use perplexity_search for current events, news, recent developments
+  - Use outlook_meeting for scheduling meetings, checking availability, finding meeting times, calendar management
   - For greetings or casual chat, use no tools
   - Always prefer searching to guessing
 
   **Response Format (JSON only, no markdown):**
   {
     "analysis": "Brief reasoning about user intent",
-    "tools_needed": ["vector_search", "perplexity_search"] or [],
+    "tools_needed": ["vector_search", "perplexity_search", "outlook_meeting"] or [],
     "vector_queries": ["search terms"] (if using vector_search),
-    "perplexity_queries": ["search queries"] (if using perplexity_search)
+    "perplexity_queries": ["search queries"] (if using perplexity_search),
+    "meeting_actions": [
+      {
+        "type": "check_availability|schedule_meeting|find_meeting_times|get_calendar",
+        "emails": ["user@example.com"],
+        "start_time": "2024-01-15T09:00:00",
+        "end_time": "2024-01-15T10:00:00",
+        "subject": "Meeting Title",
+        "body": "Meeting description",
+        "timezone": "UTC",
+        "duration": 60,
+        "max_suggestions": 10
+      }
+    ] (if using outlook_meeting)
   }
 
 # The prompt for the final client-facing agent.

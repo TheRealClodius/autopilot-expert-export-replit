@@ -1949,6 +1949,144 @@ async def clear_webhook_cache():
             "description": "Failed to clear webhook cache"
         }
 
+@app.get("/admin/test-outlook-meeting")
+async def test_outlook_meeting():
+    """Admin endpoint to test Outlook meeting integration functionality"""
+    try:
+        from tools.outlook_meeting import OutlookMeetingTool
+        from agents.orchestrator_agent import OrchestratorAgent
+        from models.schemas import ProcessedMessage
+        from services.memory_service import MemoryService
+        from datetime import datetime, timedelta
+        import time
+        
+        test_results = {
+            "timestamp": datetime.now().isoformat(),
+            "outlook_tool_test": {},
+            "orchestrator_integration_test": {},
+            "status": "pending"
+        }
+        
+        # Test 1: Direct Outlook tool functionality
+        outlook_tool = OutlookMeetingTool()
+        
+        test_results["outlook_tool_test"] = {
+            "tool_initialized": outlook_tool is not None,
+            "credentials_available": outlook_tool.available,
+            "client_id_configured": bool(outlook_tool.client_id),
+            "tenant_id_configured": bool(outlook_tool.tenant_id),
+            "api_base_url": outlook_tool.base_url
+        }
+        
+        # Test 2: Orchestrator integration with meeting queries
+        memory_service = MemoryService()
+        orchestrator = OrchestratorAgent(memory_service)
+        
+        # Create test messages for different meeting scenarios
+        test_scenarios = [
+            {
+                "query": "Schedule a meeting with john@company.com tomorrow at 2 PM for 1 hour about project review",
+                "expected_tool": "outlook_meeting",
+                "expected_action": "schedule_meeting"
+            },
+            {
+                "query": "Check if Sarah and Mike are available this Friday from 10 AM to 11 AM",
+                "expected_tool": "outlook_meeting", 
+                "expected_action": "check_availability"
+            },
+            {
+                "query": "Find available meeting times for next week with the engineering team",
+                "expected_tool": "outlook_meeting",
+                "expected_action": "find_meeting_times"
+            },
+            {
+                "query": "What meetings do I have scheduled for tomorrow?",
+                "expected_tool": "outlook_meeting",
+                "expected_action": "get_calendar"
+            }
+        ]
+        
+        orchestrator_results = []
+        
+        for scenario in test_scenarios:
+            test_message = ProcessedMessage(
+                channel_id="C087QKECFKQ",
+                user_id="U12345TEST",
+                text=scenario["query"],
+                message_ts="1640995200.001500",
+                thread_ts=None,
+                user_name="test_user",
+                user_first_name="Test",
+                user_display_name="Test User", 
+                user_title="Project Manager",
+                user_department="Engineering",
+                channel_name="test",
+                is_dm=False,
+                thread_context=""
+            )
+            
+            # Test orchestrator analysis
+            start_time = time.time()
+            execution_plan = await orchestrator._analyze_query_and_plan(test_message)
+            analysis_time = time.time() - start_time
+            
+            scenario_result = {
+                "query": scenario["query"],
+                "analysis_success": execution_plan is not None,
+                "tools_planned": execution_plan.get("tools_needed", []) if execution_plan else [],
+                "outlook_detected": "outlook_meeting" in execution_plan.get("tools_needed", []) if execution_plan else False,
+                "meeting_actions": execution_plan.get("meeting_actions", []) if execution_plan else [],
+                "analysis_time": round(analysis_time, 2),
+                "expected_tool": scenario["expected_tool"],
+                "expected_action": scenario["expected_action"]
+            }
+            
+            # Check if correct action type is detected
+            if scenario_result["meeting_actions"]:
+                detected_actions = [action.get("type") for action in scenario_result["meeting_actions"]]
+                scenario_result["correct_action_detected"] = scenario["expected_action"] in detected_actions
+            else:
+                scenario_result["correct_action_detected"] = False
+            
+            orchestrator_results.append(scenario_result)
+        
+        test_results["orchestrator_integration_test"] = {
+            "scenarios_tested": len(orchestrator_results),
+            "successful_analyses": len([r for r in orchestrator_results if r["analysis_success"]]),
+            "outlook_tool_detected": len([r for r in orchestrator_results if r["outlook_detected"]]),
+            "correct_actions_detected": len([r for r in orchestrator_results if r["correct_action_detected"]]),
+            "scenario_details": orchestrator_results
+        }
+        
+        # Overall status assessment
+        tool_working = test_results["outlook_tool_test"]["tool_initialized"]
+        orchestrator_working = test_results["orchestrator_integration_test"]["successful_analyses"] > 0
+        integration_working = test_results["orchestrator_integration_test"]["outlook_tool_detected"] > 0
+        
+        test_results["status"] = "success" if tool_working and orchestrator_working else "partial"
+        test_results["outlook_integration_ready"] = tool_working and orchestrator_working and integration_working
+        test_results["credentials_needed"] = not test_results["outlook_tool_test"]["credentials_available"]
+        
+        if test_results["credentials_needed"]:
+            test_results["next_steps"] = [
+                "Configure Microsoft Graph API credentials in environment variables:",
+                "- MICROSOFT_CLIENT_ID: Your Azure AD app client ID", 
+                "- MICROSOFT_CLIENT_SECRET: Your Azure AD app client secret",
+                "- MICROSOFT_TENANT_ID: Your Azure AD tenant ID",
+                "Register app in Azure AD with Calendar.ReadWrite permissions"
+            ]
+        
+        return test_results
+        
+    except Exception as e:
+        logger.error(f"Error testing Outlook meeting integration: {e}")
+        return {
+            "status": "error",
+            "error": str(e),
+            "outlook_integration_working": False,
+            "message": "Failed to test Outlook meeting functionality"
+        }
+
 @app.get("/admin/webhook-cache-test")
 async def test_webhook_cache():
     """Admin endpoint to test webhook cache functionality"""

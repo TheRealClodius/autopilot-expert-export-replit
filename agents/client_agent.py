@@ -221,12 +221,13 @@ class ClientAgent:
                     prompt_parts.append(f"  {role.upper()}: {text}")
             prompt_parts.append("")
         
-        # B3. Collated Answers from Orchestrator (Search Results)
+        # B3. Collated Answers from Orchestrator (Search Results & Meeting Actions)
         orchestrator_analysis = state_stack.get("orchestrator_analysis", {})
         search_results = orchestrator_analysis.get("search_results", [])
         web_results = orchestrator_analysis.get("web_results", [])
+        meeting_results = orchestrator_analysis.get("meeting_results", [])
         
-        if search_results or web_results:
+        if search_results or web_results or meeting_results:
             prompt_parts.append("COLLATED ANSWERS FROM ORCHESTRATOR:")
             
             # Vector Search Results
@@ -259,6 +260,55 @@ class ClientAgent:
                             prompt_parts.append(f"     Sources: {', '.join(citations[:3])}")
                         prompt_parts.append(f"     Search Time: {search_time:.2f}s")
                 prompt_parts.append("")
+            
+            # Meeting Results
+            if meeting_results:
+                prompt_parts.append("Outlook Meeting Actions:")
+                for i, result in enumerate(meeting_results, 1):
+                    action_type = result.get("action_type", "unknown")
+                    success = result.get("success", False)
+                    
+                    if success:
+                        meeting_data = result.get("result", {})
+                        prompt_parts.append(f"  {i}. {action_type.replace('_', ' ').title()}: SUCCESS")
+                        
+                        if action_type == "check_availability":
+                            availability = meeting_data.get("availability_check", {})
+                            time_range = availability.get("time_range", "")
+                            users = availability.get("users", {})
+                            prompt_parts.append(f"     Time Range: {time_range}")
+                            prompt_parts.append(f"     Checked: {len(users)} users")
+                            
+                        elif action_type == "schedule_meeting":
+                            meeting_info = meeting_data.get("meeting_scheduled", {})
+                            subject = meeting_info.get("subject", "")
+                            start_time = meeting_info.get("start", "")
+                            join_url = meeting_info.get("online_meeting", {}).get("join_url", "") if meeting_info.get("online_meeting") else ""
+                            prompt_parts.append(f"     Subject: {subject}")
+                            prompt_parts.append(f"     Start: {start_time}")
+                            if join_url:
+                                prompt_parts.append(f"     Join URL: {join_url}")
+                        
+                        elif action_type == "find_meeting_times":
+                            suggestions = meeting_data.get("meeting_time_suggestions", {})
+                            suggestions_list = suggestions.get("suggestions", [])
+                            duration = suggestions.get("search_parameters", {}).get("duration_minutes", "")
+                            prompt_parts.append(f"     Found: {len(suggestions_list)} time suggestions")
+                            if duration:
+                                prompt_parts.append(f"     Duration: {duration} minutes")
+                                
+                        elif action_type == "get_calendar":
+                            calendar_data = meeting_data.get("calendar_events", {})
+                            events = calendar_data.get("events", [])
+                            date_range = calendar_data.get("date_range", "")
+                            prompt_parts.append(f"     Events: {len(events)} found")
+                            prompt_parts.append(f"     Range: {date_range}")
+                    else:
+                        error_msg = result.get("error", "Unknown error")
+                        prompt_parts.append(f"  {i}. {action_type.replace('_', ' ').title()}: FAILED")
+                        prompt_parts.append(f"     Error: {error_msg}")
+                
+                prompt_parts.append("")
         
         # B4. Orchestrator Analysis & Insights
         if orchestrator_analysis:
@@ -276,17 +326,19 @@ class ClientAgent:
             else:
                 prompt_parts.append("Tools Used: none")
             
-            # Include search results summary if available
+            # Include results summary if available
             results_summary = []
             if search_results:
                 results_summary.append(f"{len(search_results)} knowledge base items")
             if web_results:
                 results_summary.append(f"{len(web_results)} real-time web results")
+            if meeting_results:
+                results_summary.append(f"{len(meeting_results)} meeting actions")
             
             if results_summary:
-                prompt_parts.append(f"Search Results Found: {', '.join(results_summary)}")
+                prompt_parts.append(f"Results Found: {', '.join(results_summary)}")
             else:
-                prompt_parts.append("Search Results Found: none")
+                prompt_parts.append("Results Found: none")
             
             prompt_parts.append("")
         else:
