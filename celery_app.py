@@ -12,11 +12,30 @@ from config import settings
 
 logger = logging.getLogger(__name__)
 
-# Create Celery application
+# Determine broker URL with fallback for deployment
+def get_broker_url():
+    """Get Celery broker URL with fallback for deployment environments"""
+    if settings.CELERY_BROKER_URL and settings.CELERY_BROKER_URL.strip():
+        return settings.CELERY_BROKER_URL
+    else:
+        # Use memory transport for deployment without Redis
+        logger.info("No Celery broker URL configured, using memory transport")
+        return 'memory://'
+
+def get_result_backend():
+    """Get Celery result backend with fallback for deployment environments"""
+    if settings.CELERY_RESULT_BACKEND and settings.CELERY_RESULT_BACKEND.strip():
+        return settings.CELERY_RESULT_BACKEND
+    else:
+        # Use cache+memory for deployment without Redis
+        logger.info("No Celery result backend configured, using cache+memory")
+        return 'cache+memory://'
+
+# Create Celery application with deployment-safe configuration
 celery_app = Celery(
     'autopilot_expert',
-    broker=settings.CELERY_BROKER_URL,
-    backend=settings.CELERY_RESULT_BACKEND,
+    broker=get_broker_url(),
+    backend=get_result_backend(),
     include=[
         'workers.knowledge_update_worker',
     ]
@@ -158,10 +177,20 @@ celery_app.Task = BaseTask
 def health_check(self):
     """Health check task for monitoring"""
     try:
-        import redis
         from datetime import datetime
         
-        # Test Redis connection
+        # Skip Redis connection in deployment if not configured
+        if not settings.REDIS_URL or settings.REDIS_URL.strip() == "":
+            logger.info("Redis not configured, skipping Redis health check")
+            return {
+                'status': 'healthy',
+                'timestamp': datetime.now().isoformat(),
+                'worker_id': self.request.id,
+                'redis': 'not_configured'
+            }
+        
+        # Test Redis connection only if URL is configured
+        import redis
         redis_client = redis.from_url(settings.REDIS_URL)
         redis_client.ping()
         
