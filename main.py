@@ -2598,6 +2598,158 @@ Please think through this systematically, showing each step of your reasoning.""
         logger.error(f"Gemini reasoning test failed: {e}")
         return {"status": "error", "message": str(e)}
 
+@app.get("/admin/test-atlassian-integration")
+async def test_atlassian_integration():
+    """Admin endpoint to test Atlassian tool integration with orchestrator"""
+    try:
+        from agents.orchestrator_agent import OrchestratorAgent
+        from models.schemas import ProcessedMessage
+        from services.memory_service import MemoryService
+        
+        # Initialize components
+        memory_service = MemoryService()
+        orchestrator = OrchestratorAgent(memory_service)
+        
+        # Test scenarios for Atlassian tool integration
+        test_scenarios = [
+            {
+                "name": "Jira Issue Search Query",
+                "query": "What are the open bugs in project AUTOPILOT?",
+                "expected_tool": "atlassian_search",
+                "expected_action": "search_jira_issues"
+            },
+            {
+                "name": "Confluence Documentation Search",
+                "query": "Find documentation about API endpoints in our Confluence",
+                "expected_tool": "atlassian_search",
+                "expected_action": "search_confluence_pages"
+            },
+            {
+                "name": "Create Jira Issue Request",
+                "query": "Create a new task for fixing the login issue in project AUTOPILOT",
+                "expected_tool": "atlassian_search",
+                "expected_action": "create_jira_issue"
+            },
+            {
+                "name": "Specific Issue Lookup",
+                "query": "Get details for issue AUTOPILOT-123",
+                "expected_tool": "atlassian_search",
+                "expected_action": "get_jira_issue"
+            }
+        ]
+        
+        test_results = {
+            "tool_initialization": {
+                "atlassian_tool_available": orchestrator.atlassian_tool.available,
+                "credentials_configured": bool(
+                    orchestrator.atlassian_tool.jira_url and 
+                    orchestrator.atlassian_tool.jira_username and 
+                    orchestrator.atlassian_tool.jira_token
+                )
+            },
+            "orchestrator_integration_test": []
+        }
+        
+        # Test each scenario
+        for scenario in test_scenarios:
+            try:
+                # Create test message
+                test_message = ProcessedMessage(
+                    channel_id="C087QKECFKQ",
+                    user_id="U12345TEST",
+                    text=scenario["query"],
+                    message_ts="1640995200.001500",
+                    thread_ts=None,
+                    user_name="test_user",
+                    user_first_name="Test",
+                    user_display_name="Test User",
+                    user_title="Software Engineer",
+                    user_department="Engineering",
+                    channel_name="general",
+                    is_dm=False,
+                    thread_context=""
+                )
+                
+                # Test orchestrator analysis
+                execution_plan = await orchestrator._analyze_query_and_plan(test_message)
+                
+                scenario_result = {
+                    "scenario": scenario["name"],
+                    "query": scenario["query"],
+                    "analysis_success": bool(execution_plan),
+                    "atlassian_detected": False,
+                    "correct_action_detected": False,
+                    "execution_plan": execution_plan
+                }
+                
+                if execution_plan:
+                    tools_needed = execution_plan.get("tools_needed", [])
+                    atlassian_actions = execution_plan.get("atlassian_actions", [])
+                    
+                    # Check if Atlassian tool was selected
+                    if "atlassian_search" in tools_needed:
+                        scenario_result["atlassian_detected"] = True
+                        
+                        # Check if correct action type was detected
+                        if atlassian_actions:
+                            action_types = [action.get("type") for action in atlassian_actions]
+                            if scenario["expected_action"] in action_types:
+                                scenario_result["correct_action_detected"] = True
+                            scenario_result["detected_actions"] = action_types
+                
+                test_results["orchestrator_integration_test"].append(scenario_result)
+                
+            except Exception as scenario_error:
+                test_results["orchestrator_integration_test"].append({
+                    "scenario": scenario["name"],
+                    "query": scenario["query"],
+                    "analysis_success": False,
+                    "error": str(scenario_error)
+                })
+        
+        # Overall assessment
+        successful_analyses = len([r for r in test_results["orchestrator_integration_test"] if r.get("analysis_success")])
+        atlassian_detections = len([r for r in test_results["orchestrator_integration_test"] if r.get("atlassian_detected")])
+        correct_actions = len([r for r in test_results["orchestrator_integration_test"] if r.get("correct_action_detected")])
+        
+        test_results["summary"] = {
+            "total_scenarios": len(test_scenarios),
+            "successful_analyses": successful_analyses,
+            "atlassian_tool_detections": atlassian_detections,
+            "correct_action_detections": correct_actions,
+            "integration_score": round((atlassian_detections / len(test_scenarios)) * 100, 1) if test_scenarios else 0,
+            "precision_score": round((correct_actions / max(1, atlassian_detections)) * 100, 1) if atlassian_detections > 0 else 0
+        }
+        
+        # Status assessment
+        if test_results["tool_initialization"]["atlassian_tool_available"]:
+            if atlassian_detections >= 3 and correct_actions >= 2:
+                status = "excellent"
+            elif atlassian_detections >= 2:
+                status = "good"
+            elif atlassian_detections >= 1:
+                status = "partial"
+            else:
+                status = "poor"
+        else:
+            status = "not_configured"
+        
+        test_results["status"] = status
+        test_results["credentials_needed"] = not test_results["tool_initialization"]["credentials_configured"]
+        
+        if test_results["credentials_needed"]:
+            test_results["next_steps"] = [
+                "Configure Atlassian credentials in environment variables:",
+                "ATLASSIAN_JIRA_URL, ATLASSIAN_JIRA_USERNAME, ATLASSIAN_JIRA_TOKEN",
+                "ATLASSIAN_CONFLUENCE_URL, ATLASSIAN_CONFLUENCE_USERNAME, ATLASSIAN_CONFLUENCE_TOKEN"
+            ]
+        
+        return test_results
+        
+    except Exception as e:
+        logger.error(f"Atlassian integration test failed: {e}")
+        return {"status": "error", "message": str(e)}
+
 @app.get("/admin/test-streaming-reasoning")
 async def test_streaming_reasoning(query: str = "How should I approach solving a complex problem?"):
     """Admin endpoint to test real-time streaming reasoning with progress updates"""

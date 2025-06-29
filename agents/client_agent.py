@@ -226,8 +226,9 @@ class ClientAgent:
         search_results = orchestrator_analysis.get("search_results", [])
         web_results = orchestrator_analysis.get("web_results", [])
         meeting_results = orchestrator_analysis.get("meeting_results", [])
+        atlassian_results = orchestrator_analysis.get("atlassian_results", [])
         
-        if search_results or web_results or meeting_results:
+        if search_results or web_results or meeting_results or atlassian_results:
             prompt_parts.append("COLLATED ANSWERS FROM ORCHESTRATOR:")
             
             # Vector Search Results
@@ -309,6 +310,77 @@ class ClientAgent:
                         prompt_parts.append(f"     Error: {error_msg}")
                 
                 prompt_parts.append("")
+            
+            # Atlassian Results
+            if atlassian_results:
+                prompt_parts.append("Atlassian Actions:")
+                for i, result in enumerate(atlassian_results, 1):
+                    action_type = result.get("action_type", "unknown")
+                    success = result.get("success", False)
+                    
+                    if success:
+                        atlassian_data = result.get("result", {})
+                        prompt_parts.append(f"  {i}. {action_type.replace('_', ' ').title()}: SUCCESS")
+                        
+                        if action_type == "search_jira_issues":
+                            search_results = atlassian_data.get("jira_search_results", {})
+                            query = search_results.get("query", "")
+                            total_found = search_results.get("total_found", 0)
+                            issues = search_results.get("issues", [])
+                            prompt_parts.append(f"     Query: {query}")
+                            prompt_parts.append(f"     Found: {total_found} issues (showing {len(issues)})")
+                            for issue in issues[:3]:  # Show top 3 issues
+                                key = issue.get("key", "")
+                                summary = issue.get("summary", "")[:50]
+                                status = issue.get("status", "")
+                                prompt_parts.append(f"     - {key}: {summary}... ({status})")
+                        
+                        elif action_type == "get_jira_issue":
+                            issue_data = atlassian_data.get("jira_issue", {})
+                            key = issue_data.get("key", "")
+                            summary = issue_data.get("summary", "")
+                            status = issue_data.get("status", "")
+                            assignee = issue_data.get("assignee", "")
+                            prompt_parts.append(f"     Issue: {key}")
+                            prompt_parts.append(f"     Summary: {summary}")
+                            prompt_parts.append(f"     Status: {status}")
+                            prompt_parts.append(f"     Assignee: {assignee}")
+                        
+                        elif action_type == "search_confluence_pages":
+                            search_results = atlassian_data.get("confluence_search_results", {})
+                            query = search_results.get("query", "")
+                            total_found = search_results.get("total_found", 0)
+                            pages = search_results.get("pages", [])
+                            prompt_parts.append(f"     Query: {query}")
+                            prompt_parts.append(f"     Found: {total_found} pages (showing {len(pages)})")
+                            for page in pages[:3]:  # Show top 3 pages
+                                title = page.get("title", "")[:50]
+                                space = page.get("space_name", "")
+                                prompt_parts.append(f"     - {title}... (Space: {space})")
+                        
+                        elif action_type == "get_confluence_page":
+                            page_data = atlassian_data.get("confluence_page", {})
+                            title = page_data.get("title", "")
+                            space = page_data.get("space_name", "")
+                            author = page_data.get("author", "")
+                            prompt_parts.append(f"     Page: {title}")
+                            prompt_parts.append(f"     Space: {space}")
+                            prompt_parts.append(f"     Author: {author}")
+                        
+                        elif action_type == "create_jira_issue":
+                            issue_data = atlassian_data.get("jira_issue_created", {})
+                            key = issue_data.get("key", "")
+                            summary = issue_data.get("summary", "")
+                            project = issue_data.get("project", "")
+                            prompt_parts.append(f"     Created: {key}")
+                            prompt_parts.append(f"     Summary: {summary}")
+                            prompt_parts.append(f"     Project: {project}")
+                    else:
+                        error_msg = result.get("error", "Unknown error")
+                        prompt_parts.append(f"  {i}. {action_type.replace('_', ' ').title()}: FAILED")
+                        prompt_parts.append(f"     Error: {error_msg}")
+                
+                prompt_parts.append("")
         
         # B4. Orchestrator Analysis & Insights
         if orchestrator_analysis:
@@ -334,6 +406,8 @@ class ClientAgent:
                 results_summary.append(f"{len(web_results)} real-time web results")
             if meeting_results:
                 results_summary.append(f"{len(meeting_results)} meeting actions")
+            if atlassian_results:
+                results_summary.append(f"{len(atlassian_results)} Atlassian actions")
             
             if results_summary:
                 prompt_parts.append(f"Results Found: {', '.join(results_summary)}")
