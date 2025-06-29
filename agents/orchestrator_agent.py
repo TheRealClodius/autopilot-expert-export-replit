@@ -768,20 +768,21 @@ Current Query: "{message.text}"
         """Execute a single tool action without retry logic"""
         
         if tool_name == "atlassian":
-            # Direct MCP tool execution
+            # Modern direct MCP tool execution (orchestrator generates this format)
             mcp_tool = action.get("mcp_tool")
             mcp_arguments = action.get("arguments", {})
             
             if mcp_tool and mcp_arguments:
-                # Modern direct MCP call
+                # Direct MCP call with correct format
+                logger.info(f"Executing direct MCP call: {mcp_tool} with args: {mcp_arguments}")
                 return await self.atlassian_tool.execute_mcp_tool(mcp_tool, mcp_arguments)
             else:
-                # Legacy fallback for backward compatibility
+                # Legacy fallback for backward compatibility (use correct "limit" parameter)
                 action_type = action.get("type")
                 if action_type == "search_jira_issues":
                     return await self.atlassian_tool.execute_mcp_tool("jira_search", {
                         "jql": action.get("query", ""),
-                        "max_results": action.get("max_results", 10)
+                        "limit": action.get("limit", action.get("max_results", 10))  # Fixed parameter name
                     })
                 elif action_type == "get_jira_issue":
                     return await self.atlassian_tool.execute_mcp_tool("jira_get", {
@@ -791,7 +792,7 @@ Current Query: "{message.text}"
                     return await self.atlassian_tool.execute_mcp_tool("confluence_search", {
                         "query": action.get("query", ""),
                         "space_key": action.get("space_key"),
-                        "limit": action.get("max_results", 10)
+                        "limit": action.get("limit", action.get("max_results", 10))  # Fixed parameter name
                     })
                 elif action_type == "get_confluence_page":
                     return await self.atlassian_tool.execute_mcp_tool("confluence_get", {
