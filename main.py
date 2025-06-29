@@ -1208,7 +1208,7 @@ async def test_progress_events():
     from datetime import datetime
     
     try:
-        from services.progress_tracker import ProgressTracker, emit_thinking, emit_searching, emit_processing, emit_generating, emit_error, emit_warning, emit_retry, emit_reasoning
+        from services.progress_tracker import ProgressTracker, emit_thinking, emit_searching, emit_processing, emit_generating, emit_error, emit_warning, emit_retry, emit_reasoning, emit_considering, emit_analyzing
         import asyncio
         
         # Create a list to capture progress updates
@@ -1228,7 +1228,7 @@ async def test_progress_events():
         await emit_considering(progress_tracker, "requirements", "understanding your test request")
         await asyncio.sleep(0.1)
         
-        await emit_analyzing(progress_tracker, "approach", "planning how to help you")
+        await emit_analyzing(progress_tracker, "complexity", "planning how to help you")
         await asyncio.sleep(0.1)
         
         await emit_searching(progress_tracker, "vector_search", "knowledge base")
