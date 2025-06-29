@@ -44,7 +44,7 @@ class Settings(BaseSettings):
     ATLASSIAN_CONFLUENCE_TOKEN: str = os.getenv("ATLASSIAN_CONFLUENCE_TOKEN", "")
     ATLASSIAN_MCP_URL: str = os.getenv("ATLASSIAN_MCP_URL", "https://mcp.atlassian.com/v1/sse")
     
-    # MCP Server Configuration (for deployment flexibility)
+    # MCP Server Configuration (deployment-aware)
     MCP_SERVER_URL: str = os.getenv("MCP_SERVER_URL", "http://localhost:8001")
     
     # Redis Configuration (optional - fallback to in-memory cache if not available)
