@@ -71,22 +71,26 @@ class AtlassianTool:
             try:
                 logger.info(f"Creating MCP session (attempt {retry_count + 1}/{max_retries})")
                 
-                # Build command for mcp-atlassian server
-                command_parts = [
-                    "uvx", "mcp-atlassian",
-                    "--jira-url", self.jira_url,
-                    "--jira-username", self.jira_username,
-                    "--jira-token", self.jira_token,
-                    "--confluence-url", self.confluence_url,
-                    "--confluence-username", self.confluence_username,
-                    "--confluence-token", self.confluence_token
-                ]
+                # Set up environment variables for mcp-atlassian
+                env_vars = {
+                    "JIRA_URL": self.jira_url,
+                    "JIRA_USERNAME": self.jira_username,
+                    "JIRA_API_TOKEN": self.jira_token,
+                    "CONFLUENCE_URL": self.confluence_url,
+                    "CONFLUENCE_USERNAME": self.confluence_username,
+                    "CONFLUENCE_API_TOKEN": self.confluence_token,
+                    "MCP_VERBOSE": "true",  # Enable verbose logging
+                    "MCP_LOGGING_STDOUT": "true",  # Log to stdout
+                    "TRANSPORT": "stdio"  # Explicitly set transport mode
+                }
                 
-                logger.info(f"MCP command: uvx mcp-atlassian --jira-url {self.jira_url} [credentials redacted]")
+                logger.info(f"MCP command: uvx mcp-atlassian (using environment variables)")
+                logger.info(f"Environment: JIRA_URL={self.jira_url}, CONFLUENCE_URL={self.confluence_url}")
                 
                 server_params = StdioServerParameters(
-                    command=command_parts[0],  # "uvx"
-                    args=command_parts[1:]     # ["mcp-atlassian", "--jira-url", ...]
+                    command="uvx",
+                    args=["mcp-atlassian"],
+                    env=env_vars
                 )
                 
                 try:
