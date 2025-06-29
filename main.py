@@ -3007,6 +3007,242 @@ async def get_production_stats():
         logger.error(f"Error getting production statistics: {e}")
         return {"status": "error", "message": str(e)}
 
+@app.get("/admin/diagnose-deployment-errors")
+async def diagnose_deployment_errors():
+    """Admin endpoint to comprehensively diagnose deployment execution errors"""
+    import asyncio
+    import os
+    import time
+    import httpx
+    from config import settings
+    
+    results = {
+        "timestamp": time.time(),
+        "environment_check": {},
+        "mcp_connectivity": {},
+        "atlassian_auth": {},
+        "production_execution": {},
+        "error_analysis": {},
+        "recommendations": []
+    }
+    
+    # 1. Environment Check
+    try:
+        env_vars = [
+            "ATLASSIAN_JIRA_URL", "ATLASSIAN_JIRA_USERNAME", "ATLASSIAN_JIRA_TOKEN",
+            "ATLASSIAN_CONFLUENCE_URL", "ATLASSIAN_CONFLUENCE_USERNAME", "ATLASSIAN_CONFLUENCE_TOKEN"
+        ]
+        
+        for var in env_vars:
+            value = os.getenv(var)
+            if value:
+                results["environment_check"][var] = {"status": "present", "length": len(value)}
+            else:
+                results["environment_check"][var] = {"status": "missing"}
+                results["recommendations"].append(f"Configure {var} in Replit Secrets")
+        
+        results["environment_check"]["summary"] = "All variables present" if all(os.getenv(var) for var in env_vars) else "Missing variables"
+        
+    except Exception as e:
+        results["environment_check"]["error"] = str(e)
+    
+    # 2. MCP Server Connectivity
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            # Health check
+            health_response = await client.get("http://localhost:8001/healthz")
+            results["mcp_connectivity"]["health"] = {
+                "status_code": health_response.status_code,
+                "success": health_response.status_code == 200
+            }
+            
+            # MCP endpoint check
+            mcp_init_request = {
+                "jsonrpc": "2.0",
+                "id": "diagnosis-test",
+                "method": "initialize",
+                "params": {
+                    "protocolVersion": "2024-11-05",
+                    "capabilities": {},
+                    "clientInfo": {"name": "deployment-diagnosis", "version": "1.0.0"}
+                }
+            }
+            
+            mcp_response = await client.post(
+                "http://localhost:8001/mcp",
+                json=mcp_init_request,
+                headers={"Content-Type": "application/json", "Accept": "application/json, text/event-stream"}
+            )
+            
+            results["mcp_connectivity"]["mcp_init"] = {
+                "status_code": mcp_response.status_code,
+                "headers": dict(mcp_response.headers),
+                "response_preview": mcp_response.text[:200]
+            }
+            
+    except Exception as e:
+        results["mcp_connectivity"]["error"] = str(e)
+        results["recommendations"].append("Check MCP server status and restart if needed")
+    
+    # 3. Atlassian Authentication Test
+    try:
+        if settings.ATLASSIAN_JIRA_USERNAME and settings.ATLASSIAN_JIRA_TOKEN:
+            jira_auth = httpx.BasicAuth(settings.ATLASSIAN_JIRA_USERNAME, settings.ATLASSIAN_JIRA_TOKEN)
+            
+            async with httpx.AsyncClient(timeout=15.0) as client:
+                jira_response = await client.get(
+                    f"{settings.ATLASSIAN_JIRA_URL}/rest/api/2/serverInfo",
+                    auth=jira_auth
+                )
+                
+                results["atlassian_auth"]["jira"] = {
+                    "status_code": jira_response.status_code,
+                    "success": jira_response.status_code == 200,
+                    "url_tested": f"{settings.ATLASSIAN_JIRA_URL}/rest/api/2/serverInfo"
+                }
+                
+                if jira_response.status_code == 401:
+                    results["recommendations"].append("Jira authentication failed - check username/token")
+                elif jira_response.status_code == 403:
+                    results["recommendations"].append("Jira permissions insufficient")
+                    
+        if settings.ATLASSIAN_CONFLUENCE_USERNAME and settings.ATLASSIAN_CONFLUENCE_TOKEN:
+            confluence_auth = httpx.BasicAuth(settings.ATLASSIAN_CONFLUENCE_USERNAME, settings.ATLASSIAN_CONFLUENCE_TOKEN)
+            
+            async with httpx.AsyncClient(timeout=15.0) as client:
+                confluence_response = await client.get(
+                    f"{settings.ATLASSIAN_CONFLUENCE_URL}/rest/api/space",
+                    auth=confluence_auth,
+                    params={"limit": 1}
+                )
+                
+                results["atlassian_auth"]["confluence"] = {
+                    "status_code": confluence_response.status_code,
+                    "success": confluence_response.status_code == 200,
+                    "url_tested": f"{settings.ATLASSIAN_CONFLUENCE_URL}/rest/api/space"
+                }
+                
+                if confluence_response.status_code == 401:
+                    results["recommendations"].append("Confluence authentication failed - check username/token")
+                elif confluence_response.status_code == 403:
+                    results["recommendations"].append("Confluence permissions insufficient")
+                    
+    except Exception as e:
+        results["atlassian_auth"]["error"] = str(e)
+        results["recommendations"].append("Check Atlassian credentials and network connectivity")
+    
+    # 4. Production Execution Test
+    try:
+        from tools.atlassian_tool import AtlassianTool
+        
+        # Initialize tool
+        tool = AtlassianTool()
+        results["production_execution"]["tool_available"] = tool.available
+        
+        if tool.available:
+            # Test actual execution that fails in production
+            start_time = time.time()
+            
+            execution_result = await asyncio.wait_for(
+                tool.execute_mcp_tool('confluence_search', {
+                    'query': 'deployment test',
+                    'limit': 1
+                }),
+                timeout=30.0
+            )
+            
+            execution_time = (time.time() - start_time) * 1000
+            
+            results["production_execution"]["test_result"] = {
+                "success": execution_result.get('success', False),
+                "error": execution_result.get('error'),
+                "message": execution_result.get('message'),
+                "execution_time_ms": execution_time,
+                "result_type": type(execution_result).__name__,
+                "result_keys": list(execution_result.keys()) if isinstance(execution_result, dict) else "not_dict"
+            }
+            
+            # Detailed error analysis
+            if execution_result.get('error'):
+                results["error_analysis"]["error_type"] = execution_result.get('error')
+                results["error_analysis"]["error_message"] = execution_result.get('message', '')
+                results["error_analysis"]["debug_info"] = execution_result.get('debug_info', {})
+                
+                error_type = execution_result.get('error')
+                if error_type == "execution_error":
+                    results["recommendations"].append("Check full error logs and stack traces for execution details")
+                elif error_type == "session_init_failed":
+                    results["recommendations"].append("MCP session initialization failed - check server status")
+                elif error_type == "mcp_protocol_error":
+                    results["recommendations"].append("MCP protocol error - check server compatibility")
+                elif "timeout" in error_type:
+                    results["recommendations"].append("Increase timeout values or check performance")
+            else:
+                results["error_analysis"]["status"] = "No errors detected in test execution"
+                
+        else:
+            results["production_execution"]["error"] = "AtlassianTool not available"
+            results["recommendations"].append("Check AtlassianTool initialization and credentials")
+            
+    except asyncio.TimeoutError:
+        results["production_execution"]["error"] = "Execution timeout (30s)"
+        results["recommendations"].append("Investigate performance bottlenecks causing timeouts")
+    except Exception as e:
+        results["production_execution"]["error"] = str(e)
+        results["production_execution"]["exception_type"] = type(e).__name__
+        results["recommendations"].append(f"Debug {type(e).__name__} exception in production execution")
+    
+    # Generate final recommendations
+    if not results["recommendations"]:
+        results["recommendations"].append("No issues detected - system appears operational")
+    
+    results["summary"] = {
+        "total_issues": len(results["recommendations"]),
+        "environment_ok": results["environment_check"].get("summary") == "All variables present",
+        "mcp_ok": results["mcp_connectivity"].get("health", {}).get("success", False),
+        "auth_ok": all(
+            auth.get("success", False) 
+            for auth in results["atlassian_auth"].values() 
+            if isinstance(auth, dict) and "success" in auth
+        ),
+        "execution_ok": results["production_execution"].get("test_result", {}).get("success", False)
+    }
+    
+    return results
+
+@app.post("/admin/run-deployment-diagnosis")
+async def run_deployment_diagnosis():
+    """Admin endpoint to run the external deployment diagnosis script"""
+    try:
+        # Run the deployment diagnosis script
+        import subprocess
+        import sys
+        
+        result = subprocess.run(
+            [sys.executable, "deployment_diagnosis.py"],
+            capture_output=True,
+            text=True,
+            timeout=120
+        )
+        
+        return {
+            "exit_code": result.returncode,
+            "stdout": result.stdout,
+            "stderr": result.stderr,
+            "success": result.returncode == 0
+        }
+        
+    except subprocess.TimeoutExpired:
+        return {
+            "error": "Diagnosis script timed out after 120 seconds",
+            "success": False
+        }
+    except Exception as e:
+        return {
+            "error": f"Failed to run diagnosis script: {str(e)}",
+            "success": False
+        }
+
 if __name__ == "__main__":
     # Get port from environment for Cloud Run deployment
     port = int(os.environ.get("PORT", 5000))

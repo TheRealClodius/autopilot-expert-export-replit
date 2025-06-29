@@ -316,10 +316,36 @@ class AtlassianTool:
                     
         except Exception as e:
             error_msg = f"Error executing MCP tool {tool_name}: {str(e)}"
+            
+            # Enhanced error logging for production debugging
+            import traceback
+            full_traceback = traceback.format_exc()
+            
+            error_data = {
+                'tool_name': tool_name,
+                'arguments': arguments,
+                'error_message': error_msg,
+                'exception_type': type(e).__name__,
+                'stack_trace': full_traceback,
+                'mcp_server_url': self.mcp_server_url,
+                'tool_available': self.available
+            }
+            
+            logger.error(f"ATLASSIAN_TOOL_ERROR: {json.dumps(error_data, default=str)}")
             logger.error(error_msg)
+            logger.error(f"Full traceback: {full_traceback}")
+            
             return {
                 "error": "execution_error",
-                "message": error_msg
+                "message": error_msg,
+                "exception_type": type(e).__name__,
+                "debug_info": {
+                    "tool_name": tool_name,
+                    "arguments": arguments,
+                    "mcp_server_url": self.mcp_server_url,
+                    "tool_available": self.available,
+                    "stack_trace": full_traceback
+                }
             }
     
     async def list_tools(self) -> List[str]:

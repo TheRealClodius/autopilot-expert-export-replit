@@ -125,20 +125,36 @@ class ProductionLogger:
         
         self.active_traces[trace_id].steps.append(step)
         
-        # Log to production logs
-        log_msg = f"{component}.{action}"
+        # Enhanced production logging with structured data
+        log_data = {
+            "trace_id": trace_id,
+            "component": component,
+            "action": action,
+            "step_type": step_type,
+            "data": data
+        }
+        
+        if duration_ms:
+            log_data["duration_ms"] = duration_ms
+        if error:
+            log_data["error"] = error
+            log_data["stack_trace"] = traceback.format_exc() if error else None
+        
+        # Log structured JSON for production debugging
+        logger.info(f"PRODUCTION_STEP: {json.dumps(log_data, default=str)}")
+        
+        # Also log human-readable format
+        log_msg = f"[{trace_id}] {component}.{action}"
         if duration_ms:
             log_msg += f" ({duration_ms:.1f}ms)"
         if error:
-            log_msg += f" ERROR: {error[:100]}"
+            log_msg += f" ERROR: {error[:200]}"
+            logger.error(log_msg)
+        else:
+            logger.info(log_msg)
         
         # Set trace context for logging
         self._current_trace_id = trace_id
-        
-        if error:
-            logger.error(log_msg, extra={'trace_id': trace_id})
-        else:
-            logger.info(log_msg, extra={'trace_id': trace_id})
     
     def log_orchestrator_reasoning(self, trace_id: str, reasoning_chunks: List[str]):
         """Log orchestrator reasoning process"""
