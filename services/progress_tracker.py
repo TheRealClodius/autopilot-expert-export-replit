@@ -329,7 +329,7 @@ class StreamingReasoningEmitter:
     
     async def emit_reasoning_chunk(self, chunk_text: str, chunk_metadata: Optional[Dict[str, Any]] = None):
         """
-        Process and emit actual streaming content from Gemini model
+        Process and emit actual streaming content from Gemini model with intelligent filtering
         
         Args:
             chunk_text: Text chunk from streaming response (raw model output)
@@ -340,6 +340,10 @@ class StreamingReasoningEmitter:
             clean_text = chunk_text.strip()
             if not clean_text:
                 return
+            
+            # Filter out technical artifacts that users shouldn't see
+            if self._should_filter_chunk(clean_text):
+                return
                 
             # Apply debouncing to prevent message spam
             now = datetime.now()
@@ -347,11 +351,13 @@ class StreamingReasoningEmitter:
                 (now - self.last_reasoning_time).total_seconds() < self.reasoning_debounce_seconds):
                 return
             
-            # Display the actual streaming content from the model
-            # Use italic formatting to distinguish from regular responses
-            formatted_message = f"_{clean_text}_"
+            # Create user-friendly reasoning summary if needed
+            user_friendly_text = self._make_user_friendly(clean_text)
             
-            # Emit the actual reasoning/thinking content as progress
+            # Display the cleaned streaming content from the model
+            formatted_message = f"_{user_friendly_text}_"
+            
+            # Emit the reasoning content as progress
             await self.tracker.emit_progress(
                 ProgressEventType.REASONING,
                 "streaming",
@@ -361,6 +367,99 @@ class StreamingReasoningEmitter:
                 
         except Exception as e:
             logger.error(f"Error emitting reasoning chunk: {e}")
+    
+    def _should_filter_chunk(self, text: str) -> bool:
+        """
+        Determine if a chunk should be filtered out (not shown to users)
+        
+        Args:
+            text: Text chunk to evaluate
+            
+        Returns:
+            bool: True if chunk should be filtered out
+        """
+        # Filter out technical artifacts
+        filters = [
+            # JSON-like structures
+            text.startswith('{') and text.endswith('}'),
+            text.startswith('[') and text.endswith(']'),
+            '{"' in text and '"}' in text,
+            
+            # Code-like patterns
+            text.startswith('```'),
+            '=' in text and len(text.split('=')) > 2,
+            
+            # Very short meaningless chunks
+            len(text) < 3,
+            
+            # Only punctuation or whitespace
+            all(c in '.,!?;: \t\n-_()[]{}' for c in text),
+            
+            # Technical keywords that aren't user-friendly
+            any(keyword in text.lower() for keyword in [
+                'json', 'api', 'error', 'debug', 'trace', 'function',
+                'variable', 'array', 'object', 'null', 'undefined'
+            ])
+        ]
+        
+        return any(filters)
+    
+    def _make_user_friendly(self, text: str) -> str:
+        """
+        Convert technical reasoning into user-friendly language
+        
+        Args:
+            text: Original text chunk
+            
+        Returns:
+            str: User-friendly version
+        """
+        # If it's already user-friendly, return as-is
+        if self._is_user_friendly_already(text):
+            return text
+        
+        # Create natural language reasoning summaries
+        lower_text = text.lower()
+        
+        # Map technical patterns to user-friendly descriptions
+        if any(word in lower_text for word in ['analyzing', 'analysis', 'examine']):
+            return "Analyzing your request"
+        elif any(word in lower_text for word in ['considering', 'thinking', 'pondering']):
+            return "Considering the best approach" 
+        elif any(word in lower_text for word in ['searching', 'looking', 'finding']):
+            return "Searching for relevant information"
+        elif any(word in lower_text for word in ['planning', 'preparing', 'organizing']):
+            return "Planning my response"
+        elif any(word in lower_text for word in ['understanding', 'interpreting', 'processing']):
+            return "Understanding your question"
+        elif any(word in lower_text for word in ['generating', 'creating', 'crafting']):
+            return "Crafting your answer"
+        else:
+            # For unclear technical content, provide a generic but useful message
+            return "Working on your request"
+    
+    def _is_user_friendly_already(self, text: str) -> bool:
+        """
+        Check if text is already user-friendly (natural language)
+        
+        Args:
+            text: Text to check
+            
+        Returns:
+            bool: True if already user-friendly
+        """
+        # Check for natural language patterns
+        natural_patterns = [
+            text.startswith(("I am", "I'm", "Let me", "I need to", "I will")),
+            any(word in text.lower() for word in [
+                "analyzing", "considering", "thinking", "working on",
+                "looking at", "examining", "planning", "preparing"
+            ]),
+            len(text.split()) >= 3,  # More than 2 words suggests natural language
+            not any(c in text for c in '{}[]"=<>()'),  # No technical characters
+        ]
+        
+        return any(natural_patterns)
     
     def _is_reasoning_content(self, text: str) -> bool:
         """
