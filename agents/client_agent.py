@@ -320,8 +320,12 @@ class ClientAgent:
                     success = result.get("success", False)
                     
                     if success:
-                        # MCP results are stored directly in the result array
-                        atlassian_data = result.get("result", [])
+                        # MCP results have nested structure: result.result.result (array of pages/issues)
+                        result_wrapper = result.get("result", {})
+                        if isinstance(result_wrapper, dict) and result_wrapper.get("success"):
+                            atlassian_data = result_wrapper.get("result", [])
+                        else:
+                            atlassian_data = result_wrapper if isinstance(result_wrapper, list) else []
                         prompt_parts.append(f"  {i}. {action_type.replace('_', ' ').title()}: SUCCESS")
                         
                         # Handle MCP result format for different tools
