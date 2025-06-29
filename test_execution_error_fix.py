@@ -1,102 +1,212 @@
 #!/usr/bin/env python3
 """
-Test the execution error fix for Atlassian MCP integration.
-Verify orchestrator can now execute MCP actions without getting "execution error".
+Test the execution error fix with intelligent retry logic
 """
 
 import asyncio
-import sys
-import os
-sys.path.append(os.path.dirname(os.path.abspath(__file__)))
-
-from agents.orchestrator_agent import OrchestratorAgent
+import logging
 from services.memory_service import MemoryService
+from agents.orchestrator_agent import OrchestratorAgent
 from models.schemas import ProcessedMessage
 from datetime import datetime
-import logging
 
+# Set up logging to see detailed execution
 logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 async def test_execution_error_fix():
-    """Test the fixed execution error for Atlassian actions"""
-    print("🔧 TESTING EXECUTION ERROR FIX")
+    """Test the execution error fix with the exact scenario that was failing"""
+    
+    print("🧪 TESTING EXECUTION ERROR FIX")
     print("=" * 50)
     
     try:
-        # Initialize services
+        # Initialize orchestrator
+        print("1️⃣ Initializing orchestrator with retry logic...")
         memory_service = MemoryService()
         orchestrator = OrchestratorAgent(memory_service)
         
-        # Create test message asking for Autopilot pages
+        print(f"   Atlassian tool available: {orchestrator.atlassian_tool.available}")
+        
+        # Test the exact scenario from your production logs
+        print("\n2️⃣ Testing the exact query that was failing...")
+        
+        # Create the exact ProcessedMessage from your trace
         test_message = ProcessedMessage(
-            text="Find Autopilot for Everyone pages",
-            user_id="U_TEST_USER",
-            user_name="TestUser",
+            text="any idea where I can find the last ticket created that is related to Autopilot for Everyone?",
+            user_id="U06JC1TABL3",
+            user_name="testuser",
+            user_email="test@uipath.com",
+            user_display_name="Test User", 
             user_first_name="Test",
-            user_display_name="Test User",
-            user_title="Software Engineer",
-            user_department="Engineering",
-            channel_id="C_TEST_CHANNEL",
-            channel_name="test-channel",
-            message_ts=str(int(datetime.now().timestamp())),
-            thread_ts=None,
-            is_dm=False,
-            thread_context=None
+            user_title="",
+            user_department="",
+            channel_id="D092WU3A3A9",
+            channel_name="test-dm",
+            is_dm=True,
+            is_mention=False,
+            thread_ts="1751214317.726569",
+            message_ts="1751214360.170409"
         )
         
-        print(f"🎯 Test Query: '{test_message.text}'")
-        print()
+        print(f"   Query: {test_message.text}")
         
-        # Test direct action execution that was previously failing
-        print("1️⃣ Testing direct MCP action execution...")
+        # Process the full query
+        start_time = datetime.now()
+        response = await orchestrator.process_query(test_message)
+        end_time = datetime.now()
         
-        # This is the exact format the orchestrator now generates
-        test_action = {
-            "mcp_tool": "confluence_search",
-            "arguments": {
-                "query": "autopilot for everyone",
-                "limit": 5
-            }
-        }
+        processing_time = (end_time - start_time).total_seconds()
         
-        print(f"   Action format: {test_action}")
+        print(f"\n📊 PROCESSING RESULTS:")
+        print("=" * 40)
+        print(f"Processing time: {processing_time:.2f} seconds")
         
-        # Execute the action directly through the fixed method
-        result = await orchestrator._execute_single_tool_action("atlassian", test_action)
-        
-        if result and not result.get("error"):
-            print("✅ SUCCESS: Direct MCP action execution completed")
+        if response:
+            response_text = response.get('text', '')
             
-            # Check result structure
-            if isinstance(result, dict) and result.get("success"):
-                data = result.get("result", [])
-                if isinstance(data, list) and len(data) > 0:
-                    print(f"   Retrieved {len(data)} Autopilot pages")
-                    for i, page in enumerate(data[:3], 1):
-                        title = page.get("title", "No title") if isinstance(page, dict) else str(page)
-                        print(f"   Page {i}: {title}")
-                else:
-                    print(f"   Result structure: {type(data)}")
+            # Check for specific error indicators
+            error_indicators = [
+                "execution error", 
+                "execution_error",
+                "FAILED",
+                "encountered an issue",
+                "cannot access that information",
+                "Sorry, I couldn't process"
+            ]
+            
+            has_error = any(indicator.lower() in response_text.lower() for indicator in error_indicators)
+            
+            if has_error:
+                print("❌ Response contains error indicators:")
+                print(f"   Full response: {response_text}")
+                return False
             else:
-                print(f"   Raw result: {str(result)[:200]}...")
-            
-            return True
-            
+                print("✅ Response looks healthy!")
+                print(f"   Response length: {len(response_text)} characters")
+                print(f"   Response preview: {response_text[:200]}...")
+                
+                # Check for positive indicators
+                positive_indicators = [
+                    "PLTPD-3413",  # The specific ticket we should find
+                    "Autopilot for everyone",
+                    "Alexandre Blain",  # The assignee
+                    "ticket",
+                    "created"
+                ]
+                
+                found_indicators = [indicator for indicator in positive_indicators 
+                                  if indicator.lower() in response_text.lower()]
+                
+                print(f"   Found positive indicators: {found_indicators}")
+                
+                if found_indicators:
+                    print("✅ Response contains expected content!")
+                    return True
+                else:
+                    print("⚠️ Response doesn't contain expected ticket information")
+                    return False
         else:
-            print(f"❌ EXECUTION ERROR STILL EXISTS: {result}")
+            print("❌ No response generated")
             return False
             
     except Exception as e:
-        print(f"❌ EXCEPTION: {e}")
+        print(f"❌ Error during test: {e}")
         import traceback
-        traceback.print_exc()
+        print(f"Full traceback: {traceback.format_exc()}")
         return False
 
-if __name__ == "__main__":
-    success = asyncio.run(test_execution_error_fix())
-    if success:
-        print("\n🎉 EXECUTION ERROR FIX VERIFIED")
-        print("   The orchestrator can now execute Atlassian MCP actions successfully!")
+async def test_mcp_retry_logic():
+    """Test the new MCP retry logic specifically"""
+    
+    print("\n🔄 TESTING MCP RETRY LOGIC")
+    print("=" * 50)
+    
+    try:
+        # Initialize orchestrator
+        memory_service = MemoryService()
+        orchestrator = OrchestratorAgent(memory_service)
+        
+        # Test the exact MCP action that was failing
+        mcp_action = {
+            'mcp_tool': 'jira_search', 
+            'arguments': {
+                'jql': 'text ~ "Autopilot for Everyone" ORDER BY created DESC', 
+                'limit': 1
+            }
+        }
+        
+        print(f"Testing MCP action: {mcp_action}")
+        
+        # Test the new retry method
+        result = await orchestrator._execute_mcp_action_with_retry(mcp_action)
+        
+        print(f"\n📊 RETRY LOGIC RESULT:")
+        print("=" * 30)
+        
+        if result:
+            if result.get("error"):
+                print(f"❌ Error: {result.get('error')}")
+                print(f"   Success: {result.get('success', False)}")
+                return False
+            else:
+                print(f"✅ Success: {result.get('success', True)}")
+                print(f"   Result type: {type(result.get('result'))}")
+                
+                # Check if we got actual ticket data
+                mcp_result = result.get("result", {})
+                if isinstance(mcp_result, dict) and "issues" in mcp_result:
+                    issues = mcp_result["issues"]
+                    print(f"   Found {len(issues)} issues")
+                    
+                    if issues:
+                        first_issue = issues[0]
+                        print(f"   First issue: {first_issue.get('key')} - {first_issue.get('summary')}")
+                    
+                    return True
+                else:
+                    print(f"   Unexpected result format: {mcp_result}")
+                    return False
+        else:
+            print("❌ No result returned")
+            return False
+            
+    except Exception as e:
+        print(f"❌ Error testing retry logic: {e}")
+        import traceback
+        print(f"Full traceback: {traceback.format_exc()}")
+        return False
+
+async def main():
+    """Run comprehensive test of the execution error fix"""
+    
+    # Test 1: Full query processing
+    print("🎯 TESTING EXECUTION ERROR FIX")
+    print("=" * 60)
+    
+    full_test_success = await test_execution_error_fix()
+    
+    # Test 2: Specific retry logic
+    retry_test_success = await test_mcp_retry_logic()
+    
+    # Summary
+    print(f"\n🏁 TEST SUMMARY")
+    print("=" * 30)
+    print(f"Full query test: {'✅ PASS' if full_test_success else '❌ FAIL'}")
+    print(f"Retry logic test: {'✅ PASS' if retry_test_success else '❌ FAIL'}")
+    
+    if full_test_success and retry_test_success:
+        print(f"\n🎉 ALL TESTS PASSED!")
+        print("The execution error fix is working correctly.")
+        print("Your Slack bot should now handle MCP tool calls reliably.")
     else:
-        print("\n💥 EXECUTION ERROR STILL EXISTS")
-        print("   Further investigation needed.")
+        print(f"\n⚠️ SOME TESTS FAILED")
+        print("The execution error fix may need additional adjustments.")
+        
+        if not full_test_success:
+            print("- Full query processing still has issues")
+        if not retry_test_success:
+            print("- MCP retry logic needs debugging")
+
+if __name__ == "__main__":
+    asyncio.run(main())

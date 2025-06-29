@@ -335,18 +335,34 @@ class AtlassianTool:
             logger.error(error_msg)
             logger.error(f"Full traceback: {full_traceback}")
             
-            return {
-                "error": "execution_error",
-                "message": error_msg,
-                "exception_type": type(e).__name__,
-                "debug_info": {
-                    "tool_name": tool_name,
-                    "arguments": arguments,
-                    "mcp_server_url": self.mcp_server_url,
-                    "tool_available": self.available,
-                    "stack_trace": full_traceback
+            # For specific connection-related errors, provide more helpful error messages
+            if "Connection" in str(e) or "timeout" in str(e).lower():
+                return {
+                    "error": "connection_timeout",
+                    "message": "MCP server connection timed out. This may be due to deployment environment network conditions.",
+                    "exception_type": type(e).__name__,
+                    "retry_suggested": True
                 }
-            }
+            elif "handshake" in str(e).lower() or "initialized" in str(e).lower():
+                return {
+                    "error": "mcp_handshake_failed",
+                    "message": "MCP protocol handshake failed. The server may be starting up.",
+                    "exception_type": type(e).__name__,
+                    "retry_suggested": True
+                }
+            else:
+                return {
+                    "error": "execution_error",
+                    "message": error_msg,
+                    "exception_type": type(e).__name__,
+                    "debug_info": {
+                        "tool_name": tool_name,
+                        "arguments": arguments,
+                        "mcp_server_url": self.mcp_server_url,
+                        "tool_available": self.available,
+                        "stack_trace": full_traceback
+                    }
+                }
     
     async def list_tools(self) -> List[str]:
         """List available MCP tools"""

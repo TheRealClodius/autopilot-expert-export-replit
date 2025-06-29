@@ -494,9 +494,9 @@ Current Query: "{message.text}"
                             await emit_processing(self.progress_tracker, "atlassian_action", f"processing {action_type} request")
                         
                         try:
-                            # Direct MCP execution (bypass complex retry logic for MCP tools)
+                            # Direct MCP execution with intelligent retry for connection issues
                             result = await asyncio.wait_for(
-                                self._execute_mcp_action_direct(action),
+                                self._execute_mcp_action_with_retry(action),
                                 timeout=60.0  # Direct MCP timeout
                             )
                             
@@ -823,6 +823,58 @@ Current Query: "{message.text}"
         except Exception as e:
             logger.error(f"Direct MCP execution failed: {e}")
             return {"error": f"MCP execution error: {str(e)}", "success": False}
+    
+    async def _execute_mcp_action_with_retry(self, action: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Execute MCP action with intelligent retry for connection/handshake issues.
+        Handles deployment environment instability gracefully.
+        """
+        max_retries = 3
+        base_delay = 1.0  # Start with 1 second delay
+        
+        for attempt in range(max_retries):
+            try:
+                result = await self._execute_mcp_action_direct(action)
+                
+                # Check if we got a connection-related error that should be retried
+                if result and result.get("error"):
+                    error_type = result.get("error")
+                    
+                    # Retry on connection timeouts and handshake failures
+                    if (error_type in ["connection_timeout", "mcp_handshake_failed"] and 
+                        result.get("retry_suggested") and 
+                        attempt < max_retries - 1):
+                        
+                        # Calculate exponential backoff delay
+                        delay = base_delay * (2 ** attempt)
+                        
+                        if self.progress_tracker:
+                            await emit_retry(self.progress_tracker, "mcp_retry", 
+                                           f"retrying MCP connection in {delay:.1f}s (attempt {attempt + 2}/{max_retries})")
+                        
+                        # Wait before retry
+                        await asyncio.sleep(delay)
+                        continue
+                
+                # Return result (success or non-retryable error)
+                return result
+                
+            except Exception as e:
+                logger.error(f"MCP retry attempt {attempt + 1} failed: {e}")
+                
+                # If this was the last attempt, return the error
+                if attempt == max_retries - 1:
+                    return {"error": f"MCP execution failed after {max_retries} attempts: {str(e)}", "success": False}
+                
+                # Otherwise, wait and retry
+                delay = base_delay * (2 ** attempt)
+                if self.progress_tracker:
+                    await emit_retry(self.progress_tracker, "mcp_retry", 
+                                   f"retrying after error in {delay:.1f}s (attempt {attempt + 2}/{max_retries})")
+                await asyncio.sleep(delay)
+        
+        # This should never be reached, but just in case
+        return {"error": "Maximum retries exceeded", "success": False}
     
     async def _execute_single_tool_action(self, tool_name: str, action: Dict[str, Any]) -> Dict[str, Any]:
         """Execute a single tool action without retry logic"""
