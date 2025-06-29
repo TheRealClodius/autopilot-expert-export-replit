@@ -13,7 +13,37 @@ async def test_mcp_atlassian():
     
     try:
         async with httpx.AsyncClient(timeout=30.0) as client:
-            # Test 1: Check available tools
+            # Test 1: Check server capabilities first
+            print("🔍 Testing server initialization...")
+            init_request = {
+                "jsonrpc": "2.0",
+                "id": 0,
+                "method": "initialize",
+                "params": {
+                    "protocolVersion": "2024-11-05",
+                    "capabilities": {"tools": {}},
+                    "clientInfo": {"name": "test-client", "version": "1.0.0"}
+                }
+            }
+            
+            init_response = await client.post(f"{mcp_url}/mcp", json=init_request)
+            print(f"Init status: {init_response.status_code}")
+            if init_response.status_code == 200:
+                try:
+                    init_data = init_response.json()
+                    print(f"Server info: {init_data.get('result', {}).get('serverInfo', {}).get('name', 'Unknown')}")
+                except Exception as e:
+                    print(f"Error parsing init response: {e}")
+                    print(f"Raw response: {init_response.text[:200]}")
+            else:
+                print(f"Init failed: {init_response.text}")
+            
+            # Send initialized notification
+            notify_request = {"jsonrpc": "2.0", "method": "notifications/initialized", "params": {}}
+            notify_response = await client.post(f"{mcp_url}/mcp", json=notify_request)
+            print(f"Notify status: {notify_response.status_code}")
+            
+            # Test 2: Check available tools
             print("🛠️ Testing available tools...")
             tools_request = {
                 "jsonrpc": "2.0",
