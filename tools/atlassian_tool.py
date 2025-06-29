@@ -23,7 +23,7 @@ class AtlassianTool:
     
     def __init__(self):
         """Initialize HTTP-based Atlassian tool"""
-        self.mcp_server_url = "http://localhost:8001"
+        self.mcp_server_url = settings.MCP_SERVER_URL
         self.sse_endpoint = f"{self.mcp_server_url}/sse"
         self.session_id = None
         self.messages_endpoint = None
