@@ -34,7 +34,7 @@ async def test_liz_holz():
     
     try:
         result = await outlook_tool.check_availability(
-            attendee_emails=["liz.holz@company.com"],
+            email_addresses=["liz.holz@company.com"],
             start_time=start_time,
             end_time=end_time
         )
@@ -44,20 +44,29 @@ async def test_liz_holz():
         print(f"⚠️ Availability check error: {str(e)}")
         print(f"📝 This is expected if calendar permissions aren't granted yet")
     
-    # Test 2: Try to get calendar info
-    print("\n📋 Test 2: Getting calendar information for Liz Holz")
+    # Test 2: Try a real email format
+    print("\n📋 Test 2: Testing with different email formats")
     
-    try:
-        result = await outlook_tool.get_calendar(
-            attendee_emails=["liz.holz@company.com"],
-            start_time=start_time,
-            end_time=end_time
-        )
-        print(f"📅 Calendar result: {result}")
-        
-    except Exception as e:
-        print(f"⚠️ Calendar access error: {str(e)}")
-        print(f"📝 This is expected if calendar permissions aren't granted yet")
+    test_emails = [
+        "liz.holz@company.com",
+        "lholz@company.com", 
+        "elizabeth.holz@company.com"
+    ]
+    
+    for email in test_emails:
+        print(f"🔍 Testing email: {email}")
+        try:
+            result = await outlook_tool.check_availability(
+                email_addresses=[email],
+                start_time=start_time,
+                end_time=end_time
+            )
+            print(f"✅ Success with {email}: {result}")
+            break
+            
+        except Exception as e:
+            print(f"❌ Failed with {email}: {str(e)}")
+            continue
     
     print("\n✨ Test completed!")
 
