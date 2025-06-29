@@ -791,18 +791,6 @@ Current Query: "{message.text}"
         if not mcp_tool:
             return {"error": "No mcp_tool specified in action"}
         
-        # Create LangSmith trace for MCP call
-        trace_id = None
-        if self.trace_manager:
-            try:
-                trace_id = self.trace_manager.log_tool_operation(
-                    f"mcp_{mcp_tool}",
-                    arguments,
-                    context=f"Direct MCP execution: {mcp_tool}"
-                )
-            except Exception as e:
-                logger.warning(f"Failed to create LangSmith trace for MCP call: {e}")
-        
         try:
             # Direct call to Atlassian tool using working pattern
             import time
@@ -810,16 +798,18 @@ Current Query: "{message.text}"
             result = await self.atlassian_tool.execute_mcp_tool(mcp_tool, arguments)
             duration_ms = (time.time() - start_time) * 1000
             
-            # Complete LangSmith trace
-            if trace_id and self.trace_manager:
+            # Log completed MCP operation to LangSmith
+            if self.trace_manager:
                 try:
-                    self.trace_manager.complete_tool_operation(
-                        trace_id,
-                        result if result else {"error": "No result from MCP"},
-                        success=bool(result and result.get("success"))
+                    await self.trace_manager.log_mcp_tool_operation(
+                        mcp_tool,
+                        arguments,
+                        result if result else None,
+                        duration_ms,
+                        error=None if result and result.get("success") else result.get("error", "No result from MCP") if result else "No result from MCP"
                     )
                 except Exception as e:
-                    logger.warning(f"Failed to complete LangSmith trace: {e}")
+                    logger.warning(f"Failed to log completed MCP trace: {e}")
             
             # Log MCP call to production logger
             try:
@@ -847,13 +837,15 @@ Current Query: "{message.text}"
         except Exception as e:
             logger.error(f"Direct MCP execution failed: {e}")
             
-            # Complete LangSmith trace with error
-            if trace_id and self.trace_manager:
+            # Log failed MCP operation to LangSmith
+            if self.trace_manager:
                 try:
-                    self.trace_manager.complete_tool_operation(
-                        trace_id,
-                        {"error": str(e)},
-                        success=False
+                    await self.trace_manager.log_mcp_tool_operation(
+                        mcp_tool,
+                        arguments,
+                        None,
+                        0,
+                        error=str(e)
                     )
                 except Exception:
                     pass
@@ -959,11 +951,27 @@ Current Query: "{message.text}"
                     return {"error": f"Unknown Atlassian action type: {action_type}"}
         
         elif tool_name == "vector_search":
+            query = action.get("query", "")
+            top_k = action.get("top_k", 5)
+            
+            # Execute vector search
             results = await self.vector_tool.search(
-                query=action.get("query", ""),
-                top_k=action.get("top_k", 5),
+                query=query,
+                top_k=top_k,
                 filters=action.get("filters", {})
             )
+            
+            # Log vector search to LangSmith
+            if self.trace_manager and results:
+                try:
+                    await self.trace_manager.log_vector_search(
+                        query,
+                        results,
+                        search_type="semantic_similarity"
+                    )
+                except Exception as e:
+                    logger.warning(f"Failed to log vector search trace: {e}")
+            
             # Vector search returns a list, but we need to wrap it as a dict for consistency
             return {"results": results, "success": True} if results else {"results": [], "success": True}
         
