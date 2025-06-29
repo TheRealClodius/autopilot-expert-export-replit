@@ -30,8 +30,8 @@ async def test_jira_mcp_debug():
         
         print("✅ Orchestrator initialized")
         
-        # Test Jira search
-        print("\n2️⃣ Testing Jira search...")
+        # Test Jira search using the single Atlassian tool
+        print("\n2️⃣ Testing Jira search via Atlassian tool...")
         jira_action = {
             "mcp_tool": "jira_search",
             "arguments": {
