@@ -13,6 +13,14 @@ from typing import Dict, Any, Optional, List
 import httpx
 from config import settings
 
+# Import trace manager for LangSmith monitoring
+try:
+    from services.trace_manager import TraceManager
+    TRACE_MANAGER_AVAILABLE = True
+except ImportError:
+    TRACE_MANAGER_AVAILABLE = False
+    TraceManager = None
+
 logger = logging.getLogger(__name__)
 
 class AtlassianTool:
@@ -21,12 +29,20 @@ class AtlassianTool:
     Connects to running MCP server via SSE transport.
     """
     
-    def __init__(self):
+    def __init__(self, trace_manager=None):
         """Initialize HTTP-based Atlassian tool"""
         self.mcp_server_url = settings.MCP_SERVER_URL
         self.sse_endpoint = f"{self.mcp_server_url}/mcp/sse"
         self.session_id = None
         self.messages_endpoint = None
+        
+        # Initialize trace manager for LangSmith monitoring
+        if trace_manager and TRACE_MANAGER_AVAILABLE:
+            self.trace_manager = trace_manager
+        elif TRACE_MANAGER_AVAILABLE:
+            self.trace_manager = TraceManager()
+        else:
+            self.trace_manager = None
         self.available_tools = [
             'jira_search',
             'jira_get', 
@@ -112,6 +128,9 @@ class AtlassianTool:
                 "error": "Atlassian credentials not configured",
                 "message": "Please configure ATLASSIAN_* environment variables"
             }
+        
+        # Start timing for LangSmith trace
+        start_time = asyncio.get_event_loop().time()
         
         try:
             logger.debug(f"Executing MCP tool: {tool_name} with args: {arguments}")

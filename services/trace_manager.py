@@ -400,6 +400,66 @@ class TraceManager:
             logger.error(f"Failed to log vector search: {e}")
             return None
     
+    async def log_mcp_tool_operation(self, tool_name: str, arguments: Dict[str, Any], 
+                                   results: Optional[Dict[str, Any]] = None, 
+                                   duration_ms: float = None, 
+                                   error: Optional[str] = None) -> Optional[str]:
+        """Log MCP tool operation with detailed tracing"""
+        if not self.is_enabled() or not self.current_trace_id:
+            return None
+            
+        try:
+            mcp_operation_id = str(uuid.uuid4())
+            end_time = datetime.now()
+            start_time = end_time - timedelta(milliseconds=duration_ms or 0)
+            
+            # Prepare inputs and outputs
+            inputs = {
+                "tool_name": tool_name,
+                "arguments": arguments,
+                "mcp_protocol": "2024-11-05"
+            }
+            
+            outputs = {}
+            if results:
+                outputs["results"] = results
+                if isinstance(results, list):
+                    outputs["results_count"] = len(results)
+                elif isinstance(results, dict) and "result" in results:
+                    if isinstance(results["result"], list):
+                        outputs["results_count"] = len(results["result"])
+            
+            if duration_ms:
+                outputs["duration_ms"] = duration_ms
+                
+            if error:
+                outputs["error"] = error
+            
+            # Create MCP tool run in LangSmith
+            self.client.create_run(
+                id=mcp_operation_id,
+                name=f"mcp_atlassian_{tool_name}",
+                inputs=inputs,
+                outputs=outputs,
+                run_type="tool",  # Use "tool" type for tool operations
+                project_name=self.settings.LANGSMITH_PROJECT,
+                start_time=start_time,
+                end_time=end_time,
+                parent_run_id=self.current_trace_id,
+                tags=["mcp", "atlassian", tool_name, "tool-execution"],
+                extra={
+                    "mcp_tool": tool_name,
+                    "protocol_version": "2024-11-05",
+                    "server_type": "atlassian"
+                }
+            )
+            
+            logger.debug(f"Logged MCP tool operation: {mcp_operation_id}")
+            return mcp_operation_id
+                
+        except Exception as e:
+            logger.error(f"Failed to log MCP tool operation: {e}")
+            return None
 
 
 
