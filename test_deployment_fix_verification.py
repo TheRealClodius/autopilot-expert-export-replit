@@ -1,205 +1,263 @@
 #!/usr/bin/env python3
 """
-Test Deployment Fix Verification
-
-This script verifies that the deployment-aware MCP URL configuration fix
-resolves the production "execution error" issues.
+Test deployment fix verification - Comprehensive testing that both servers start correctly
 """
 
 import asyncio
-import os
 import aiohttp
-from config import settings
-from tools.atlassian_tool import AtlassianTool
-from agents.orchestrator_agent import OrchestratorAgent
-from services.trace_manager import TraceManager
-from models.schemas import ProcessedMessage
+import subprocess
+import time
+import os
+import sys
+from datetime import datetime
 
 
-async def test_deployment_fix():
-    """Test the deployment fix thoroughly"""
+async def test_deployment_startup():
+    """Test the new deployment startup script"""
     
     print("=" * 80)
-    print("🔧 DEPLOYMENT FIX VERIFICATION TEST")
+    print("🔧 TESTING DEPLOYMENT STARTUP FIX")
     print("=" * 80)
     
-    # 1. Test Environment Detection
-    print("\n1️⃣ ENVIRONMENT DETECTION TEST")
-    print("-" * 50)
+    print("\n1️⃣ TESTING DUAL SERVER STARTUP")
+    print("-" * 60)
     
-    replit_domains = os.getenv("REPLIT_DOMAINS", "")
-    print(f"REPLIT_DOMAINS: {replit_domains}")
-    
-    is_deployment = any([
-        os.getenv("REPLIT_DEPLOYMENT") == "1",
-        os.getenv("DEPLOYMENT_ENV") == "production",
-        os.getenv("PORT") and os.getenv("PORT") != "5000",
-        "replit.app" in replit_domains,
-        "replit.dev" in replit_domains,
-        len(replit_domains) > 0 and ("riker." in replit_domains or "wolf." in replit_domains)
-    ])
-    
-    print(f"Detected as deployment: {is_deployment}")
-    print(f"Configured MCP URL: {settings.MCP_SERVER_URL}")
-    print(f"Deployment-aware MCP URL: {settings.DEPLOYMENT_AWARE_MCP_URL}")
-    
-    if is_deployment:
-        print("✅ Running in deployment environment")
-    else:
-        print("ℹ️ Running in local development environment")
-    
-    # 2. Test MCP Server Connectivity
-    print("\n2️⃣ MCP SERVER CONNECTIVITY TEST")
-    print("-" * 50)
-    
-    mcp_url = settings.DEPLOYMENT_AWARE_MCP_URL
-    health_url = f"{mcp_url}/healthz"
-    
+    # Test the new deployment startup script
     try:
-        async with aiohttp.ClientSession() as session:
-            async with session.get(health_url, timeout=10) as response:
-                if response.status == 200:
-                    print(f"✅ MCP server health check passed: {health_url}")
-                else:
-                    print(f"❌ MCP server health check failed: {response.status}")
-    except Exception as e:
-        print(f"❌ MCP server connectivity failed: {e}")
-        return False
-    
-    # 3. Test AtlassianTool Initialization
-    print("\n3️⃣ ATLASSIAN TOOL INITIALIZATION TEST")
-    print("-" * 50)
-    
-    try:
-        atlassian_tool = AtlassianTool()
-        print(f"✅ AtlassianTool initialized successfully")
-        print(f"   MCP Server URL: {atlassian_tool.mcp_server_url}")
-        print(f"   SSE Endpoint: {atlassian_tool.sse_endpoint}")
+        print("🚀 Testing start_deployment.py...")
         
-        # Verify URL matches deployment-aware setting
-        if atlassian_tool.mcp_server_url == settings.DEPLOYMENT_AWARE_MCP_URL:
-            print("✅ URL configuration matches deployment-aware setting")
-        else:
-            print(f"❌ URL mismatch: tool={atlassian_tool.mcp_server_url}, config={settings.DEPLOYMENT_AWARE_MCP_URL}")
-            return False
-            
-    except Exception as e:
-        print(f"❌ AtlassianTool initialization failed: {e}")
-        return False
-    
-    # 4. Test MCP Tool Execution
-    print("\n4️⃣ MCP TOOL EXECUTION TEST")
-    print("-" * 50)
-    
-    try:
-        result = await atlassian_tool.execute_mcp_tool("confluence_search", {
-            "query": "Autopilot deployment test",
-            "limit": 3
-        })
-        
-        if "error" in result:
-            print(f"❌ MCP tool execution failed: {result['error']}")
-            if "message" in result:
-                print(f"   Details: {result['message']}")
-            return False
-        else:
-            print("✅ MCP tool execution successful!")
-            if "result" in result and isinstance(result["result"], list):
-                print(f"   Retrieved {len(result['result'])} results")
-                for i, page in enumerate(result["result"][:2]):  # Show first 2 results
-                    title = page.get("title", "No title")
-                    space = page.get("space", {}).get("name", "Unknown space")
-                    print(f"   [{i+1}] {title} (Space: {space})")
-                    
-    except Exception as e:
-        print(f"❌ MCP tool execution exception: {e}")
-        import traceback
-        traceback.print_exc()
-        return False
-    
-    # 5. Test Orchestrator Integration
-    print("\n5️⃣ ORCHESTRATOR INTEGRATION TEST")
-    print("-" * 50)
-    
-    try:
-        trace_manager = TraceManager()
-        orchestrator = OrchestratorAgent(trace_manager=trace_manager)
-        
-        # Create test message
-        test_message = ProcessedMessage(
-            text="Can you find information about UiPath Autopilot features?",
-            user_id="U123TEST",
-            user_name="Test User",
-            user_first_name="Test",
-            user_display_name="Test User",
-            user_title="Test Engineer",
-            user_department="Testing",
-            channel_id="C123TEST",
-            channel_name="testing",
-            message_ts="1234567890.123456",
-            thread_ts=None,
-            is_dm=False,
-            is_thread_reply=False,
-            is_bot_mentioned=True
+        # Start the deployment script as a subprocess
+        process = subprocess.Popen(
+            [sys.executable, "start_deployment.py"],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            universal_newlines=True,
+            bufsize=1
         )
         
-        print("Testing orchestrator with Autopilot query...")
+        print(f"Deployment script started with PID: {process.pid}")
         
-        # Process the query
-        state_stack = await orchestrator.process_query(test_message)
+        # Give it time to start both servers
+        print("⏳ Waiting for servers to initialize...")
+        await asyncio.sleep(15)
         
-        if state_stack and "orchestrator_analysis" in state_stack:
-            analysis = state_stack["orchestrator_analysis"]
-            tools_used = analysis.get("tools_used", [])
-            
-            print(f"✅ Orchestrator processing successful!")
-            print(f"   Tools used: {tools_used}")
-            
-            # Check if atlassian_search was used
-            if any("atlassian" in tool.lower() for tool in tools_used):
-                print("✅ Atlassian tool was correctly utilized by orchestrator")
-                
-                # Check for results
-                if "search_results" in analysis:
-                    results = analysis["search_results"]
-                    if results:
-                        print(f"✅ Retrieved {len(results)} search results")
-                        first_result = results[0]
-                        print(f"   First result: {first_result.get('title', 'No title')}")
+        # Test both servers are running
+        print("\n2️⃣ VERIFYING SERVER AVAILABILITY")
+        print("-" * 60)
+        
+        async with aiohttp.ClientSession() as session:
+            # Test MCP server
+            try:
+                async with session.get("http://localhost:8001/healthz", timeout=aiohttp.ClientTimeout(total=10)) as response:
+                    if response.status == 200:
+                        print("✅ MCP server is running and responding")
+                        mcp_ready = True
                     else:
-                        print("⚠️ No search results found (may be normal)")
-                else:
-                    print("⚠️ No search results in analysis")
-            else:
-                print("❌ Atlassian tool was not used by orchestrator")
-                return False
+                        print(f"❌ MCP server returned status: {response.status}")
+                        mcp_ready = False
+            except Exception as e:
+                print(f"❌ MCP server not reachable: {e}")
+                mcp_ready = False
+            
+            # Test FastAPI server
+            try:
+                async with session.get("http://localhost:5000/health", timeout=aiohttp.ClientTimeout(total=10)) as response:
+                    if response.status == 200:
+                        result = await response.json()
+                        print("✅ FastAPI server is running and responding")
+                        print(f"   Status: {result.get('status', 'unknown')}")
+                        fastapi_ready = True
+                    else:
+                        print(f"❌ FastAPI server returned status: {response.status}")
+                        fastapi_ready = False
+            except Exception as e:
+                print(f"❌ FastAPI server not reachable: {e}")
+                fastapi_ready = False
+        
+        # Test MCP integration
+        if mcp_ready and fastapi_ready:
+            print("\n3️⃣ TESTING MCP INTEGRATION")
+            print("-" * 60)
+            
+            try:
+                async with aiohttp.ClientSession() as session:
+                    url = "http://localhost:5000/admin/test-atlassian-integration"
+                    
+                    async with session.get(url, timeout=aiohttp.ClientTimeout(total=60)) as response:
+                        if response.status == 200:
+                            result = await response.json()
+                            
+                            # Check MCP health
+                            mcp_health = result.get("mcp_health", {})
+                            if mcp_health.get("healthy"):
+                                print("✅ MCP integration working correctly")
+                                
+                                # Check tool execution
+                                tool_execution = result.get("tool_execution", {})
+                                if tool_execution.get("success"):
+                                    results = tool_execution.get("results", [])
+                                    print(f"✅ MCP tool execution successful: {len(results)} results")
+                                    
+                                    if results:
+                                        sample = results[0]
+                                        title = sample.get("title", "No title")
+                                        print(f"   Sample result: {title}")
+                                        
+                                        integration_success = True
+                                    else:
+                                        print("⚠️ MCP executed but no results returned")
+                                        integration_success = True  # Still working
+                                else:
+                                    error = tool_execution.get("error", "Unknown error")
+                                    print(f"❌ MCP tool execution failed: {error}")
+                                    integration_success = False
+                            else:
+                                print(f"❌ MCP integration failed: {mcp_health}")
+                                integration_success = False
+                        else:
+                            print(f"❌ Integration test failed: {response.status}")
+                            integration_success = False
+            except Exception as e:
+                print(f"❌ Integration test exception: {e}")
+                integration_success = False
         else:
-            print("❌ Orchestrator processing failed - no state stack generated")
+            print("\n⏸️ Skipping integration test - servers not ready")
+            integration_success = False
+        
+        # Test production scenario
+        if mcp_ready and fastapi_ready and integration_success:
+            print("\n4️⃣ TESTING PRODUCTION SCENARIO")
+            print("-" * 60)
+            
+            # Simulate the exact failing Slack webhook
+            slack_payload = {
+                "type": "event_callback",
+                "event": {
+                    "type": "message",
+                    "text": "What are the latest Conversational Agents bugs?",
+                    "user": "U123PROD",
+                    "channel": "C123PROD",
+                    "ts": str(datetime.now().timestamp()),
+                    "event_ts": str(datetime.now().timestamp()),
+                    "channel_type": "channel"
+                },
+                "team_id": "T123PROD",
+                "event_id": f"Ev{int(datetime.now().timestamp())}TEST",
+                "event_time": int(datetime.now().timestamp())
+            }
+            
+            try:
+                async with aiohttp.ClientSession() as session:
+                    url = "http://localhost:5000/slack/events"
+                    
+                    print("🔍 Testing production query...")
+                    
+                    start_time = datetime.now()
+                    
+                    async with session.post(
+                        url,
+                        json=slack_payload,
+                        timeout=aiohttp.ClientTimeout(total=60)
+                    ) as response:
+                        duration = (datetime.now() - start_time).total_seconds()
+                        
+                        print(f"⏱️ Processing time: {duration:.2f}s")
+                        
+                        if response.status == 200:
+                            result = await response.text()
+                            
+                            # Check for failure patterns
+                            result_lower = result.lower()
+                            
+                            if "mcp_server_unreachable" in result_lower:
+                                print("❌ STILL GETTING MCP_SERVER_UNREACHABLE!")
+                                print("   This means the deployment fix didn't work")
+                                production_success = False
+                            elif "execution_error" in result_lower:
+                                print("❌ STILL GETTING EXECUTION_ERROR!")
+                                print("   The core issue persists")
+                                production_success = False
+                            elif any(error in result_lower for error in ["trouble understanding", "couldn't process"]):
+                                print("❌ Getting fallback error responses")
+                                production_success = False
+                            else:
+                                print("✅ PRODUCTION SCENARIO FIXED!")
+                                print("   No more mcp_server_unreachable errors")
+                                production_success = True
+                        else:
+                            print(f"❌ Production test failed: {response.status}")
+                            production_success = False
+                            
+            except Exception as e:
+                print(f"❌ Production test exception: {e}")
+                production_success = False
+        else:
+            print("\n⏸️ Skipping production test - integration not working")
+            production_success = False
+        
+        # Cleanup - terminate the deployment process
+        print("\n5️⃣ CLEANUP")
+        print("-" * 60)
+        
+        print("Terminating deployment test process...")
+        process.terminate()
+        
+        # Wait for clean shutdown
+        try:
+            process.wait(timeout=10)
+            print("✅ Deployment process terminated cleanly")
+        except subprocess.TimeoutExpired:
+            print("⚠️ Force killing deployment process")
+            process.kill()
+        
+        # Final assessment
+        print("\n" + "=" * 80)
+        print("📊 DEPLOYMENT FIX ASSESSMENT")
+        print("=" * 80)
+        
+        if mcp_ready and fastapi_ready:
+            print("✅ Both servers start correctly with new deployment script")
+        else:
+            print("❌ Server startup issues remain")
+        
+        if integration_success:
+            print("✅ MCP integration working")
+        else:
+            print("❌ MCP integration still has issues")
+        
+        if production_success:
+            print("✅ PRODUCTION DEPLOYMENT ISSUE RESOLVED!")
+            print("   Ready to deploy with start_deployment.py")
+            return True
+        else:
+            print("❌ Production scenario still failing")
+            print("   Additional fixes needed")
             return False
             
     except Exception as e:
-        print(f"❌ Orchestrator integration test failed: {e}")
-        import traceback
-        traceback.print_exc()
+        print(f"❌ Deployment test failed: {e}")
         return False
+
+
+async def main():
+    """Run deployment fix verification"""
     
-    # 6. Summary
-    print("\n" + "=" * 80)
-    print("🎯 DEPLOYMENT FIX VERIFICATION SUMMARY")
+    print("🔧 DEPLOYMENT FIX VERIFICATION")
+    print("Testing the solution to missing MCP server in deployment")
     print("=" * 80)
     
-    print("✅ Environment detection working correctly")
-    print("✅ MCP server connectivity established")  
-    print("✅ AtlassianTool URL configuration fixed")
-    print("✅ MCP tool execution successful")
-    print("✅ Orchestrator integration working")
-    print()
-    print("🚀 DEPLOYMENT FIX VERIFICATION: PASSED")
-    print("   System is ready for production deployment!")
+    success = await test_deployment_startup()
     
-    return True
+    if success:
+        print("\n🎉 DEPLOYMENT FIX VERIFIED!")
+        print("The start_deployment.py script successfully resolves the MCP server issue")
+    else:
+        print("\n❌ DEPLOYMENT FIX INCOMPLETE")
+        print("Additional work needed to resolve the production issues")
+    
+    return success
 
 
 if __name__ == "__main__":
-    success = asyncio.run(test_deployment_fix())
+    success = asyncio.run(main())
     exit(0 if success else 1)
