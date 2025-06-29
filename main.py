@@ -319,18 +319,18 @@ async def process_slack_message(event_data: SlackEvent):
                 if health_response.status_code != 200:
                     logger.error(f"❌ MCP server not healthy: {health_response.status_code}")
                     # Send error message to user explaining the issue
-                    await slack_gateway.send_message(
+                    await slack_gateway.send_error_response(
                         channel_id=event_data.event['channel'],
-                        text="I'm having trouble accessing the knowledge systems right now. Please try again in a moment.",
+                        error_message="I'm having trouble accessing the knowledge systems right now. Please try again in a moment.",
                         thread_ts=event_data.event.get('thread_ts')
                     )
                     return
         except Exception as e:
             logger.error(f"❌ MCP server health check failed: {e}")
             # Send error message to user explaining the issue
-            await slack_gateway.send_message(
+            await slack_gateway.send_error_response(
                 channel_id=event_data.event['channel'],
-                text="The knowledge systems are starting up. Please try again in a moment.",
+                error_message="The knowledge systems are starting up. Please try again in a moment.",
                 thread_ts=event_data.event.get('thread_ts')
             )
             return
