@@ -2397,6 +2397,71 @@ async def warmup_connections():
         logger.error(f"Connection warmup failed: {e}")
         return {"status": "error", "message": str(e)}
 
+@app.get("/admin/test-gemini-reasoning")
+async def test_gemini_reasoning(query: str = "Explain how machine learning works"):
+    """Admin endpoint to test Gemini 2.5 detailed response including reasoning steps"""
+    try:
+        from utils.gemini_client import GeminiClient
+        
+        gemini_client = GeminiClient()
+        
+        # Test with Gemini 2.5 Pro for reasoning
+        system_prompt = """You are an AI assistant that shows your reasoning process step by step. 
+When answering questions, please:
+1. Think through the problem systematically
+2. Show your reasoning steps
+3. Provide a clear final answer
+
+Please be thorough in explaining your thought process."""
+        
+        user_prompt = f"Question: {query}\n\nPlease show your reasoning steps as you work through this question."
+        
+        # Get detailed response to examine structure
+        detailed_response = await gemini_client.generate_detailed_response(
+            system_prompt=system_prompt,
+            user_prompt=user_prompt,
+            model="gemini-2.5-pro",  # Use Pro model for better reasoning
+            max_tokens=2000,
+            temperature=0.7
+        )
+        
+        # Also test with reasoning-focused prompt
+        reasoning_prompt = """Think step by step about this question. Show your work:
+
+<thinking>
+[Your reasoning process here]
+</thinking>
+
+<answer>
+[Your final answer here]
+</answer>
+
+Question: """ + query
+        
+        reasoning_response = await gemini_client.generate_response(
+            system_prompt="You are a helpful AI that shows detailed reasoning.",
+            user_prompt=reasoning_prompt,
+            model="gemini-2.5-pro",
+            include_reasoning=True
+        )
+        
+        return {
+            "status": "success",
+            "query": query,
+            "detailed_response": detailed_response,
+            "reasoning_focused_response": reasoning_response,
+            "analysis": {
+                "has_multiple_parts": len(detailed_response.get("candidates", [])) > 0 and 
+                                    len(detailed_response["candidates"][0].get("parts", [])) > 1 if detailed_response.get("candidates") else False,
+                "token_usage": detailed_response.get("usage_metadata", {}),
+                "response_structure": detailed_response.get("raw_response_structure", {})
+            }
+        }
+        
+    except Exception as e:
+        logger.error(f"Gemini reasoning test failed: {e}")
+        return {"status": "error", "message": str(e)}
+
 if __name__ == "__main__":
     # Get port from environment for Cloud Run deployment
     port = int(os.environ.get("PORT", 5000))

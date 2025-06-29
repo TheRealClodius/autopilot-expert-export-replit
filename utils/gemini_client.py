@@ -36,7 +36,8 @@ class GeminiClient:
         user_prompt: str,
         model: str = None,
         max_tokens: int = 1000,
-        temperature: float = 0.7
+        temperature: float = 0.7,
+        include_reasoning: bool = False
     ) -> Optional[str]:
         """
         Generate a basic text response using Gemini.
@@ -77,6 +78,22 @@ class GeminiClient:
             
             if response and response.text:
                 logger.debug(f"Generated response with {model_name}")
+                
+                # If reasoning is requested, check for reasoning steps in the response
+                if include_reasoning and hasattr(response, 'candidates') and response.candidates:
+                    candidate = response.candidates[0]
+                    if hasattr(candidate, 'content') and hasattr(candidate.content, 'parts'):
+                        # Check if there are multiple parts that might contain reasoning
+                        parts_text = []
+                        for part in candidate.content.parts:
+                            if hasattr(part, 'text') and part.text:
+                                parts_text.append(part.text)
+                        
+                        if len(parts_text) > 1:
+                            logger.info(f"Found {len(parts_text)} response parts, potentially including reasoning")
+                            # Return combined parts with separation
+                            return "\n\n---REASONING STEP---\n\n".join(parts_text)
+                
                 return response.text.strip()
             
             logger.warning(f"Empty response from {model_name}")
@@ -137,6 +154,112 @@ class GeminiClient:
         except Exception as e:
             logger.error(f"Error generating structured Gemini response: {e}")
             return None
+    
+    async def generate_detailed_response(
+        self,
+        system_prompt: str,
+        user_prompt: str,
+        model: str = None,
+        max_tokens: int = 1000,
+        temperature: float = 0.7
+    ) -> Dict[str, Any]:
+        """
+        Generate a response and return detailed information including reasoning steps.
+        
+        Returns:
+            Dictionary containing:
+            - text: The main response text
+            - reasoning_steps: List of reasoning steps if available
+            - candidates: Raw candidate information
+            - usage_metadata: Token usage and other metadata
+        """
+        try:
+            model_name = model or self.flash_model
+            
+            # Simple rate limiting - ensure 100ms between requests
+            import time
+            current_time = time.time()
+            time_since_last = current_time - self._last_request_time
+            if time_since_last < 0.1:
+                await asyncio.sleep(0.1 - time_since_last)
+            
+            response = self.client.models.generate_content(
+                model=model_name,
+                contents=[
+                    types.Content(role="user", parts=[types.Part(text=user_prompt)])
+                ],
+                config=types.GenerateContentConfig(
+                    system_instruction=system_prompt,
+                    max_output_tokens=max_tokens,
+                    temperature=temperature
+                )
+            )
+            
+            self._last_request_time = time.time()
+            
+            result = {
+                "text": "",
+                "reasoning_steps": [],
+                "candidates": [],
+                "usage_metadata": {},
+                "raw_response_structure": {}
+            }
+            
+            if response:
+                # Extract main text
+                if hasattr(response, 'text') and response.text:
+                    result["text"] = response.text.strip()
+                
+                # Extract detailed candidate information
+                if hasattr(response, 'candidates') and response.candidates:
+                    for i, candidate in enumerate(response.candidates):
+                        candidate_info = {
+                            "index": i,
+                            "finish_reason": getattr(candidate, 'finish_reason', None),
+                            "parts": []
+                        }
+                        
+                        if hasattr(candidate, 'content') and hasattr(candidate.content, 'parts'):
+                            for j, part in enumerate(candidate.content.parts):
+                                part_info = {
+                                    "part_index": j,
+                                    "text": getattr(part, 'text', None),
+                                    "type": type(part).__name__
+                                }
+                                candidate_info["parts"].append(part_info)
+                        
+                        result["candidates"].append(candidate_info)
+                
+                # Extract usage metadata
+                if hasattr(response, 'usage_metadata'):
+                    result["usage_metadata"] = {
+                        "prompt_token_count": getattr(response.usage_metadata, 'prompt_token_count', 0),
+                        "candidates_token_count": getattr(response.usage_metadata, 'candidates_token_count', 0),
+                        "total_token_count": getattr(response.usage_metadata, 'total_token_count', 0)
+                    }
+                
+                # Capture raw response structure for debugging
+                result["raw_response_structure"] = {
+                    "response_type": type(response).__name__,
+                    "available_attributes": [attr for attr in dir(response) if not attr.startswith('_')],
+                    "text_available": hasattr(response, 'text'),
+                    "candidates_count": len(response.candidates) if hasattr(response, 'candidates') and response.candidates else 0
+                }
+                
+                logger.debug(f"Generated detailed response with {model_name}")
+                logger.debug(f"Token usage: {result['usage_metadata']}")
+                
+            return result
+            
+        except Exception as e:
+            logger.error(f"Error generating detailed Gemini response: {e}")
+            return {
+                "text": "",
+                "reasoning_steps": [],
+                "candidates": [],
+                "usage_metadata": {},
+                "error": str(e)
+            }
     
     async def analyze_query_intent(
         self,
