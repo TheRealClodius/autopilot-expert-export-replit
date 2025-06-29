@@ -17,14 +17,22 @@ def get_broker_url():
     """Get Celery broker URL with fallback for deployment environments"""
     broker_url = getattr(settings, 'CELERY_BROKER_URL', '') or ''
     
-    # Force memory transport in deployment to avoid any Redis connections
-    if not broker_url or broker_url.strip() == "" or broker_url.strip().startswith('redis://127.0.0.1'):
-        logger.info(f"Using memory transport (broker_url='{broker_url}')")
+    # Enhanced Redis detection and blocking
+    if not broker_url or broker_url.strip() == "":
+        logger.info("No Celery broker URL configured, using memory transport")
         return 'memory://'
     
-    # Additional check for localhost Redis URLs
-    if 'localhost' in broker_url or '127.0.0.1' in broker_url:
-        logger.info(f"Detected localhost Redis URL, using memory transport instead: {broker_url}")
+    # Block ANY Redis URLs to prevent deployment connection attempts
+    broker_lower = broker_url.lower()
+    redis_indicators = ['redis://', 'rediss://', '127.0.0.1', 'localhost', ':6379']
+    
+    if any(indicator in broker_lower for indicator in redis_indicators):
+        logger.info(f"Detected Redis URL, forcing memory transport: {broker_url}")
+        return 'memory://'
+    
+    # Additional validation for deployment environments
+    if os.environ.get('REPLIT_DOMAINS') or os.environ.get('REPLIT_DEPLOYMENT'):
+        logger.info("Deployment environment detected, using memory transport")
         return 'memory://'
         
     return broker_url

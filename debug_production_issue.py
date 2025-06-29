@@ -7,194 +7,208 @@ to identify where the orchestrator is failing and returning None.
 """
 
 import asyncio
+import os
+import sys
+import aiohttp
 import json
-import traceback
-from models.schemas import ProcessedMessage
-from agents.orchestrator_agent import OrchestratorAgent
-from services.memory_service import MemoryService
-from utils.prompt_loader import get_orchestrator_prompt
+from datetime import datetime
 
 
 async def debug_orchestrator_failure():
     """Debug the specific failure causing fallback responses in production"""
-    print("DEBUGGING PRODUCTION ISSUE: 'I'm having trouble understanding' fallback")
-    print("="*70)
     
-    # Test with the exact query mentioned in production
-    test_query = "i wanna know about Autopilot a little bit more"
+    print("=" * 80)
+    print("🔍 DEBUGGING PRODUCTION ORCHESTRATOR FAILURE")
+    print("=" * 80)
     
-    memory_service = MemoryService()
-    orchestrator = OrchestratorAgent(memory_service)
+    # Test the exact failure pattern
+    test_queries = [
+        "Can you find information about UiPath Autopilot features?",
+        "What are the latest Conversational Agents bugs?", 
+        "Show me open tickets in the AUTOPILOT project",
+        "Create a new bug report for login issues"
+    ]
     
-    # Create test message
-    message = ProcessedMessage(
-        text=test_query,
-        user_id="U_PROD_USER",
-        user_name="ProductionUser",
-        channel_id="C_PROD_CHANNEL", 
-        channel_name="general",
-        message_ts="1735000000.000001",
-        thread_ts=None,
-        is_dm=False,
-        thread_context=None
-    )
-    
-    print(f"Testing Query: '{test_query}'")
-    print("-" * 70)
-    
-    # Step 1: Test prompt loading
-    print("Step 1: Testing Prompt Loading...")
-    try:
-        system_prompt = get_orchestrator_prompt()
-        print(f"✅ Prompt loaded successfully: {len(system_prompt)} characters")
-        print(f"Prompt preview: {system_prompt[:200]}...")
-    except Exception as e:
-        print(f"❌ Prompt loading failed: {e}")
-        return
-    
-    # Step 2: Test query analysis directly
-    print("\nStep 2: Testing Query Analysis...")
-    try:
-        execution_plan = await orchestrator._analyze_query_and_plan(message)
+    for i, query in enumerate(test_queries, 1):
+        print(f"\n{i}️⃣ TESTING QUERY: {query}")
+        print("-" * 60)
         
-        if execution_plan:
-            print("✅ Query analysis successful!")
-            print(f"Execution Plan: {json.dumps(execution_plan, indent=2)}")
-        else:
-            print("❌ Query analysis returned None - THIS IS THE PROBLEM!")
-            print("Investigating why...")
-            
-            # Let's test the Gemini API call manually
-            await debug_gemini_api_call(orchestrator, message)
-            
-    except Exception as e:
-        print(f"❌ Query analysis failed with exception: {e}")
-        traceback.print_exc()
-    
-    # Step 3: Test full process
-    print("\nStep 3: Testing Full Process...")
-    try:
-        response = await orchestrator.process_query(message)
-        
-        response_text = response.get("text", "")
-        print(f"Final Response: {response_text}")
-        
-        if "having trouble understanding" in response_text.lower():
-            print("❌ CONFIRMED: Production issue reproduced - hitting fallback response")
-        else:
-            print("✅ SUCCESS: Query processed normally")
-            
-    except Exception as e:
-        print(f"❌ Full process failed: {e}")
-        traceback.print_exc()
+        try:
+            # Test the orchestrator analysis endpoint directly
+            async with aiohttp.ClientSession() as session:
+                test_payload = {
+                    "query": query,
+                    "user_id": "U123TEST", 
+                    "channel_id": "C123TEST",
+                    "message_ts": "1234567890.123456"
+                }
+                
+                print(f"⏱️ Testing orchestrator analysis...")
+                
+                url = "http://localhost:5000/admin/test-orchestrator-analysis"
+                
+                start_time = datetime.now()
+                
+                async with session.post(
+                    url, 
+                    json=test_payload,
+                    timeout=120  # 2 minutes
+                ) as response:
+                    duration = (datetime.now() - start_time).total_seconds()
+                    
+                    if response.status == 200:
+                        result = await response.json()
+                        print(f"✅ Analysis completed in {duration:.2f}s")
+                        
+                        # Check for orchestrator success
+                        if result.get("success"):
+                            analysis = result.get("analysis", {})
+                            print(f"✅ Orchestrator analysis: {analysis.get('intent', 'Unknown')}")
+                            
+                            # Check tools used
+                            tools_used = analysis.get("tools_used", [])
+                            if tools_used:
+                                print(f"✅ Tools selected: {', '.join(tools_used)}")
+                            else:
+                                print("⚠️ No tools selected")
+                            
+                            # Check execution plan
+                            if "execution_plan" in analysis:
+                                plan = analysis["execution_plan"]
+                                if plan.get("atlassian_actions"):
+                                    print(f"✅ Atlassian actions: {len(plan['atlassian_actions'])}")
+                                    for action in plan["atlassian_actions"]:
+                                        print(f"   - {action.get('mcp_tool', 'Unknown')}: {action.get('arguments', {})}")
+                                else:
+                                    print("⚠️ No Atlassian actions in plan")
+                        else:
+                            error = result.get("error", "Unknown error")
+                            print(f"❌ Orchestrator failed: {error}")
+                            
+                            # Check for specific error types
+                            if "Redis" in str(error) or "6379" in str(error):
+                                print("🔍 REDIS CONNECTION ERROR DETECTED!")
+                                print("   This is likely the root cause of production failures")
+                            elif "MCP" in str(error):
+                                print("🔍 MCP CONNECTION ERROR DETECTED!")
+                                print("   MCP server may be unreachable")
+                            elif "timeout" in str(error).lower():
+                                print("🔍 TIMEOUT ERROR DETECTED!")
+                                print("   Operation took too long to complete")
+                    else:
+                        print(f"❌ Request failed with status: {response.status}")
+                        error_text = await response.text()
+                        print(f"   Error: {error_text[:300]}...")
+                        
+        except asyncio.TimeoutError:
+            print("❌ Request timed out after 2 minutes")
+            print("   This indicates a hanging operation")
+        except Exception as e:
+            print(f"❌ Exception during test: {e}")
+            import traceback
+            traceback.print_exc()
 
 
 async def debug_gemini_api_call(orchestrator, message):
     """Debug the Gemini API call specifically"""
-    print("\n--- GEMINI API DEBUG ---")
+    
+    print("\n🧠 DEBUGGING GEMINI API CALL")
+    print("-" * 50)
     
     try:
-        # Get conversation context
-        conversation_key = f"conv:{message.channel_id}:{message.thread_ts or message.message_ts}"
-        recent_messages = await orchestrator.memory_service.get_recent_messages(conversation_key, limit=10)
-        conversation_history = await orchestrator.memory_service.get_conversation_context(conversation_key)
+        from agents.orchestrator_agent import OrchestratorAgent
+        from services.trace_manager import TraceManager
+        from services.memory_service import MemoryService
+        from models.schemas import ProcessedMessage
         
-        context = {
-            "query": message.text,
-            "user": message.user_name,
-            "channel": message.channel_name,
-            "is_dm": message.is_dm,
-            "thread_context": message.thread_context,
-            "recent_messages": recent_messages,
-            "conversation_history": conversation_history
-        }
-        
-        system_prompt = get_orchestrator_prompt()
-        user_prompt = f"""
-Context: {json.dumps(context, indent=2)}
-
-Create an execution plan to answer this query effectively.
-
-Current Query: "{message.text}"
-"""
-        
-        print(f"System Prompt Length: {len(system_prompt)}")
-        print(f"User Prompt Length: {len(user_prompt)}")
-        print(f"User Prompt Preview: {user_prompt[:300]}...")
-        
-        # Test Gemini API call
-        print("\nCalling Gemini API...")
-        
-        response = await orchestrator.gemini_client.generate_structured_response(
-            system_prompt,
-            user_prompt,
-            response_format="json",
-            model=orchestrator.gemini_client.pro_model
+        # Create test message
+        test_message = ProcessedMessage(
+            content=message,
+            user_id="U123TEST",
+            channel_id="C123TEST", 
+            message_ts="1234567890.123456",
+            thread_ts=None,
+            user_name="Test User",
+            channel_name="test-channel",
+            is_dm=False,
+            is_bot_mentioned=True,
+            is_thread_reply=False
         )
         
-        print(f"Gemini Response: {response}")
+        # Test direct Gemini call
+        print("⏱️ Testing direct Gemini API call...")
         
-        if response:
-            try:
-                plan = json.loads(response)
-                print("✅ JSON parsing successful!")
-                print(f"Parsed Plan: {json.dumps(plan, indent=2)}")
-            except json.JSONDecodeError as e:
-                print(f"❌ JSON parsing failed: {e}")
-                print(f"Raw response: {response}")
+        result = await orchestrator._analyze_query_with_gemini(test_message, [])
+        
+        if result:
+            print("✅ Gemini API call successful")
+            print(f"   Intent: {result.get('intent', 'Unknown')}")
+            print(f"   Tools: {result.get('tools_used', [])}")
+            
+            # Check execution plan
+            if result.get("execution_plan"):
+                plan = result["execution_plan"]
+                print(f"   Plan actions: {len(plan.get('atlassian_actions', []))}")
+            else:
+                print("⚠️ No execution plan generated")
         else:
-            print("❌ Gemini returned empty/None response")
+            print("❌ Gemini API call returned None")
+            print("   This is the source of 'I'm having trouble understanding' responses")
             
     except Exception as e:
-        print(f"❌ Gemini API call failed: {e}")
+        print(f"❌ Gemini API test failed: {e}")
+        import traceback
         traceback.print_exc()
 
 
 async def test_various_queries():
     """Test various query types to see which ones fail"""
-    print("\n" + "="*70)
-    print("TESTING VARIOUS QUERY TYPES")
-    print("="*70)
     
-    test_queries = [
-        "i wanna know about Autopilot a little bit more",
-        "What is Autopilot?",
-        "Tell me about Autopilot design patterns",
-        "How do I use Autopilot?",
-        "Hey buddy",
-        "Can you help me with automation?"
-    ]
+    print("\n🔬 TESTING QUERY PATTERNS")
+    print("-" * 50)
     
-    memory_service = MemoryService()
-    orchestrator = OrchestratorAgent(memory_service)
+    query_types = {
+        "Simple greeting": "Hello there",
+        "Autopilot question": "What is UiPath Autopilot?",
+        "Bug search": "Show me open bugs in AUTOPILOT project", 
+        "Jira creation": "Create a task for fixing login issues",
+        "Complex technical": "How do I configure Autopilot deployment pipelines?"
+    }
     
-    for i, query in enumerate(test_queries, 1):
-        print(f"\nTest {i}: '{query}'")
-        print("-" * 40)
-        
-        message = ProcessedMessage(
-            text=query,
-            user_id="U_TEST",
-            user_name="TestUser",
-            channel_id="C_TEST",
-            channel_name="test",
-            message_ts=f"1735000000.{i:06d}",
-            thread_ts=None,
-            is_dm=False,
-            thread_context=None
-        )
+    for query_type, query in query_types.items():
+        print(f"\n📝 {query_type}: '{query}'")
         
         try:
-            plan = await orchestrator._analyze_query_and_plan(message)
-            if plan:
-                print(f"✅ SUCCESS: {plan.get('analysis', 'No analysis')[:100]}...")
-            else:
-                print("❌ FAILED: Returned None")
+            async with aiohttp.ClientSession() as session:
+                test_payload = {
+                    "query": query,
+                    "user_id": "U123TEST",
+                    "channel_id": "C123TEST", 
+                    "message_ts": "1234567890.123456"
+                }
                 
+                url = "http://localhost:5000/admin/quick-orchestrator-test"
+                
+                async with session.post(
+                    url,
+                    json=test_payload, 
+                    timeout=60
+                ) as response:
+                    if response.status == 200:
+                        result = await response.json()
+                        if result.get("success"):
+                            print(f"   ✅ Success - Intent: {result.get('intent', 'Unknown')}")
+                        else:
+                            print(f"   ❌ Failed - Error: {result.get('error', 'Unknown')}")
+                    else:
+                        print(f"   ❌ HTTP {response.status}")
+                        
         except Exception as e:
-            print(f"❌ ERROR: {e}")
+            print(f"   ❌ Exception: {e}")
 
 
 if __name__ == "__main__":
     asyncio.run(debug_orchestrator_failure())
-    asyncio.run(test_various_queries())
+    print("\n" + "=" * 80)
+    print("🎯 PRODUCTION DEBUG COMPLETE")
+    print("=" * 80)
