@@ -29,6 +29,11 @@ class AtlassianTool:
         self.trace_manager = trace_manager
         logger.info(f"Using configured MCP server URL: {self.mcp_server_url}")
         logger.info("HTTP-based Atlassian tool initialized successfully")
+    
+    @property
+    def available(self):
+        """Backward compatibility property"""
+        return bool(self.available_tools)
 
     def _get_mcp_server_url(self) -> str:
         """Get the MCP server URL from configuration"""
