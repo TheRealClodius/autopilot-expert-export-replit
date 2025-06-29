@@ -278,7 +278,20 @@ Current Query: "{message.text}"
             
             if response:
                 try:
-                    plan = json.loads(response)
+                    # Clean response to extract JSON from markdown code blocks
+                    cleaned_response = response.strip()
+                    if cleaned_response.startswith('```json'):
+                        # Extract JSON from markdown code block
+                        start_index = cleaned_response.find('{')
+                        end_index = cleaned_response.rfind('}') + 1
+                        if start_index != -1 and end_index > start_index:
+                            cleaned_response = cleaned_response[start_index:end_index]
+                    elif cleaned_response.startswith('```'):
+                        # Remove code block markers
+                        lines = cleaned_response.split('\n')
+                        cleaned_response = '\n'.join(lines[1:-1]) if len(lines) > 2 else cleaned_response
+                    
+                    plan = json.loads(cleaned_response)
                     logger.info(f"Generated execution plan: {plan.get('analysis', 'No analysis')}")
                     return plan
                 except json.JSONDecodeError as e:
