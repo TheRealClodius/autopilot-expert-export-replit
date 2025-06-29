@@ -43,6 +43,17 @@ class AtlassianTool:
         else:
             logger.warning("Atlassian tool initialized but credentials missing")
     
+    def _map_tool_name(self, our_tool_name: str) -> str:
+        """Map our tool names to official MCP tool names
+        
+        Based on MCP server logs, the actual tool names are prefixed:
+        - confluence_search, confluence_get_page, confluence_create_page
+        - jira_search, jira_get_issue, jira_create_issue
+        """
+        # Our tool names are already correct!
+        # The MCP server uses prefixed names, not the generic names from the documentation
+        return our_tool_name
+    
     def _check_credentials(self) -> bool:
         """Check if required Atlassian credentials are available"""
         required_vars = [
@@ -211,6 +222,13 @@ class AtlassianTool:
                 tool_headers = headers.copy()
                 if session_id:
                     tool_headers["mcp-session-id"] = session_id
+                
+                # Map our tool name to the official MCP tool name
+                mapped_tool_name = self._map_tool_name(tool_name)
+                logger.debug(f"Tool mapping: {tool_name} → {mapped_tool_name}")
+                
+                # Update the request with the mapped tool name
+                tool_request["params"]["name"] = mapped_tool_name
                 
                 logger.debug(f"Calling MCP tool with request: {tool_request}")
                 response = await client.post(str(session_url), json=tool_request, headers=tool_headers)
