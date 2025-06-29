@@ -79,6 +79,20 @@ The system uses environment variables for configuration management and supports 
 
 ## Recent Changes
 
+✅ **June 29, 2025 - DYNAMIC TOOL DISCOVERY IMPLEMENTED (PRODUCTION READY)**
+- **Complete Dynamic System**: Removed all hardcoded tool mappings in favor of runtime discovery from remote MCP server
+- **Remote MCP Integration**: Successfully connecting to deployed MCP server at https://remote-mcp-server-andreiclodius.replit.app
+- **Real Tool Discovery**: AtlassianTool now discovers 5 actual tools: `get_jira_issues`, `create_jira_issue`, `get_confluence_pages`, `create_confluence_page`, `get_atlassian_status`
+- **Dynamic Prompt Generation**: Orchestrator generates system prompts with actual available tools instead of assuming hardcoded ones
+- **Modern LLM Architecture**: System now follows best practices - discover capabilities at runtime rather than static configuration
+- **Simplified Configuration**: Eliminated complex deployment detection logic since MCP is now deployed as separate service
+- **Production Verification**: 8 total tools discovered (5 Atlassian + 3 others), orchestrator confirmed using real tool names in commands
+- **Enhanced Flexibility**: System automatically adapts to MCP server changes without code modifications
+- **Files Modified**: tools/atlassian_tool.py (simplified URL configuration), agents/orchestrator_agent.py (dynamic discovery integration)
+- **Test Results**: Confirmed orchestrator generates `{"mcp_tool": "get_jira_issues"}` and `{"mcp_tool": "create_jira_issue"}` using discovered tools
+- **Architecture Achievement**: Complete separation from hardcoded assumptions - system now truly dynamic and adaptable to remote MCP server changes
+- **Status**: Production-ready dynamic tool discovery eliminating static tool mappings for modern AI agent architecture
+
 🔄 **June 29, 2025 - MCP SERVER TOOL LOADING ISSUE IDENTIFIED**
 - **Client System Perfect**: Main FastAPI application generating flawless MCP commands with correct JQL syntax and parameters
 - **Orchestrator Excellence**: Successfully generating proper MCP commands (`jira_search`, `confluence_search`) with intelligent query analysis
