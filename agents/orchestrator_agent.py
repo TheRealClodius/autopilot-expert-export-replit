@@ -494,10 +494,10 @@ Current Query: "{message.text}"
                             await emit_processing(self.progress_tracker, "atlassian_action", f"processing {action_type} request")
                         
                         try:
-                            # Execute action with deployment-aware timeout handling
+                            # Direct MCP execution (bypass complex retry logic for MCP tools)
                             result = await asyncio.wait_for(
-                                self._execute_tool_action_with_generalized_retry("atlassian", action, message),
-                                timeout=90.0  # Extended timeout for deployment environments
+                                self._execute_mcp_action_direct(action),
+                                timeout=60.0  # Direct MCP timeout
                             )
                             
                             # Store result
@@ -778,6 +778,39 @@ Current Query: "{message.text}"
                     await emit_warning(self.progress_tracker, "execution_error", f"attempt {attempt + 1} encountered technical issue")
         
         return {"error": f"Maximum retries ({max_retries}) exceeded", "hitl_required": True}
+    
+    async def _execute_mcp_action_direct(self, action: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Direct MCP execution bypassing complex retry logic.
+        Uses the proven working pattern from the successful MCP tests.
+        """
+        try:
+            mcp_tool = action.get("mcp_tool")
+            arguments = action.get("arguments", {})
+            
+            if not mcp_tool:
+                return {"error": "No mcp_tool specified in action"}
+            
+            # Direct call to Atlassian tool using working pattern
+            result = await self.atlassian_tool.execute_mcp_tool(mcp_tool, arguments)
+            
+            # Return result in expected format
+            if result and result.get("success"):
+                return {
+                    "success": True,
+                    "result": result.get("result", []),
+                    "tool": mcp_tool,
+                    "arguments": arguments
+                }
+            else:
+                return {
+                    "error": result.get("error", "MCP execution failed") if result else "No result from MCP",
+                    "success": False
+                }
+                
+        except Exception as e:
+            logger.error(f"Direct MCP execution failed: {e}")
+            return {"error": f"MCP execution error: {str(e)}", "success": False}
     
     async def _execute_single_tool_action(self, tool_name: str, action: Dict[str, Any]) -> Dict[str, Any]:
         """Execute a single tool action without retry logic"""
