@@ -127,17 +127,47 @@ class EntityExtractionTask(Task):
             if not response or not response.text:
                 return []
             
-            # Parse JSON response
+            # Parse JSON response with retry mechanism
+            ai_entities = self._parse_gemini_response_with_retry(
+                response.text, conversation_key, user_name, max_retries=2
+            )
+            
+            logger.info(f"Gemini extracted {len(ai_entities)} additional entities")
+            return ai_entities
+            
+        except Exception as e:
+            logger.error(f"Error in Gemini entity extraction: {e}")
+            return []
+
+    def _parse_gemini_response_with_retry(self, response_text: str, conversation_key: str, 
+                                        user_name: str, max_retries: int = 2) -> List[Entity]:
+        """
+        Parse Gemini JSON response with automatic retry mechanism for malformed JSON.
+        If JSON parsing fails, sends a self-correction prompt to Gemini.
+        
+        Args:
+            response_text: The original response text from Gemini
+            conversation_key: Key for conversation context
+            user_name: Name of the user in the conversation
+            max_retries: Maximum number of retry attempts (default: 2)
+            
+        Returns:
+            List of Entity objects extracted from the response
+        """
+        original_response = response_text
+        
+        for attempt in range(max_retries + 1):
             try:
                 # Clean the response text (remove markdown formatting if present)
-                response_text = response.text.strip()
-                if response_text.startswith("```json"):
-                    response_text = response_text[7:]
-                if response_text.endswith("```"):
-                    response_text = response_text[:-3]
-                response_text = response_text.strip()
+                cleaned_text = response_text.strip()
+                if cleaned_text.startswith("```json"):
+                    cleaned_text = cleaned_text[7:]
+                if cleaned_text.endswith("```"):
+                    cleaned_text = cleaned_text[:-3]
+                cleaned_text = cleaned_text.strip()
                 
-                entities_data = json.loads(response_text)
+                # Attempt to parse JSON
+                entities_data = json.loads(cleaned_text)
                 
                 # Convert to Entity objects
                 ai_entities = []
@@ -176,16 +206,64 @@ class EntityExtractionTask(Task):
                     
                     ai_entities.append(entity)
                 
-                logger.info(f"Gemini extracted {len(ai_entities)} additional entities")
+                if attempt > 0:
+                    logger.info(f"Gemini JSON parsing succeeded on retry attempt {attempt}")
+                
                 return ai_entities
                 
             except json.JSONDecodeError as e:
-                logger.warning(f"Failed to parse Gemini entity extraction response as JSON: {e}")
-                return []
+                logger.warning(f"JSON parsing failed on attempt {attempt + 1}: {e}")
+                
+                # If this is not the last attempt, try to get Gemini to self-correct
+                if attempt < max_retries:
+                    logger.info(f"Attempting Gemini self-correction (attempt {attempt + 1}/{max_retries})")
+                    
+                    correction_prompt = f"""The previous response was not valid JSON. Please correct it and provide only the JSON.
+
+Original response that failed to parse:
+{response_text}
+
+Error: {str(e)}
+
+Please return ONLY a valid JSON array of entities in this exact format:
+[
+  {{
+    "type": "entity_type",
+    "value": "entity_value", 
+    "context": "brief_context",
+    "importance": 7
+  }}
+]
+
+Provide only the JSON array, no markdown formatting, no explanations."""
+                    
+                    try:
+                        # Send correction prompt to Gemini
+                        correction_response = self.model.generate_content(
+                            correction_prompt,
+                            generation_config=self.model_config
+                        )
+                        
+                        if correction_response and correction_response.text:
+                            response_text = correction_response.text
+                            logger.debug(f"Gemini self-correction response: {response_text[:200]}...")
+                        else:
+                            logger.warning("Gemini self-correction returned empty response")
+                            break
+                            
+                    except Exception as correction_error:
+                        logger.error(f"Error during Gemini self-correction: {correction_error}")
+                        break
+                else:
+                    logger.error(f"Failed to parse JSON after {max_retries} retries, giving up")
             
-        except Exception as e:
-            logger.error(f"Error in Gemini entity extraction: {e}")
-            return []
+            except Exception as e:
+                logger.error(f"Unexpected error during JSON parsing attempt {attempt + 1}: {e}")
+                break
+        
+        # All attempts failed
+        logger.warning("All JSON parsing attempts failed, returning empty entity list")
+        return []
 
     def _deduplicate_extraction_results(self, entities: List[Entity]) -> List[Entity]:
         """

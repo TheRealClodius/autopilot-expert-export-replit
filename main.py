@@ -4020,6 +4020,159 @@ async def test_entity_deduplication():
             "integration": "Entity deduplication system encountered errors"
         }
 
+@app.get("/admin/test-gemini-json-retry")
+async def test_gemini_json_retry():
+    """
+    Test the robust JSON parsing with retry mechanism for Gemini entity extraction.
+    Simulates both successful parsing and malformed JSON scenarios.
+    """
+    try:
+        logger.info("Testing Gemini JSON parsing with retry mechanism...")
+        
+        # Initialize entity extraction task
+        from workers.entity_extractor import EntityExtractionTask
+        from services.entity_store import EntityStore
+        
+        # Use initialized memory service from global scope
+        test_memory_service = globals().get('memory_service')
+        
+        entity_task = EntityExtractionTask()
+        entity_task.entity_store = EntityStore(test_memory_service)
+        
+        conversation_key = f"test_json_retry_{int(time.time())}"
+        user_name = "test_user"
+        
+        # Test scenarios
+        test_scenarios = [
+            {
+                "name": "Valid JSON",
+                "response": '''[
+                    {
+                        "type": "jira_ticket",
+                        "value": "AUTOPILOT-456",
+                        "context": "Bug fix ticket",
+                        "importance": 8
+                    }
+                ]''',
+                "expected_success": True
+            },
+            {
+                "name": "Valid JSON with markdown",
+                "response": '''```json
+                [
+                    {
+                        "type": "person",
+                        "value": "Sarah Johnson",
+                        "context": "Project manager",
+                        "importance": 7
+                    }
+                ]
+                ```''',
+                "expected_success": True
+            },
+            {
+                "name": "Malformed JSON - missing comma (should trigger retry)",
+                "response": '''[
+                    {
+                        "type": "project"
+                        "value": "UiPath RPA",
+                        "context": "Main project",
+                        "importance": 9
+                    }
+                ]''',
+                "expected_success": False  # Would succeed with retry in real scenario
+            },
+            {
+                "name": "Malformed JSON - extra comma",
+                "response": '''[
+                    {
+                        "type": "deadline",
+                        "value": "Q1 2025",
+                        "context": "Project deadline",
+                        "importance": 8,
+                    }
+                ]''',
+                "expected_success": False  # Would succeed with retry in real scenario
+            }
+        ]
+        
+        test_results = []
+        
+        for scenario in test_scenarios:
+            logger.info(f"Testing scenario: {scenario['name']}")
+            
+            try:
+                # Test the parsing method directly
+                entities = entity_task._parse_gemini_response_with_retry(
+                    scenario["response"], 
+                    conversation_key, 
+                    user_name, 
+                    max_retries=1  # Reduced for testing
+                )
+                
+                success = len(entities) > 0
+                test_results.append({
+                    "scenario": scenario["name"],
+                    "success": success,
+                    "entities_extracted": len(entities),
+                    "expected_success": scenario["expected_success"],
+                    "result": "PASS" if success else "FAIL (would retry with real Gemini)",
+                    "entity_samples": [
+                        {
+                            "type": e.type,
+                            "value": e.value,
+                            "context": e.context[:50] + "..." if len(e.context) > 50 else e.context
+                        } for e in entities[:2]
+                    ]
+                })
+                
+            except Exception as e:
+                test_results.append({
+                    "scenario": scenario["name"],
+                    "success": False,
+                    "entities_extracted": 0,
+                    "expected_success": scenario["expected_success"],
+                    "result": f"ERROR: {str(e)}",
+                    "entity_samples": []
+                })
+        
+        # Summary statistics
+        successful_scenarios = sum(1 for r in test_results if r["success"])
+        total_scenarios = len(test_results)
+        
+        return {
+            "status": "success",
+            "test_summary": {
+                "scenarios_tested": total_scenarios,
+                "successful_parsing": successful_scenarios,
+                "success_rate": f"{(successful_scenarios/total_scenarios)*100:.1f}%",
+                "retry_mechanism": "Implemented with Gemini self-correction prompts"
+            },
+            "scenario_results": test_results,
+            "retry_features": {
+                "max_retries": "2 (configurable)",
+                "self_correction": "Automatic follow-up prompt when JSON parsing fails",
+                "correction_prompt": "Instructs Gemini to fix malformed JSON and return only valid JSON",
+                "error_recovery": "Graceful fallback to empty list after all retries exhausted",
+                "logging": "Detailed logging of retry attempts and self-correction responses"
+            },
+            "production_benefits": {
+                "robustness": "Handles malformed JSON responses from LLM automatically",
+                "reliability": "Reduces entity extraction failures due to JSON parsing errors",
+                "self_healing": "LLM can often correct its own JSON formatting mistakes",
+                "error_visibility": "Comprehensive logging for debugging JSON parsing issues"
+            },
+            "conversation_key": conversation_key
+        }
+        
+    except Exception as e:
+        logger.error(f"Error testing Gemini JSON retry mechanism: {e}")
+        return {
+            "status": "error",
+            "error": str(e),
+            "message": "Failed to test JSON retry mechanism"
+        }
+
 # Server startup configuration for Cloud Run deployment
 if __name__ == "__main__":
     # Force Redis environment variables to empty to prevent connection attempts

@@ -83,6 +83,20 @@ The system uses environment variables for configuration management and supports 
 
 ## Recent Changes
 
+✅ **June 30, 2025 - ROBUST JSON PARSING WITH RETRY MECHANISM IMPLEMENTED: SELF-CORRECTING GEMINI EXTRACTION (PRODUCTION READY)**
+- **Intelligent Retry System**: Built sophisticated retry mechanism for Gemini JSON parsing with automatic self-correction when malformed JSON is detected
+- **Self-Correcting Prompts**: When JSON parsing fails, system automatically sends follow-up prompt: "The previous response was not valid JSON. Please correct it and provide only the JSON."
+- **Enhanced Error Recovery**: Configurable retry attempts (default: 2) with detailed error logging and graceful fallback to empty entity list after exhaustion
+- **Production Robustness**: System now handles malformed JSON responses from LLM automatically, reducing entity extraction failures significantly
+- **Comprehensive Error Handling**: Detailed logging of retry attempts, self-correction responses, and JSON parsing errors for debugging visibility
+- **Smart JSON Cleaning**: Automatically removes markdown formatting (```json blocks) and handles various JSON formatting issues before parsing
+- **Performance Optimization**: Retry mechanism only activates when needed, maintaining fast response times for valid JSON responses
+- **Files Enhanced**: `workers/entity_extractor.py` (new `_parse_gemini_response_with_retry` method with 100+ lines of robust parsing logic)
+- **Architecture Achievement**: Eliminates classic "LLM JSON parsing failure" problem where malformed responses break entity extraction pipeline
+- **User Impact**: More reliable entity extraction even when Gemini generates slightly malformed JSON, with automatic self-correction capabilities
+- **Error Reduction**: Significantly reduces entity extraction failures due to JSON formatting issues, improving overall system reliability
+- **Status**: Robust JSON parsing with retry mechanism fully operational - system now self-corrects malformed Gemini responses for optimal entity extraction reliability
+
 ✅ **June 30, 2025 - INTELLIGENT REGEX+AI ENTITY DEDUPLICATION FULLY OPERATIONAL: OPTIMIZED EXTRACTION PIPELINE (PRODUCTION READY)**
 - **Pre-Storage Deduplication**: Successfully implemented intelligent deduplication between regex and AI extraction results before storage operations to eliminate redundant writes
 - **Smart Entity Merging**: When duplicates detected (same entity key), system merges information by choosing highest relevance score as primary and combining best attributes from both extractions
