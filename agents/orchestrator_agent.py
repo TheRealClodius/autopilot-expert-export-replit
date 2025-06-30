@@ -1452,38 +1452,35 @@ Current Query: "{message.text}"
                     "message_count": 0
                 }
 
-            # Check if we need to move oldest message to long-term summary
+            # Check if we need to move messages to long-term summary via abstractive summarization
             if len(recent_messages) >= MAX_LIVE_MESSAGES:
-                # Take the oldest message (last in the list since they're stored newest first)
+                # Take the oldest 2-3 messages for abstractive summarization
+                messages_to_archive = recent_messages[-3:]  # Last 3 messages (oldest)
+                
+                # Queue abstractive summarization task
+                await self._queue_abstractive_summarization(
+                    conversation_key,
+                    summary_key,
+                    messages_to_archive,
+                    long_term_summary.get("summary", "")
+                )
+                
+                # For immediate context, keep the current simple append logic as fallback
+                # until the background task completes
                 oldest_message = recent_messages[-1]
-
-                # Create summary entry for the oldest message
                 user_name = oldest_message.get("user_name", "Unknown")
                 text = oldest_message.get("text", "")
-                timestamp = oldest_message.get("stored_at", "")
-
-                # Determine if it's a user or bot message
+                
                 is_bot = user_name.lower() in ["bot", "autopilot", "assistant"]
                 speaker = "Bot" if is_bot else "User"
-
-                # Add to long-term summary
+                
+                # Simple append for immediate use (will be replaced by abstractive summary)
                 if long_term_summary["summary"]:
-                    long_term_summary[
-                        "summary"] += f"\n{speaker}: {text[:150]}..." if len(
-                            text) > 150 else f"\n{speaker}: {text}"
+                    long_term_summary["summary"] += f"\n{speaker}: {text[:100]}..."
                 else:
-                    long_term_summary[
-                        "summary"] = f"{speaker}: {text[:150]}..." if len(
-                            text) > 150 else f"{speaker}: {text}"
-
+                    long_term_summary["summary"] = f"{speaker}: {text[:100]}..."
+                
                 long_term_summary["message_count"] += 1
-
-                # Store updated long-term summary
-                await self.memory_service.store_conversation_context(
-                    summary_key,
-                    long_term_summary,
-                    ttl=86400 * 7  # 7 days TTL for long-term summaries
-                )
 
             # Build live history transcript
             live_history = []
@@ -1572,3 +1569,40 @@ Current Query: "{message.text}"
             summary += f". Last user said: \"{user_messages[-1]}...\""
 
         return summary
+    
+    async def _queue_abstractive_summarization(self, conversation_key: str, summary_key: str,
+                                               messages_to_archive: List[Dict[str, Any]], existing_summary: str):
+        """
+        Queue abstractive summarization task for background processing.
+        
+        Args:
+            conversation_key: Unique conversation identifier
+            summary_key: Redis key for the summary storage
+            messages_to_archive: Messages to be summarized
+            existing_summary: Current summary to build upon
+        """
+        try:
+            # Import Celery task (avoid circular imports)
+            from workers.conversation_summarizer import summarize_conversation_chunk, update_conversation_summary
+            
+            # Create summarization task chain:
+            # 1. Generate abstractive summary
+            # 2. Update conversation summary in Redis
+            
+            logger.info(f"Queuing abstractive summarization for {conversation_key} with {len(messages_to_archive)} messages")
+            
+            # Queue the summarization task
+            summarization_result = summarize_conversation_chunk.delay(
+                conversation_key=conversation_key,
+                messages_to_summarize=messages_to_archive,
+                existing_summary=existing_summary
+            )
+            
+            # The task will handle updating the summary in Redis when complete
+            # We don't await here since it's a background task
+            
+            logger.info(f"Abstractive summarization task queued: {summarization_result.id}")
+            
+        except Exception as e:
+            logger.error(f"Failed to queue abstractive summarization: {e}")
+            # Continue with simple archiving as fallback

@@ -32,6 +32,7 @@ celery_app = Celery(
     backend=get_result_backend(),
     include=[
         'workers.knowledge_update_worker',
+        'workers.conversation_summarizer',
     ]
 )
 
@@ -48,6 +49,7 @@ celery_app.conf.update(
     task_queues=[
         Queue('default', routing_key='default'),
         Queue('ingestion', routing_key='ingestion'),
+        Queue('summarization', routing_key='summarization'),
         Queue('processing', routing_key='processing'),
         Queue('priority', routing_key='priority'),
     ],

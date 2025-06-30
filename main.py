@@ -2600,6 +2600,84 @@ async def warmup_connections():
         logger.error(f"Connection warmup failed: {e}")
         return {"status": "error", "message": str(e)}
 
+@app.get("/admin/test-abstractive-summarization")
+async def test_abstractive_summarization():
+    """Admin endpoint to test the new abstractive summarization system"""
+    try:
+        from workers.conversation_summarizer import summarize_conversation_chunk
+        
+        # Test conversation key
+        conversation_key = "test_abstractive_conv"
+        
+        # Create test messages that simulate a real conversation
+        test_messages = [
+            {
+                "user_name": "john_doe",
+                "text": "Hey, can you help me understand how the UiPath Autopilot integration works?",
+                "stored_at": "2025-06-30T10:00:00Z"
+            },
+            {
+                "user_name": "assistant",
+                "text": "Absolutely! UiPath Autopilot is an AI-powered assistant that helps automate business processes. It integrates with our platform through REST APIs and provides intelligent workflow suggestions.",
+                "stored_at": "2025-06-30T10:01:00Z"
+            },
+            {
+                "user_name": "john_doe", 
+                "text": "That sounds great. What about the authentication requirements? I'm having trouble with the API tokens.",
+                "stored_at": "2025-06-30T10:02:00Z"
+            },
+            {
+                "user_name": "assistant",
+                "text": "For authentication, you'll need to use Bearer tokens with your API requests. Make sure your token has the appropriate scopes for automation and process management. I can help you troubleshoot the specific issue you're facing.",
+                "stored_at": "2025-06-30T10:03:00Z"
+            },
+            {
+                "user_name": "john_doe",
+                "text": "Perfect! Also, do you know when the Q3 release is scheduled? I heard there are some new AI features coming.",
+                "stored_at": "2025-06-30T10:04:00Z"
+            }
+        ]
+        
+        # Test with existing summary
+        existing_summary = "The user has been asking about general platform questions and showed interest in automation capabilities. Previous discussions covered basic API usage and deployment strategies."
+        
+        # Queue the abstractive summarization task
+        result = summarize_conversation_chunk.delay(
+            conversation_key=conversation_key,
+            messages_to_summarize=test_messages,
+            existing_summary=existing_summary
+        )
+        
+        # Wait a moment for task to process (for testing)
+        import time
+        time.sleep(2)
+        
+        # Get task result
+        task_result = result.get(timeout=30)
+        
+        return {
+            "status": "success",
+            "test_type": "abstractive_summarization",
+            "task_id": result.id,
+            "task_state": result.state,
+            "conversation_key": conversation_key,
+            "messages_processed": len(test_messages),
+            "existing_summary_length": len(existing_summary),
+            "result": task_result,
+            "summary_comparison": {
+                "old_approach_length": len(existing_summary),
+                "new_summary_length": task_result.get("summary_length", 0) if task_result.get("success") else 0,
+                "improvement_factor": round(task_result.get("summary_length", 0) / len(existing_summary), 2) if existing_summary and task_result.get("success") else "N/A"
+            }
+        }
+        
+    except Exception as e:
+        return {
+            "status": "error", 
+            "error": str(e),
+            "type": "abstractive_summarization_test_failed"
+        }
+
 @app.get("/admin/test-gemini-reasoning")
 async def test_gemini_reasoning(query: str = "Explain how machine learning works"):
     """Admin endpoint to test Gemini 2.5 detailed response including reasoning steps"""
