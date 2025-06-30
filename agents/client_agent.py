@@ -3,6 +3,7 @@ Simplified Client Agent - Focuses purely on creative presentation and Slack form
 Orchestrator does all data processing; client agent applies personality and formats for Slack.
 """
 
+import asyncio
 import logging
 import time
 from typing import Dict, Any, Optional, List
@@ -224,46 +225,164 @@ class ClientAgent:
     
     async def _generate_suggestions(self, state_stack: Dict[str, Any]) -> List[str]:
         """
-        Generate contextual suggestions based on orchestrator findings.
+        Generate truly contextual suggestions using LLM based on conversation and findings.
+        Uses Gemini Flash to create natural, relevant follow-up questions with robust fallback.
         """
+        findings = state_stack.get("orchestrator_findings", {})
+        
         try:
-            findings = state_stack.get("orchestrator_findings", {})
-            tools_used = findings.get("tools_used", [])
+            # Build context for LLM suggestion generation
+            query = state_stack.get("query", "")
+            user = state_stack.get("user", {})
             
-            suggestions = []
+            # Create focused prompt for suggestion generation
+            suggestion_prompt = self._build_suggestion_prompt(query, findings, user)
             
-            # Smart suggestions based on what tools were used
-            if "atlassian_search" in tools_used:
-                suggestions.extend([
-                    "Search for related Jira issues",
-                    "Find more Confluence documentation",
-                    "Create a new Jira ticket"
-                ])
+            # Use Gemini Flash for fast suggestion generation with timeout
+            response = await asyncio.wait_for(
+                self.gemini_client.generate_response(
+                    system_prompt="You are an expert at generating relevant follow-up questions. Generate 3-4 natural, contextual suggestions that help users explore topics deeper or take next steps. Return only the suggestions, one per line, without numbers or bullets.",
+                    user_prompt=suggestion_prompt,
+                    model=self.gemini_client.flash_model,
+                    max_tokens=200,
+                    temperature=0.9  # High temperature for creative suggestions
+                ),
+                timeout=10.0  # 10-second timeout to prevent hanging
+            )
             
-            if "vector_search" in tools_used:
-                suggestions.extend([
-                    "Ask about related topics",
-                    "Get more technical details",
-                    "Search with different keywords"
-                ])
+            if response:
+                # Parse suggestions from LLM response
+                suggestion_lines = [
+                    line.strip() 
+                    for line in response.split("\n") 
+                    if line.strip() and not line.strip().startswith(("1.", "2.", "3.", "4.", "-", "•"))
+                ]
+                
+                # Clean up suggestions and limit to 4
+                suggestions = []
+                for suggestion in suggestion_lines[:4]:
+                    # Remove any numbering or bullets that might have slipped through
+                    clean_suggestion = suggestion.strip().lstrip("1234567890.-•").strip()
+                    if clean_suggestion and len(clean_suggestion) > 10:  # Ensure meaningful suggestions
+                        suggestions.append(clean_suggestion)
+                
+                if suggestions:
+                    logger.info(f"Generated {len(suggestions)} LLM-powered suggestions")
+                    return suggestions
             
-            if "perplexity_search" in tools_used:
-                suggestions.extend([
-                    "Get latest industry updates",
-                    "Search for recent news",
-                    "Find current best practices"
-                ])
+            # Fallback to intelligent static suggestions if LLM fails
+            logger.info("Using intelligent fallback suggestions")
+            return self._generate_fallback_suggestions(findings)
             
-            # Limit to 3-4 suggestions
-            return suggestions[:4] if suggestions else [
-                "Tell me more about this topic",
-                "How does this relate to our project?",
-                "What are the next steps?"
-            ]
-            
+        except asyncio.TimeoutError:
+            logger.warning("LLM suggestion generation timed out, using fallback")
+            return self._generate_fallback_suggestions(findings)
         except Exception as e:
-            logger.error(f"Error generating suggestions: {e}")
-            return ["Ask me anything else!", "How can I help you further?"]
+            logger.error(f"Error generating LLM suggestions: {e}")
+            return self._generate_fallback_suggestions(findings)
+    
+    def _build_suggestion_prompt(self, query: str, findings: Dict[str, Any], user: Dict[str, Any]) -> str:
+        """
+        Build focused prompt for LLM suggestion generation.
+        """
+        prompt_parts = []
+        
+        prompt_parts.append(f"User asked: \"{query}\"")
+        prompt_parts.append("")
+        
+        # Include user context for personalization
+        user_title = user.get("title", "")
+        if user_title:
+            prompt_parts.append(f"User role: {user_title}")
+            prompt_parts.append("")
+        
+        # Include findings context
+        analysis = findings.get("analysis", "")
+        if analysis:
+            prompt_parts.append(f"Query analysis: {analysis}")
+            prompt_parts.append("")
+        
+        tools_used = findings.get("tools_used", [])
+        if tools_used:
+            prompt_parts.append(f"Information sources used: {', '.join(tools_used)}")
+            prompt_parts.append("")
+        
+        # Include summary of what was found
+        summaries = []
+        if findings.get("search_summary"):
+            summaries.append("internal knowledge")
+        if findings.get("web_summary"):
+            summaries.append("web research")
+        if findings.get("atlassian_summary"):
+            summaries.append("project information")
+        if findings.get("meeting_summary"):
+            summaries.append("meeting actions")
+        
+        if summaries:
+            prompt_parts.append(f"Found information from: {', '.join(summaries)}")
+            prompt_parts.append("")
+        
+        prompt_parts.append("Generate 3-4 natural follow-up questions that would help the user:")
+        prompt_parts.append("- Explore the topic deeper")
+        prompt_parts.append("- Take actionable next steps")
+        prompt_parts.append("- Discover related information")
+        prompt_parts.append("- Apply the knowledge practically")
+        prompt_parts.append("")
+        prompt_parts.append("Make suggestions specific to this conversation context.")
+        
+        return "\n".join(prompt_parts)
+    
+    def _generate_fallback_suggestions(self, findings: Dict[str, Any]) -> List[str]:
+        """
+        Generate intelligent fallback suggestions when LLM fails.
+        """
+        tools_used = findings.get("tools_used", [])
+        suggestions = []
+        
+        # Smart suggestions based on what tools were used
+        if "atlassian_search" in tools_used:
+            suggestions.extend([
+                "Search for related Jira issues",
+                "Find more Confluence documentation",
+                "Create a new Jira ticket"
+            ])
+        
+        if "vector_search" in tools_used:
+            suggestions.extend([
+                "Ask about related topics",
+                "Get more technical details",
+                "Search with different keywords"
+            ])
+        
+        if "perplexity_search" in tools_used:
+            suggestions.extend([
+                "Get latest industry updates",
+                "Search for recent news",
+                "Find current best practices"
+            ])
+        
+        # Limit to 3-4 suggestions
+        return suggestions[:4] if suggestions else [
+            "Tell me more about this topic",
+            "How does this relate to our project?",
+            "What are the next steps?"
+        ]
+    
+    def _contains_raw_json(self, text: str) -> bool:
+        """
+        Check if response contains raw JSON fragments instead of natural language.
+        """
+        json_indicators = [
+            '"analysis":', '"intent":', '"tools":', '"search_results":',
+            '"vector_results":', '"web_results":', '"atlassian_results":',
+            '{"', '"}', '"type":', '"action":'
+        ]
+        
+        # Count JSON-like patterns
+        json_count = sum(1 for indicator in json_indicators if indicator in text)
+        
+        # If we find multiple JSON patterns, it's likely contaminated
+        return json_count >= 3
     
     def _contains_raw_json(self, text: str) -> bool:
         """
