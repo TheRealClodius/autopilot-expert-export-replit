@@ -61,6 +61,246 @@ class EntityExtractionTask(Task):
             logger.error(f"Failed to initialize entity extraction services: {e}")
             raise
 
+    def _extract_entities_with_gemini(
+        self, 
+        user_query: str, 
+        bot_response: str, 
+        conversation_key: str,
+        user_name: str
+    ) -> List[Entity]:
+        """
+        Use Gemini to extract additional entities with AI understanding.
+        
+        Args:
+            user_query: User's query text
+            bot_response: Bot's response text
+            conversation_key: Conversation identifier
+            user_name: Name of the user
+            
+        Returns:
+            List of AI-extracted entities
+        """
+        try:
+            # Build prompt for entity extraction
+            prompt = f"""
+    Analyze the following conversation exchange and extract important entities that should be remembered for future reference.
+
+    User ({user_name}): {user_query}
+
+    Bot Response: {bot_response}
+
+    Extract entities in the following categories and format your response as JSON:
+    1. JIRA tickets (format: PROJ-123)
+    2. Project names and initiatives
+    3. People mentioned (names, roles, assignments)
+    4. Deadlines and dates
+    5. Important documents or templates
+    6. Metrics, numbers, and measurements
+    7. URLs and links
+    8. Technical terms or product names
+
+    For each entity, provide:
+    - "type": entity category
+    - "value": the actual entity value
+    - "context": brief context where it was mentioned
+    - "importance": score from 1-10 for how important this entity is to remember
+
+    Only extract entities that are factual and specific. Avoid generic terms.
+
+    Format as JSON array: [
+      {{"type": "jira_ticket", "value": "PROJ-123", "context": "user asked about status", "importance": 8}},
+      {{"type": "project", "value": "Phoenix Initiative", "context": "discussed roadmap", "importance": 9}}
+    ]
+    """
+            
+            # Generate entity extraction with Gemini
+            response = self.gemini_client.generate_content(
+                prompt,
+                generation_config=genai.GenerationConfig(
+                    temperature=0.1,  # Very low temperature for factual extraction
+                    max_output_tokens=1000,
+                    top_p=0.8,
+                    top_k=20
+                )
+            )
+            
+            if not response or not response.text:
+                return []
+            
+            # Parse JSON response
+            try:
+                # Clean the response text (remove markdown formatting if present)
+                response_text = response.text.strip()
+                if response_text.startswith("```json"):
+                    response_text = response_text[7:]
+                if response_text.endswith("```"):
+                    response_text = response_text[:-3]
+                response_text = response_text.strip()
+                
+                entities_data = json.loads(response_text)
+                
+                # Convert to Entity objects
+                ai_entities = []
+                for entity_data in entities_data:
+                    if not isinstance(entity_data, dict):
+                        continue
+                    
+                    entity_type = entity_data.get("type", "unknown")
+                    entity_value = entity_data.get("value", "")
+                    entity_context = entity_data.get("context", "")
+                    importance = entity_data.get("importance", 5)
+                    
+                    if not entity_value:
+                        continue
+                    
+                    # Generate entity key
+                    entity_key = self.entity_store._generate_entity_key(entity_type, entity_value)
+                    
+                    # Convert importance to relevance score
+                    relevance_score = min(importance / 5.0, 2.0)  # Scale 1-10 to 0.2-2.0
+                    
+                    entity = self.entity_store.create_entity(
+                        key=entity_key,
+                        entity_type=entity_type,
+                        value=entity_value,
+                        context=entity_context,
+                        conversation_key=conversation_key,
+                        relevance_score=relevance_score,
+                        aliases=self.entity_store._generate_aliases(entity_type, entity_value),
+                        metadata={
+                            "extraction_method": "gemini_ai",
+                            "importance_score": importance,
+                            "user_name": user_name
+                        }
+                    )
+                    
+                    ai_entities.append(entity)
+                
+                logger.info(f"Gemini extracted {len(ai_entities)} additional entities")
+                return ai_entities
+                
+            except json.JSONDecodeError as e:
+                logger.warning(f"Failed to parse Gemini entity extraction response as JSON: {e}")
+                return []
+            
+        except Exception as e:
+            logger.error(f"Error in Gemini entity extraction: {e}")
+            return []
+
+    def _deduplicate_extraction_results(self, entities: List[Entity]) -> List[Entity]:
+        """
+        Deduplicate entities between regex and AI extraction before storage.
+        When duplicates are found, merge them by keeping the one with higher relevance
+        score and richer context.
+        
+        Args:
+            entities: Combined list of entities from regex and AI extraction
+            
+        Returns:
+            Deduplicated list of entities with merged information
+        """
+        try:
+            entity_map = {}
+            
+            for entity in entities:
+                if entity.key in entity_map:
+                    existing = entity_map[entity.key]
+                    
+                    # Choose the entity with higher relevance score as base
+                    if entity.relevance_score > existing.relevance_score:
+                        primary, secondary = entity, existing
+                    else:
+                        primary, secondary = existing, entity
+                    
+                    # Merge information from both extractions
+                    merged_entity = self._merge_duplicate_entities(primary, secondary)
+                    entity_map[entity.key] = merged_entity
+                    
+                    logger.debug(f"Merged duplicate entity {entity.key}: regex + AI extraction")
+                else:
+                    entity_map[entity.key] = entity
+            
+            original_count = len(entities)
+            deduplicated_count = len(entity_map)
+            
+            if original_count > deduplicated_count:
+                logger.info(f"Deduplicated {original_count - deduplicated_count} duplicate entities from combined extraction results")
+            
+            return list(entity_map.values())
+            
+        except Exception as e:
+            logger.error(f"Error deduplicating extraction results: {e}")
+            return entities  # Return original list if deduplication fails
+
+    def _merge_duplicate_entities(self, primary: Entity, secondary: Entity) -> Entity:
+        """
+        Merge two duplicate entities, combining their best attributes.
+        
+        Args:
+            primary: Entity with higher relevance score (used as base)
+            secondary: Entity to merge information from
+            
+        Returns:
+            Merged entity with combined information
+        """
+        try:
+            # Start with primary entity as base
+            merged = Entity(
+                key=primary.key,
+                type=primary.type,
+                value=primary.value,
+                context=primary.context,
+                conversation_key=primary.conversation_key,
+                relevance_score=primary.relevance_score,
+                aliases=primary.aliases.copy() if primary.aliases else [],
+                metadata=primary.metadata.copy() if primary.metadata else {}
+            )
+            
+            # Merge contexts (prefer AI context if it's richer)
+            if secondary.context and len(secondary.context) > len(primary.context or ""):
+                merged.context = secondary.context
+            
+            # Merge aliases (avoid duplicates)
+            if secondary.aliases:
+                existing_aliases_lower = [alias.lower() for alias in merged.aliases]
+                for alias in secondary.aliases:
+                    if alias.lower() not in existing_aliases_lower:
+                        merged.aliases.append(alias)
+            
+            # Merge metadata (combine extraction methods)
+            if secondary.metadata:
+                extraction_methods = []
+                
+                # Track extraction methods
+                if primary.metadata.get("extraction_method"):
+                    extraction_methods.append(primary.metadata["extraction_method"])
+                if secondary.metadata.get("extraction_method"):
+                    extraction_methods.append(secondary.metadata["extraction_method"])
+                
+                # Merge all metadata
+                merged.metadata.update(secondary.metadata)
+                
+                # Store combined extraction methods
+                if extraction_methods:
+                    merged.metadata["extraction_methods"] = list(set(extraction_methods))
+                    merged.metadata["extraction_method"] = "+".join(sorted(set(extraction_methods)))
+            
+            # Use the more descriptive value
+            if len(secondary.value) > len(primary.value):
+                merged.value = secondary.value
+            
+            # Calculate weighted relevance score (slightly favor AI extraction if present)
+            ai_boost = 1.1 if any("gemini" in method for method in 
+                                 merged.metadata.get("extraction_methods", [])) else 1.0
+            merged.relevance_score = max(primary.relevance_score, secondary.relevance_score) * ai_boost
+            
+            logger.debug(f"Merged entity {merged.key}: methods={merged.metadata.get('extraction_method', 'unknown')}, score={merged.relevance_score:.2f}")
+            return merged
+            
+        except Exception as e:
+            logger.error(f"Error merging duplicate entities: {e}")
+            return primary  # Return primary if merge fails
+
 @celery_app.task(base=EntityExtractionTask, bind=True)
 def extract_entities_from_conversation(
     self, 
@@ -174,245 +414,7 @@ def extract_entities_from_conversation(
             "entities_extracted": 0
         }
 
-def _extract_entities_with_gemini(
-    self, 
-    user_query: str, 
-    bot_response: str, 
-    conversation_key: str,
-    user_name: str
-) -> List[Entity]:
-    """
-    Use Gemini to extract additional entities with AI understanding.
-    
-    Args:
-        user_query: User's query text
-        bot_response: Bot's response text
-        conversation_key: Conversation identifier
-        user_name: Name of the user
-        
-    Returns:
-        List of AI-extracted entities
-    """
-    try:
-        # Build prompt for entity extraction
-        prompt = f"""
-Analyze the following conversation exchange and extract important entities that should be remembered for future reference.
 
-User ({user_name}): {user_query}
-
-Bot Response: {bot_response}
-
-Extract entities in the following categories and format your response as JSON:
-1. JIRA tickets (format: PROJ-123)
-2. Project names and initiatives
-3. People mentioned (names, roles, assignments)
-4. Deadlines and dates
-5. Important documents or templates
-6. Metrics, numbers, and measurements
-7. URLs and links
-8. Technical terms or product names
-
-For each entity, provide:
-- "type": entity category
-- "value": the actual entity value
-- "context": brief context where it was mentioned
-- "importance": score from 1-10 for how important this entity is to remember
-
-Only extract entities that are factual and specific. Avoid generic terms.
-
-Format as JSON array: [
-  {{"type": "jira_ticket", "value": "PROJ-123", "context": "user asked about status", "importance": 8}},
-  {{"type": "project", "value": "Phoenix Initiative", "context": "discussed roadmap", "importance": 9}}
-]
-"""
-        
-        # Generate entity extraction with Gemini
-        response = self.gemini_client.generate_content(
-            prompt,
-            generation_config=genai.GenerationConfig(
-                temperature=0.1,  # Very low temperature for factual extraction
-                max_output_tokens=1000,
-                top_p=0.8,
-                top_k=20
-            )
-        )
-        
-        if not response or not response.text:
-            return []
-        
-        # Parse JSON response
-        try:
-            # Clean the response text (remove markdown formatting if present)
-            response_text = response.text.strip()
-            if response_text.startswith("```json"):
-                response_text = response_text[7:]
-            if response_text.endswith("```"):
-                response_text = response_text[:-3]
-            response_text = response_text.strip()
-            
-            entities_data = json.loads(response_text)
-            
-            # Convert to Entity objects
-            ai_entities = []
-            for entity_data in entities_data:
-                if not isinstance(entity_data, dict):
-                    continue
-                
-                entity_type = entity_data.get("type", "unknown")
-                entity_value = entity_data.get("value", "")
-                entity_context = entity_data.get("context", "")
-                importance = entity_data.get("importance", 5)
-                
-                if not entity_value:
-                    continue
-                
-                # Generate entity key
-                entity_key = self.entity_store._generate_entity_key(entity_type, entity_value)
-                
-                # Convert importance to relevance score
-                relevance_score = min(importance / 5.0, 2.0)  # Scale 1-10 to 0.2-2.0
-                
-                entity = self.entity_store.create_entity(
-                    key=entity_key,
-                    entity_type=entity_type,
-                    value=entity_value,
-                    context=entity_context,
-                    conversation_key=conversation_key,
-                    relevance_score=relevance_score,
-                    aliases=self.entity_store._generate_aliases(entity_type, entity_value),
-                    metadata={
-                        "extraction_method": "gemini_ai",
-                        "importance_score": importance,
-                        "user_name": user_name
-                    }
-                )
-                
-                ai_entities.append(entity)
-            
-            logger.info(f"Gemini extracted {len(ai_entities)} additional entities")
-            return ai_entities
-            
-        except json.JSONDecodeError as e:
-            logger.warning(f"Failed to parse Gemini entity extraction response as JSON: {e}")
-            return []
-        
-    except Exception as e:
-        logger.error(f"Error in Gemini entity extraction: {e}")
-        return []
-
-    def _deduplicate_extraction_results(self, entities: List[Entity]) -> List[Entity]:
-        """
-        Deduplicate entities between regex and AI extraction before storage.
-        When duplicates are found, merge them by keeping the one with higher relevance
-        score and richer context.
-        
-        Args:
-            entities: Combined list of entities from regex and AI extraction
-            
-        Returns:
-            Deduplicated list of entities with merged information
-        """
-        try:
-            entity_map = {}
-            
-            for entity in entities:
-                if entity.key in entity_map:
-                    existing = entity_map[entity.key]
-                    
-                    # Choose the entity with higher relevance score as base
-                    if entity.relevance_score > existing.relevance_score:
-                        primary, secondary = entity, existing
-                    else:
-                        primary, secondary = existing, entity
-                    
-                    # Merge information from both extractions
-                    merged_entity = self._merge_duplicate_entities(primary, secondary)
-                    entity_map[entity.key] = merged_entity
-                    
-                    logger.debug(f"Merged duplicate entity {entity.key}: regex + AI extraction")
-                else:
-                    entity_map[entity.key] = entity
-            
-            original_count = len(entities)
-            deduplicated_count = len(entity_map)
-            
-            if original_count > deduplicated_count:
-                logger.info(f"Deduplicated {original_count - deduplicated_count} duplicate entities from combined extraction results")
-            
-            return list(entity_map.values())
-            
-        except Exception as e:
-            logger.error(f"Error deduplicating extraction results: {e}")
-            return entities  # Return original list if deduplication fails
-
-    def _merge_duplicate_entities(self, primary: Entity, secondary: Entity) -> Entity:
-    """
-    Merge two duplicate entities, combining their best attributes.
-    
-    Args:
-        primary: Entity with higher relevance score (used as base)
-        secondary: Entity to merge information from
-        
-    Returns:
-        Merged entity with combined information
-    """
-    try:
-        # Start with primary entity as base
-        merged = Entity(
-            key=primary.key,
-            type=primary.type,
-            value=primary.value,
-            context=primary.context,
-            conversation_key=primary.conversation_key,
-            relevance_score=primary.relevance_score,
-            aliases=primary.aliases.copy() if primary.aliases else [],
-            metadata=primary.metadata.copy() if primary.metadata else {}
-        )
-        
-        # Merge contexts (prefer AI context if it's richer)
-        if secondary.context and len(secondary.context) > len(primary.context or ""):
-            merged.context = secondary.context
-        
-        # Merge aliases (avoid duplicates)
-        if secondary.aliases:
-            existing_aliases_lower = [alias.lower() for alias in merged.aliases]
-            for alias in secondary.aliases:
-                if alias.lower() not in existing_aliases_lower:
-                    merged.aliases.append(alias)
-        
-        # Merge metadata (combine extraction methods)
-        if secondary.metadata:
-            extraction_methods = []
-            
-            # Track extraction methods
-            if primary.metadata.get("extraction_method"):
-                extraction_methods.append(primary.metadata["extraction_method"])
-            if secondary.metadata.get("extraction_method"):
-                extraction_methods.append(secondary.metadata["extraction_method"])
-            
-            # Merge all metadata
-            merged.metadata.update(secondary.metadata)
-            
-            # Store combined extraction methods
-            if extraction_methods:
-                merged.metadata["extraction_methods"] = list(set(extraction_methods))
-                merged.metadata["extraction_method"] = "+".join(sorted(set(extraction_methods)))
-        
-        # Use the more descriptive value
-        if len(secondary.value) > len(primary.value):
-            merged.value = secondary.value
-        
-        # Calculate weighted relevance score (slightly favor AI extraction if present)
-        ai_boost = 1.1 if any("gemini" in method for method in 
-                             merged.metadata.get("extraction_methods", [])) else 1.0
-        merged.relevance_score = max(primary.relevance_score, secondary.relevance_score) * ai_boost
-        
-        logger.debug(f"Merged entity {merged.key}: methods={merged.metadata.get('extraction_method', 'unknown')}, score={merged.relevance_score:.2f}")
-        return merged
-        
-    except Exception as e:
-        logger.error(f"Error merging duplicate entities: {e}")
-        return primary  # Return primary if merge fails
 
 @celery_app.task(base=EntityExtractionTask, bind=True)
 def analyze_entity_relationships(
