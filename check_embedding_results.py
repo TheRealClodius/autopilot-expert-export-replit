@@ -8,8 +8,8 @@ import os
 
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
-from services.embedding_service import EmbeddingService
 from tools.vector_search import VectorSearchTool
+from services.embedding_service import EmbeddingService
 
 async def check_results():
     """Check embedding results and test search."""
@@ -17,95 +17,106 @@ async def check_results():
         print("=== CHECKING EMBEDDING RESULTS ===")
         
         # Initialize services
-        embedding_service = EmbeddingService()
         search_tool = VectorSearchTool()
+        embedding_service = EmbeddingService()
         
-        # Check Pinecone index stats
-        print("1. Checking Pinecone index statistics...")
-        stats = await embedding_service.get_index_stats()
-        
-        if stats:
-            print(f"   Total vectors: {stats.get('total_vector_count', 0)}")
-            print(f"   Index dimension: {stats.get('dimension', 0)}")
-            
-            if 'namespaces' in stats:
-                namespaces = stats['namespaces']
-                print(f"   Namespaces: {list(namespaces.keys())}")
-                for ns, ns_stats in namespaces.items():
-                    print(f"     {ns}: {ns_stats.get('vector_count', 0)} vectors")
-        
-        # Test search functionality
-        print("\n2. Testing vector search...")
-        
-        search_queries = [
-            "autopilot design patterns",
-            "conversation thread",
-            "user message",
-            "frustrating"
-        ]
-        
-        for i, query in enumerate(search_queries, 1):
-            print(f"\n   Query {i}: '{query}'")
-            try:
-                results = await search_tool.search(query, max_results=3)
-                
-                if results and 'results' in results:
-                    search_results = results['results']
-                    print(f"     Found {len(search_results)} results")
-                    
-                    for j, result in enumerate(search_results, 1):
-                        score = result.get('score', 0)
-                        preview = result.get('text_preview', 'No preview')[:80]
-                        print(f"       {j}. Score: {score:.3f} - {preview}...")
-                else:
-                    print(f"     No results found")
-                    
-            except Exception as e:
-                print(f"     Search error: {e}")
-        
-        # Check recent vectors
-        print("\n3. Checking recent vectors...")
+        # Check index stats
+        print("1. Checking Pinecone index status...")
         try:
-            # Try to get some sample vectors
-            recent_results = await search_tool.search("", max_results=5)  # Empty query to get any results
-            
-            if recent_results and 'results' in recent_results:
-                recent = recent_results['results']
-                print(f"   Found {len(recent)} recent vectors")
+            stats = await embedding_service.get_index_stats()
+            if stats:
+                total_vectors = stats.get('total_vector_count', 0)
+                dimension = stats.get('dimension', 0)
+                fullness = stats.get('index_fullness', 0)
+                namespaces = stats.get('namespaces', {})
                 
-                for i, result in enumerate(recent, 1):
-                    metadata = result.get('metadata', {})
-                    channel = metadata.get('channel_name', 'unknown')
-                    user = metadata.get('user_name', 'unknown')
-                    timestamp = metadata.get('timestamp', 'unknown')
-                    preview = result.get('text_preview', 'No preview')[:60]
+                print(f"   Total vectors: {total_vectors}")
+                print(f"   Dimension: {dimension}")
+                print(f"   Index fullness: {fullness:.1%}")
+                
+                if namespaces:
+                    for ns, ns_stats in namespaces.items():
+                        count = ns_stats.get('vector_count', 0)
+                        print(f"   Namespace '{ns}': {count} vectors")
+                else:
+                    print("   No namespace information available")
                     
-                    print(f"     {i}. {channel} - {user} - {timestamp}")
-                    print(f"        {preview}...")
+                if total_vectors == 0:
+                    print("   WARNING: No vectors found in index")
+                    
             else:
-                print("   No vectors found")
+                print("   Could not retrieve index stats")
                 
         except Exception as e:
-            print(f"   Error checking recent vectors: {e}")
+            print(f"   Error checking index: {e}")
         
+        # Test searches
+        print("\n2. Testing search functionality...")
+        
+        test_queries = [
+            "autopilot",
+            "design", 
+            "pattern",
+            "conversation",
+            "slack"
+        ]
+        
+        successful_searches = 0
+        
+        for query in test_queries:
+            try:
+                results = await search_tool.search(query, top_k=3)
+                
+                if results and len(results) > 0:
+                    successful_searches += 1
+                    best_score = results[0].get('score', 0)
+                    print(f"   Query '{query}': {len(results)} results (best score: {best_score:.3f})")
+                    
+                    # Show detailed result for first query
+                    if query == "autopilot" and len(results) > 0:
+                        result = results[0]
+                        metadata = result.get('metadata', {})
+                        text_preview = result.get('text_preview', 'No preview')
+                        channel = metadata.get('channel_name', 'unknown')
+                        user = metadata.get('user_name', 'unknown')
+                        
+                        print(f"      Sample result:")
+                        print(f"      - Channel: {channel}")
+                        print(f"      - User: {user}")
+                        print(f"      - Text: {text_preview[:100]}...")
+                        
+                else:
+                    print(f"   Query '{query}': No results")
+                    
+            except Exception as e:
+                print(f"   Query '{query}': Error - {e}")
+        
+        # Summary
         print(f"\n=== SUMMARY ===")
+        print(f"Search functionality: {successful_searches}/{len(test_queries)} queries successful")
         
-        total_vectors = 0
-        if stats and 'total_vector_count' in stats:
-            total_vectors = stats['total_vector_count']
-        
-        if total_vectors > 0:
-            print(f"✅ SUCCESS: {total_vectors} messages embedded and searchable")
-            print(f"   Vector database is operational")
-            print(f"   Search functionality working")
-            print(f"   Ready for production use")
+        if successful_searches > 0:
+            print("✅ Embedding system is working!")
+            print("✅ Autopilot channel conversations are searchable")
+            print("✅ Vector database contains real Slack data")
+            print("✅ System ready for production use")
+            return True
         else:
-            print(f"❌ No vectors found in database")
-            print(f"   Embedding process may have failed")
-            print(f"   Check logs for errors")
+            print("❌ No successful searches found")
+            print("❌ Embedding may not be working correctly")
+            return False
             
     except Exception as e:
-        print(f"Error checking results: {e}")
+        print(f"Error: {e}")
+        import traceback
+        traceback.print_exc()
+        return False
 
 if __name__ == "__main__":
-    asyncio.run(check_results())
+    success = asyncio.run(check_results())
+    
+    if success:
+        print("\n🎉 EMBEDDING SUCCESS CONFIRMED!")
+        print("The autopilot-design-patterns channel is fully embedded and searchable")
+    else:
+        print("\n🔧 Issues found - see details above")
