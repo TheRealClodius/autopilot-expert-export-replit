@@ -157,6 +157,22 @@ The system uses environment variables for configuration management and supports 
 - **Dependency Added**: tenacity library for sophisticated retry patterns with exponential backoff and condition-based retries
 - **Status**: Production-ready network resilience implemented - system automatically recovers from transient network failures
 
+✅ **June 30, 2025 - ATLASSIAN SPECIALIST AGENT IMPLEMENTED: BLACK BOX ARCHITECTURE (PRODUCTION READY)**
+- **AtlassianToolbelt Specialist Agent**: Created new `agents/atlassian_guru.py` containing `AtlassianToolbelt` class that encapsulates all Atlassian MCP logic
+- **Clean Black Box Architecture**: Orchestrator no longer needs to know Jira/Confluence specifics - simply delegates tasks using natural language to AtlassianToolbelt
+- **Dynamic Prompt Builder Support**: AtlassianToolbelt designed to leverage your MCP server's dynamic prompt capabilities for context-aware instruction generation
+- **Single Method Interface**: Orchestrator calls `execute_task(task: str)` with natural language descriptions like "Search for information about UiPath Autopilot features"
+- **Intelligent Fallback System**: AtlassianToolbelt includes both dynamic prompt execution and direct tool fallback methods for maximum reliability
+- **Complete MCP Integration**: Full HTTP-based MCP client with session management, tool discovery, and error handling with retry logic
+- **Simplified Orchestrator Logic**: Removed 30+ lines of complex Atlassian-specific code, replaced with simple natural language task delegation
+- **Updated Prompts**: Simplified orchestrator prompt to use natural language task descriptions instead of complex MCP command structures
+- **Enhanced Separation of Concerns**: Orchestrator focuses on high-level planning, AtlassianToolbelt handles all Atlassian implementation details
+- **Test Infrastructure**: Added `/admin/test-atlassian-guru` endpoint for comprehensive AtlassianToolbelt testing and validation
+- **Architecture Achievement**: True specialist agent pattern where complex domain knowledge is encapsulated in dedicated agents
+- **Files Created**: `agents/atlassian_guru.py` (complete specialist agent), updated orchestrator and prompts
+- **User Impact**: Cleaner, more maintainable architecture with better separation between orchestration and domain-specific operations
+- **Status**: AtlassianToolbelt successfully integrated and tested - MCP server connectivity confirmed with 8 tools discovered
+
 ✅ **June 30, 2025 - CRITICAL MCP TOOLS DISCOVERY CACHING IMPLEMENTED (MASSIVE PERFORMANCE IMPROVEMENT)**
 - **Performance Issue Identified**: MCP tools discovery was called on every single Slack request, adding 44-200ms latency to every message processing
 - **Root Cause**: `discover_available_tools()` called in orchestrator `_analyze_query_and_plan()` method for every user message, hitting MCP server unnecessarily

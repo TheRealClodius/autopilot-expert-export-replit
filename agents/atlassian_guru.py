@@ -23,7 +23,7 @@ class AtlassianToolbelt:
     
     def __init__(self):
         """Initialize the Atlassian specialist agent"""
-        self.mcp_server_url = settings.DEPLOYMENT_AWARE_MCP_URL
+        self.mcp_server_url = settings.DEPLOYMENT_AWARE_MCP_URL.strip()
         self.session_id = None
         self.messages_endpoint = None
         self.dynamic_prompt = None
