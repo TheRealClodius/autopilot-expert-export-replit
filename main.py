@@ -3132,15 +3132,16 @@ async def diagnose_deployment_errors():
         results["atlassian_auth"]["error"] = str(e)
         results["recommendations"].append("Check Atlassian credentials and network connectivity")
     
-    # 4. Production Execution Test
+    # 4. Production Execution Test - Updated to use AtlassianToolbelt
     try:
-        from tools.atlassian_tool import AtlassianTool
+        from agents.atlassian_guru import AtlassianToolbelt
         
-        # Initialize tool
-        tool = AtlassianTool()
-        results["production_execution"]["tool_available"] = bool(tool.available_tools)
+        # Initialize AtlassianToolbelt
+        async with AtlassianToolbelt() as toolbelt:
+            capabilities = await toolbelt.get_capabilities()
+            results["production_execution"]["tool_available"] = bool(capabilities.get("available_tools"))
         
-        if tool.available_tools:
+        if capabilities.get("available_tools"):
             # Test actual execution that fails in production
             start_time = time.time()
             

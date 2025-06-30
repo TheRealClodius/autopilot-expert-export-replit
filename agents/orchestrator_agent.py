@@ -15,7 +15,7 @@ from utils.prompt_loader import get_orchestrator_prompt
 from tools.vector_search import VectorSearchTool
 from tools.perplexity_search import PerplexitySearchTool
 from tools.outlook_meeting import OutlookMeetingTool
-from tools.atlassian_tool import AtlassianTool
+# AtlassianTool replaced by AtlassianToolbelt
 from agents.atlassian_guru import AtlassianToolbelt
 from agents.client_agent import ClientAgent
 from agents.observer_agent import ObserverAgent
