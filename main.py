@@ -3838,6 +3838,43 @@ async def test_entity_extraction():
             "message": "Entity extraction system test failed"
         }
 
+@app.get("/admin/test-conversation-entity-extraction")
+async def test_conversation_entity_extraction():
+    """Test the complete conversation entity extraction task workflow"""
+    try:
+        from workers.entity_extractor import extract_entities_from_conversation
+        
+        # Test conversation data with realistic content
+        conversation_key = f"test_conversation_{int(time.time())}"
+        user_query = "Hi, I need to check the status of JIRA ticket DEV-456 for the Autopilot project. John Smith mentioned the deadline is next Friday and we need to coordinate with the QA team."
+        bot_response = "I'll help you check the status of DEV-456. Based on the latest information, this ticket is currently in the 'In Progress' state. The Autopilot project is on track, and John Smith has been working on the implementation. The deadline for next Friday (December 15th) looks achievable. I've also noted that QA team coordination will be needed once development is complete."
+        
+        # Execute the Celery task directly (synchronous for testing)
+        task_result = extract_entities_from_conversation(
+            conversation_key=conversation_key,
+            user_query=user_query,
+            bot_response=bot_response,
+            user_name="test_user",
+            additional_context={"source": "admin_test"}
+        )
+        
+        return {
+            "status": "success",
+            "conversation_key": conversation_key,
+            "task_result": task_result,
+            "test_input": {
+                "user_query": user_query[:100] + "..." if len(user_query) > 100 else user_query,
+                "bot_response": bot_response[:100] + "..." if len(bot_response) > 100 else bot_response
+            }
+        }
+        
+    except Exception as e:
+        logger.error(f"Error testing conversation entity extraction: {e}")
+        return {
+            "status": "error",
+            "error": str(e)
+        }
+
 @app.get("/admin/test-entity-deduplication")
 async def test_entity_deduplication():
     """Test the new regex+AI entity deduplication system"""
