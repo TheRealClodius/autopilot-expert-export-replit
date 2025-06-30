@@ -75,7 +75,9 @@ class Settings(BaseSettings):
     LANGSMITH_ENDPOINT: str = os.getenv("LANGSMITH_ENDPOINT", "https://api.smith.langchain.com")
     
     # MCP Server Configuration
-    MCP_SERVER_URL: str = os.getenv("MCP_SERVER_URL", "http://localhost:8001")
+    MCP_SERVER_URL: str = os.getenv("MCP_SERVER_URL", 
+        "https://remote-mcp-server-andreiclodius.replit.app" if os.getenv("REPLIT_DEPLOYMENT") 
+        else "http://localhost:8001")
     
     @property
     def DEPLOYMENT_AWARE_MCP_URL(self) -> str:
