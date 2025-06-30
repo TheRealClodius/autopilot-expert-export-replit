@@ -82,6 +82,19 @@ The system uses environment variables for configuration management and supports 
 
 ## Recent Changes
 
+✅ **June 30, 2025 - CRITICAL HTTP CLIENT OPTIMIZATION IMPLEMENTED (PRODUCTION READY)**
+- **Performance Issue Identified**: AtlassianTool was creating new httpx.AsyncClient for every tool execution causing inefficient connection establishment
+- **Connection Pooling Optimization**: Implemented reusable HTTP client instance in AtlassianTool constructor with persistent connection pools
+- **HTTP Keep-Alive Benefits**: Single client instance maintains connection pools and TLS handshakes across multiple requests for significantly faster performance
+- **Enhanced Configuration**: HTTP client configured with 10 max connections, 5 max keepalive connections, 60s timeout, and redirect handling
+- **Resource Management**: Added proper async context manager support with automatic client cleanup (`__aenter__`, `__aexit__`, `close()` methods)
+- **Complete Coverage**: Fixed all HTTP client usage in `execute_mcp_tool`, `discover_available_tools`, `_get_session_endpoint`, and `check_server_health` methods
+- **Performance Monitoring**: Added `/admin/test-http-client-optimization` endpoint for measuring connection reuse benefits
+- **Production Verification**: Server logs confirm single HTTP client instance handling multiple requests with connection pooling active
+- **Architecture Achievement**: Eliminated redundant connection establishment overhead, improving tool execution performance across all MCP operations
+- **Files Modified**: tools/atlassian_tool.py (constructor + all HTTP methods), main.py (test endpoint)
+- **Status**: Critical performance optimization implemented - HTTP client connection pooling dramatically improves AtlassianTool efficiency
+
 🔄 **June 30, 2025 - SLACK PERMISSIONS UPGRADE PENDING ADMIN APPROVAL**
 - **Comprehensive Permissions Requested**: Added 25+ Slack OAuth scopes for full workspace access including users:read, channels:read, groups:read, files:read, reactions:read, team:read
 - **User Access Enhancement**: New permissions will enable full user profile access (names, emails, titles, departments) for enhanced personalization

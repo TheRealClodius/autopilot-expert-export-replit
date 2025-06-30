@@ -3277,6 +3277,66 @@ async def clear_webhook_cache():
             "error": f"Failed to clear cache: {str(e)}"
         }
 
+@app.get("/admin/test-http-client-optimization")
+async def test_http_client_optimization():
+    """Test HTTP client optimization performance and connection pooling"""
+    import time
+    import asyncio
+    from tools.atlassian_tool import AtlassianTool
+    
+    try:
+        # Test connection pooling performance
+        start_time = time.time()
+        
+        # Initialize AtlassianTool with reusable HTTP client
+        atlassian_tool = AtlassianTool()
+        
+        # Perform multiple health checks to test connection reuse
+        results = []
+        for i in range(5):
+            check_start = time.time()
+            health_result = await atlassian_tool.check_server_health()
+            check_duration = (time.time() - check_start) * 1000  # ms
+            
+            results.append({
+                "check_number": i + 1,
+                "health_status": health_result,
+                "duration_ms": round(check_duration, 2)
+            })
+            
+            # Small delay between checks
+            await asyncio.sleep(0.1)
+        
+        total_duration = (time.time() - start_time) * 1000
+        
+        # Calculate average duration (excluding first call which includes connection setup)
+        avg_duration = sum(r["duration_ms"] for r in results[1:]) / len(results[1:]) if len(results) > 1 else 0
+        
+        # Clean up HTTP client
+        await atlassian_tool.close()
+        
+        return {
+            "status": "success",
+            "optimization": "HTTP client connection pooling enabled",
+            "total_duration_ms": round(total_duration, 2),
+            "average_reuse_duration_ms": round(avg_duration, 2),
+            "connection_reuse_benefit": f"{round((results[0]['duration_ms'] - avg_duration) / results[0]['duration_ms'] * 100, 1)}%" if avg_duration > 0 else "N/A",
+            "health_checks": results,
+            "http_client_config": {
+                "timeout": "60.0s",
+                "follow_redirects": True,
+                "max_connections": 10,
+                "max_keepalive_connections": 5
+            }
+        }
+        
+    except Exception as e:
+        logger.error(f"Error testing HTTP client optimization: {e}")
+        return {
+            "status": "error",
+            "error": str(e)
+        }
+
 if __name__ == "__main__":
     # Get port from environment for Cloud Run deployment
     port = int(os.environ.get("PORT", 5000))
