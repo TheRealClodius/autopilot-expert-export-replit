@@ -2450,12 +2450,12 @@ async def test_tool_results_flow():
         orchestrator_analysis = state_stack.get("orchestrator_analysis", {})
         search_results_in_state = orchestrator_analysis.get("search_results", [])
         
-        # Test client agent formatting
+        # Test client agent formatting (simplified approach)
         client_agent = orchestrator.client_agent
-        formatted_context = client_agent._format_state_stack_context(state_stack)
+        formatted_context = client_agent._format_clean_context(state_stack)
         
         # Check if search results are visible in formatted context
-        search_results_visible = "Vector Search Results:" in formatted_context
+        search_results_visible = "KNOWLEDGE BASE FINDINGS:" in formatted_context
         
         return {
             "status": "success",
