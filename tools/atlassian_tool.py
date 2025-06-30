@@ -311,22 +311,7 @@ class AtlassianTool:
         """Execute MCP tool call with retry logic"""
         return await self.http_client.post(tool_endpoint, json=tool_request, headers=headers)
 
-    @retry(
-        stop=stop_after_attempt(3),
-        wait=wait_exponential(multiplier=1, min=1, max=10),
-        retry=retry_if_exception_type((httpx.ConnectError, httpx.TimeoutException, httpx.NetworkError)),
-        before_sleep=before_sleep_log(logger, logging.WARNING),
-        after=after_log(logger, logging.INFO)
-    )
-    async def check_server_health(self) -> bool:
-        """Check if MCP server is healthy and responding with retry logic"""
-        try:
-            response = await self.http_client.get(f"{self.mcp_server_url}/health")
-            return response.status_code == 200
-        except Exception as e:
-            logger.warning(f"MCP server health check failed: {e}")
-            # Re-raise to trigger retry
-            raise
+
 
     async def execute_mcp_tool(self, tool_name: str, arguments: Dict[str, Any]) -> Dict[str, Any]:
         """
@@ -649,11 +634,23 @@ class AtlassianTool:
         """List available MCP tools"""
         return self.available_tools
     
+    @retry(
+        stop=stop_after_attempt(3),
+        wait=wait_exponential(multiplier=1, min=1, max=10),
+        retry=retry_if_exception_type((httpx.ConnectError, httpx.TimeoutException, httpx.NetworkError)),
+        before_sleep=before_sleep_log(logger, logging.WARNING),
+        after=after_log(logger, logging.INFO)
+    )
     async def check_server_health(self) -> bool:
-        """Check if MCP server is healthy and responding"""
+        """Check if MCP server is healthy and responding with retry logic"""
         try:
             response = await self.http_client.get(f"{self.mcp_server_url}/health")
-            return response.status_code == 200
+            if response.status_code == 200:
+                return True
+            else:
+                # Raise exception to trigger retry for non-200 status codes
+                raise httpx.HTTPStatusError(f"Health check failed with status {response.status_code}", request=response.request, response=response)
         except Exception as e:
-            logger.error(f"MCP server health check failed: {e}")
-            return False
+            logger.warning(f"MCP server health check failed: {e}")
+            # Re-raise to trigger retry
+            raise

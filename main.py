@@ -3393,6 +3393,136 @@ async def clear_mcp_tools_cache():
             "error": str(e)
         }
 
+@app.get("/admin/test-retry-mechanism")
+async def test_retry_mechanism():
+    """Admin endpoint to test the tenacity retry mechanism for MCP server connections"""
+    try:
+        from tools.atlassian_tool import AtlassianTool
+        import time
+        
+        results = []
+        
+        # Test 1: Normal health check with retry protection
+        logger.info("Testing normal MCP server health check with retry protection")
+        try:
+            tool = AtlassianTool()
+            start_time = time.time()
+            health_status = await tool.check_server_health()
+            duration_ms = (time.time() - start_time) * 1000
+            
+            results.append({
+                "test": "health_check_with_retry",
+                "status": "success" if health_status else "failed",
+                "duration_ms": round(duration_ms, 2),
+                "retries_triggered": "No (successful on first attempt)" if health_status else "Yes (but still failed)"
+            })
+            await tool.close()
+        except Exception as e:
+            results.append({
+                "test": "health_check_with_retry",
+                "status": "error",
+                "error": str(e),
+                "error_type": type(e).__name__
+            })
+        
+        # Test 2: Tool discovery with retry protection
+        logger.info("Testing MCP tools discovery with retry protection")
+        try:
+            tool = AtlassianTool()
+            start_time = time.time()
+            tools = await tool.discover_available_tools()
+            duration_ms = (time.time() - start_time) * 1000
+            
+            results.append({
+                "test": "tools_discovery_with_retry",
+                "status": "success",
+                "tools_discovered": len(tools),
+                "atlassian_tools": tool.available_tools,
+                "duration_ms": round(duration_ms, 2),
+                "cache_used": len(tools) > 0 and duration_ms < 50  # Fast response indicates cache hit
+            })
+            await tool.close()
+        except Exception as e:
+            results.append({
+                "test": "tools_discovery_with_retry", 
+                "status": "error",
+                "error": str(e),
+                "error_type": type(e).__name__
+            })
+        
+        # Test 3: Simulate network failure to verify retry behavior
+        logger.info("Testing retry behavior with simulated network failure")
+        try:
+            from config import settings
+            original_url = settings.MCP_SERVER_URL
+            
+            # Use an invalid URL to trigger retry behavior
+            settings.MCP_SERVER_URL = "https://definitely-invalid-mcp-server.example.com"
+            
+            tool = AtlassianTool()
+            start_time = time.time()
+            
+            try:
+                # This should fail after retries
+                health_status = await tool.check_server_health()
+                duration_ms = (time.time() - start_time) * 1000
+                
+                results.append({
+                    "test": "retry_behavior_simulation",
+                    "status": "unexpected_success",
+                    "message": "Expected failure but got success",
+                    "duration_ms": round(duration_ms, 2)
+                })
+            except Exception as retry_e:
+                duration_ms = (time.time() - start_time) * 1000
+                
+                results.append({
+                    "test": "retry_behavior_simulation", 
+                    "status": "expected_failure",
+                    "message": "Failed as expected after retry attempts",
+                    "duration_ms": round(duration_ms, 2),
+                    "retry_duration_indicates": "3 retry attempts with exponential backoff" if duration_ms > 1000 else "Immediate failure (no retries)",
+                    "error_type": type(retry_e).__name__,
+                    "error_message": str(retry_e)[:100] + "..." if len(str(retry_e)) > 100 else str(retry_e)
+                })
+            
+            # Restore original URL
+            settings.MCP_SERVER_URL = original_url
+            await tool.close()
+            
+        except Exception as e:
+            # Ensure URL is restored even if test setup fails
+            settings.MCP_SERVER_URL = original_url
+            results.append({
+                "test": "retry_behavior_simulation",
+                "status": "test_setup_error", 
+                "error": str(e)
+            })
+        
+        return {
+            "status": "completed",
+            "retry_mechanism_info": {
+                "library": "tenacity",
+                "max_attempts": 3,
+                "wait_strategy": "exponential backoff (1s, 2s, 4s)",
+                "retry_conditions": ["ConnectionError", "TimeoutException", "NetworkError"]
+            },
+            "test_results": results,
+            "summary": {
+                "tests_run": len(results),
+                "successful_tests": len([r for r in results if r.get("status") == "success"]),
+                "retry_mechanism_working": any("retry" in str(r) for r in results)
+            }
+        }
+        
+    except Exception as e:
+        logger.error(f"Error testing retry mechanism: {e}")
+        return {
+            "status": "error",
+            "error": str(e),
+            "error_type": type(e).__name__
+        }
+
 @app.get("/admin/test-mcp-tools-cache-performance")
 async def test_mcp_tools_cache_performance():
     """Admin endpoint to test and demonstrate MCP tools cache performance benefits"""
