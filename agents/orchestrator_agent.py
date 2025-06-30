@@ -238,22 +238,27 @@ class OrchestratorAgent:
             Execution plan dictionary
         """
         try:
-            # Get recent messages for better context (10 message sliding window)
+            # Construct conversation key
             conversation_key = f"conv:{message.channel_id}:{message.thread_ts or message.message_ts}"
-            recent_messages = await self.memory_service.get_recent_messages(conversation_key, limit=10)
             
-            # Also get legacy conversation history for compatibility
-            conversation_history = await self.memory_service.get_conversation_context(conversation_key)
+            # Build hybrid memory system with rolling long-term summary and token-managed live history
+            hybrid_history = await self._construct_hybrid_history(conversation_key, message.text)
             
-            # Prepare context for analysis with short-term memory
+            # Prepare clean, optimized context for analysis
             context = {
                 "query": message.text,
-                "user": message.user_name,
-                "channel": message.channel_name,
-                "is_dm": message.is_dm,
-                "thread_context": message.thread_context,
-                "recent_messages": recent_messages,  # Last 10 raw messages
-                "conversation_history": conversation_history
+                "user_info": {
+                    "name": message.user_name,
+                    "first_name": message.user_first_name,
+                    "title": message.user_title,
+                    "department": message.user_department
+                },
+                "channel": {
+                    "name": message.channel_name,
+                    "is_dm": message.is_dm,
+                    "thread_context": message.thread_context
+                },
+                "conversation_memory": hybrid_history
             }
             
             # Discover available tools from MCP server first
@@ -606,19 +611,16 @@ Current Query: "{message.text}"
             Simplified state stack with pre-formatted summaries for client agent
         """
         try:
-            # Get conversation history
+            # Get hybrid conversation history
             thread_identifier = message.thread_ts or message.message_ts
             conversation_key = f"conv:{message.channel_id}:{thread_identifier}"
-            recent_messages = await self.memory_service.get_recent_messages(conversation_key, limit=10)
+            hybrid_history = await self._construct_hybrid_history(conversation_key, message.text)
             
             # Generate orchestrator summaries for all search results (orchestrator does the heavy lifting)
             search_summary = await self._summarize_search_results(gathered_information.get("vector_results", []))
             web_summary = await self._summarize_web_results(gathered_information.get("perplexity_results", []))
             meeting_summary = await self._summarize_meeting_results(gathered_information.get("meeting_results", []))
             atlassian_summary = await self._summarize_atlassian_results(gathered_information.get("atlassian_results", []))
-            
-            # Create conversation summary from recent messages
-            conversation_summary = await self._summarize_conversation_history(recent_messages)
             
             # Build simplified state stack for Client Agent (orchestrator does the heavy lifting)
             state_stack = {
@@ -635,7 +637,7 @@ Current Query: "{message.text}"
                     "is_dm": message.is_dm,
                     "thread_context": message.thread_context
                 },
-                "conversation_summary": conversation_summary,
+                "hybrid_history": hybrid_history,
                 "orchestrator_findings": {
                     "analysis": execution_plan.get("analysis", ""),
                     "tools_used": execution_plan.get("tools_needed", []),
@@ -658,7 +660,13 @@ Current Query: "{message.text}"
                 "query": message.text,
                 "user": {"name": message.user_name, "first_name": message.user_first_name},
                 "context": {"channel": message.channel_name, "is_dm": message.is_dm},
-                "conversation_history": {"recent_exchanges": []},
+                "hybrid_history": {
+                    "summarized_history": "",
+                    "summarized_message_count": 0,
+                    "live_history": f"User: {message.text}",
+                    "live_message_count": 1,
+                    "estimated_tokens": len(message.text) // 4
+                },
                 "orchestrator_analysis": {
                     "intent": execution_plan.get("analysis", "Error occurred during analysis"),
                     "tools_used": [],
@@ -1170,9 +1178,115 @@ Current Query: "{message.text}"
         
         return "\n".join(summary_parts)
     
+    async def _construct_hybrid_history(self, conversation_key: str, current_query: str) -> Dict[str, Any]:
+        """
+        Construct hybrid memory system with rolling long-term summary and token-managed live history.
+        
+        Args:
+            conversation_key: Unique conversation identifier
+            current_query: Current user query
+            
+        Returns:
+            Dictionary containing summarized_history and live_history
+        """
+        MAX_LIVE_MESSAGES = 10
+        MAX_LIVE_TOKENS = 2000  # Approximate token limit for live history
+        
+        try:
+            # Get recent messages from sliding window
+            recent_messages = await self.memory_service.get_recent_messages(conversation_key, limit=MAX_LIVE_MESSAGES)
+            
+            # Get or initialize long-term summary
+            summary_key = f"{conversation_key}:long_term_summary"
+            long_term_summary = await self.memory_service.get_conversation_context(summary_key) or {"summary": "", "message_count": 0}
+            
+            # Check if we need to move oldest message to long-term summary
+            if len(recent_messages) >= MAX_LIVE_MESSAGES:
+                # Take the oldest message (last in the list since they're stored newest first)
+                oldest_message = recent_messages[-1]
+                
+                # Create summary entry for the oldest message
+                user_name = oldest_message.get("user_name", "Unknown")
+                text = oldest_message.get("text", "")
+                timestamp = oldest_message.get("stored_at", "")
+                
+                # Determine if it's a user or bot message
+                is_bot = user_name.lower() in ["bot", "autopilot", "assistant"]
+                speaker = "Bot" if is_bot else "User"
+                
+                # Add to long-term summary
+                if long_term_summary["summary"]:
+                    long_term_summary["summary"] += f"\n{speaker}: {text[:150]}..." if len(text) > 150 else f"\n{speaker}: {text}"
+                else:
+                    long_term_summary["summary"] = f"{speaker}: {text[:150]}..." if len(text) > 150 else f"{speaker}: {text}"
+                
+                long_term_summary["message_count"] += 1
+                
+                # Store updated long-term summary
+                await self.memory_service.store_conversation_context(
+                    summary_key, 
+                    long_term_summary, 
+                    ttl=86400 * 7  # 7 days TTL for long-term summaries
+                )
+            
+            # Build live history transcript
+            live_history = []
+            total_tokens_estimate = 0
+            
+            for msg in reversed(recent_messages):  # Process from oldest to newest
+                user_name = msg.get("user_name", "Unknown")
+                text = msg.get("text", "")
+                
+                if not text:
+                    continue
+                
+                # Determine speaker
+                is_bot = user_name.lower() in ["bot", "autopilot", "assistant"]
+                speaker = "Bot" if is_bot else "User"
+                
+                # Estimate tokens (rough approximation: 1 token ≈ 4 characters)
+                message_tokens = len(f"{speaker}: {text}") // 4
+                
+                # Check if adding this message would exceed token limit
+                if total_tokens_estimate + message_tokens > MAX_LIVE_TOKENS and live_history:
+                    # If we're over the limit and have at least one message, stop adding older messages
+                    break
+                
+                live_history.insert(0, {"speaker": speaker, "text": text})
+                total_tokens_estimate += message_tokens
+            
+            # Format live history as clean transcript
+            live_history_text = ""
+            for entry in live_history:
+                live_history_text += f"{entry['speaker']}: {entry['text']}\n"
+            
+            hybrid_history = {
+                "summarized_history": long_term_summary["summary"],
+                "summarized_message_count": long_term_summary["message_count"],
+                "live_history": live_history_text.strip(),
+                "live_message_count": len(live_history),
+                "estimated_tokens": total_tokens_estimate
+            }
+            
+            logger.info(f"Constructed hybrid history: {long_term_summary['message_count']} summarized, {len(live_history)} live messages, ~{total_tokens_estimate} tokens")
+            
+            return hybrid_history
+            
+        except Exception as e:
+            logger.error(f"Error constructing hybrid history: {e}")
+            # Fallback to simple recent messages
+            return {
+                "summarized_history": "",
+                "summarized_message_count": 0,
+                "live_history": f"User: {current_query}",
+                "live_message_count": 1,
+                "estimated_tokens": len(current_query) // 4
+            }
+    
     async def _summarize_conversation_history(self, recent_messages: List[Dict[str, Any]]) -> str:
         """
-        Summarize recent conversation history into a clean, concise summary.
+        Legacy method for backwards compatibility. 
+        New implementations should use _construct_hybrid_history instead.
         """
         if not recent_messages or len(recent_messages) < 3:
             return ""

@@ -31,7 +31,7 @@ class ClientAgent:
                 - query: Current user query
                 - user: User profile information
                 - context: Channel/DM context
-                - conversation_summary: Brief conversation context
+                - hybrid_history: Rolling long-term summary and token-managed live history
                 - orchestrator_findings: Pre-formatted summaries from orchestrator
             
         Returns:
@@ -158,12 +158,22 @@ class ClientAgent:
             context_parts.append(f"CONTEXT: Channel #{channel}")
         context_parts.append("")
         
-        # Conversation summary (if available)
-        conversation_summary = state_stack.get("conversation_summary", "")
-        if conversation_summary:
-            context_parts.append("CONVERSATION CONTEXT:")
-            context_parts.append(conversation_summary)
-            context_parts.append("")
+        # Hybrid conversation history (new memory system)
+        hybrid_history = state_stack.get("hybrid_history", {})
+        if hybrid_history:
+            # Add summarized history if it exists
+            summarized_history = hybrid_history.get("summarized_history", "")
+            if summarized_history:
+                context_parts.append("CONVERSATION HISTORY SUMMARY:")
+                context_parts.append(f"Previous exchanges ({hybrid_history.get('summarized_message_count', 0)} messages): {summarized_history}")
+                context_parts.append("")
+            
+            # Add live conversation history
+            live_history = hybrid_history.get("live_history", "")
+            if live_history:
+                context_parts.append("RECENT CONVERSATION:")
+                context_parts.append(live_history)
+                context_parts.append("")
         
         # Orchestrator findings (pre-formatted summaries)
         findings = state_stack.get("orchestrator_findings", {})
