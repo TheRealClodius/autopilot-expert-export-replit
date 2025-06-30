@@ -326,25 +326,26 @@ class EntityStore:
                     entity_data = {}
             
             # Search through entities
-            for entity_key, entity_json in entity_data.items():
-                try:
-                    entity_dict = json.loads(entity_json)
-                    entity = Entity(**entity_dict)
+            if entity_data:
+                for entity_key, entity_json in entity_data.items():
+                    try:
+                        entity_dict = json.loads(entity_json)
+                        entity = Entity(**entity_dict)
+                        
+                        # Filter by entity type if specified
+                        if entity_types and entity.type not in entity_types:
+                            continue
+                        
+                        # Check if any keyword matches
+                        match_score = self._calculate_match_score(entity, query_keywords)
+                        if match_score > 0:
+                            # Boost by original relevance score
+                            entity.relevance_score = match_score * entity.relevance_score
+                            matching_entities.append(entity)
                     
-                    # Filter by entity type if specified
-                    if entity_types and entity.type not in entity_types:
+                    except Exception as e:
+                        logger.warning(f"Error parsing entity {entity_key}: {e}")
                         continue
-                    
-                    # Check if any keyword matches
-                    match_score = self._calculate_match_score(entity, query_keywords)
-                    if match_score > 0:
-                        # Boost by original relevance score
-                        entity.relevance_score = match_score * entity.relevance_score
-                        matching_entities.append(entity)
-                
-                except Exception as e:
-                    logger.warning(f"Error parsing entity {entity_key}: {e}")
-                    continue
             
             # Sort by relevance score and limit results
             matching_entities.sort(key=lambda e: e.relevance_score, reverse=True)
@@ -404,7 +405,11 @@ class EntityStore:
             entity_store_key = f"{conversation_key}:entity_store"
             
             if self.memory_service.redis_available and self.memory_service.redis_client:
-                entity_json = await self.memory_service.redis_client.hget(entity_store_key, entity_key)
+                hget_result = self.memory_service.redis_client.hget(entity_store_key, entity_key)
+                if hasattr(hget_result, '__await__'):
+                    entity_json = await hget_result
+                else:
+                    entity_json = hget_result
             else:
                 # Use in-memory fallback
                 cache_item = self.memory_service._memory_cache.get(entity_store_key)

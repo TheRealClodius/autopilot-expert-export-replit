@@ -3535,6 +3535,104 @@ async def test_hybrid_memory():
 
 # Removed obsolete mcp-tools-cache-stats and clear-mcp-tools-cache endpoints - functionality replaced by AtlassianToolbelt
 
+@app.get("/admin/test-entity-extraction")
+async def test_entity_extraction():
+    """Test the new entity extraction and structured memory system"""
+    try:
+        from services.entity_store import EntityStore, Entity
+        from workers.entity_extractor import extract_entities_from_conversation
+        
+        memory_service = MemoryService()
+        entity_store = EntityStore(memory_service)
+        
+        # Test conversation data
+        test_conversation_key = "conv:test_channel:1234567890.001"
+        test_user_query = "I need to follow up on JIRA ticket DEV-456 for the Autopilot project. The deadline is next Friday and John Smith is the owner."
+        test_bot_response = "I found that JIRA ticket DEV-456 is related to the Autopilot project. The deadline you mentioned is important - I'll help you track that. John Smith should have the latest status on this ticket."
+        
+        # Test pattern-based entity extraction
+        entities = await entity_store.extract_entities_from_text(
+            text=test_user_query,
+            conversation_key=test_conversation_key,
+            context="user_query"
+        )
+        
+        # Store the extracted entities
+        if entities:
+            store_result = await entity_store.store_entities(entities, test_conversation_key)
+        else:
+            store_result = False
+        
+        # Test entity search
+        search_result = await entity_store.search_entities(
+            query_keywords=["DEV-456", "Autopilot", "John", "deadline"],
+            conversation_key=test_conversation_key,
+            limit=5
+        )
+        
+        # Test entity summary
+        summary = await entity_store.get_conversation_entity_summary(test_conversation_key)
+        
+        # Queue background extraction (test Celery integration)
+        try:
+            task_result = extract_entities_from_conversation.delay(
+                conversation_key=test_conversation_key,
+                user_query=test_user_query,
+                bot_response=test_bot_response,
+                user_name="test_user",
+                additional_context={"test": True}
+            )
+            background_task_id = task_result.id
+        except Exception as e:
+            background_task_id = f"Error: {str(e)}"
+        
+        return {
+            "status": "success",
+            "entity_extraction_test": {
+                "pattern_extraction": {
+                    "entities_found": len(entities),
+                    "entities": [
+                        {
+                            "key": e.key,
+                            "type": e.type,
+                            "value": e.value,
+                            "relevance_score": e.relevance_score
+                        } for e in entities
+                    ]
+                },
+                "storage_test": {
+                    "store_success": store_result,
+                    "entities_stored": len(entities) if entities else 0
+                },
+                "search_test": {
+                    "search_keywords": ["DEV-456", "Autopilot", "John", "deadline"],
+                    "entities_found": len(search_result),
+                    "search_results": [
+                        {
+                            "key": e.key,
+                            "type": e.type,
+                            "value": e.value,
+                            "relevance_score": e.relevance_score
+                        } for e in search_result
+                    ]
+                },
+                "conversation_summary": summary,
+                "background_extraction": {
+                    "task_id": background_task_id,
+                    "description": "Celery task queued for AI-powered entity extraction"
+                }
+            },
+            "integration": "Entity extraction system operational with pattern matching, storage, search, and background processing"
+        }
+        
+    except Exception as e:
+        logger.error(f"Entity extraction test failed: {e}")
+        return {
+            "status": "error",
+            "error": str(e),
+            "message": "Entity extraction system test failed"
+        }
+
 # Server startup configuration for Cloud Run deployment
 if __name__ == "__main__":
     # Force Redis environment variables to empty to prevent connection attempts
