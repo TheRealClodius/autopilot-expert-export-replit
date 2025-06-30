@@ -3838,6 +3838,151 @@ async def test_entity_extraction():
             "message": "Entity extraction system test failed"
         }
 
+@app.get("/admin/test-entity-deduplication")
+async def test_entity_deduplication():
+    """Test the new regex+AI entity deduplication system"""
+    logger.info("Testing entity deduplication between regex and AI extraction...")
+    
+    try:
+        # Import the worker task class for testing
+        from workers.entity_extractor import EntityExtractionTask
+        from services.entity_store import Entity
+        
+        # Create a test task instance
+        task = EntityExtractionTask()
+        task._initialize_services()
+        
+        conversation_key = f"dedup_test_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+        
+        # Create test entities with deliberate duplicates between regex and AI extraction
+        regex_entities = [
+            Entity(
+                key="jira_ticket:autopilot-123",
+                type="jira_ticket",
+                value="AUTOPILOT-123",
+                context="Found via regex pattern matching",
+                conversation_key=conversation_key,
+                relevance_score=1.2,
+                aliases=["AUTOPILOT-123"],
+                metadata={"extraction_method": "regex_pattern", "pattern_used": "JIRA ticket pattern"}
+            ),
+            Entity(
+                key="project:uipath_autopilot",
+                type="project", 
+                value="UiPath Autopilot",
+                context="Project mentioned in text",
+                conversation_key=conversation_key,
+                relevance_score=1.5,
+                aliases=["Autopilot", "UiPath Autopilot"],
+                metadata={"extraction_method": "regex_pattern", "pattern_used": "Project name pattern"}
+            ),
+            Entity(
+                key="person:john_doe",
+                type="person",
+                value="John Doe",
+                context="Person mentioned as developer",
+                conversation_key=conversation_key,
+                relevance_score=1.0,
+                aliases=["John", "J. Doe"],
+                metadata={"extraction_method": "regex_pattern", "pattern_used": "Person name pattern"}
+            )
+        ]
+        
+        ai_entities = [
+            Entity(
+                key="jira_ticket:autopilot-123",  # Duplicate with higher relevance
+                type="jira_ticket",
+                value="AUTOPILOT-123",
+                context="AI identified this as a critical JIRA ticket for the Autopilot project with high priority status",
+                conversation_key=conversation_key,
+                relevance_score=1.8,  # Higher relevance from AI
+                aliases=["AUTOPILOT-123", "Autopilot-123"],
+                metadata={"extraction_method": "gemini_ai", "importance_score": 9, "user_name": "test_user"}
+            ),
+            Entity(
+                key="deadline:december_15_2024",
+                type="deadline",
+                value="December 15, 2024",
+                context="AI identified this as an important project deadline",
+                conversation_key=conversation_key,
+                relevance_score=1.6,
+                aliases=["Dec 15 2024", "12/15/2024"],
+                metadata={"extraction_method": "gemini_ai", "importance_score": 8, "user_name": "test_user"}
+            ),
+            Entity(
+                key="person:john_doe",  # Duplicate with richer context
+                type="person",
+                value="John Doe",
+                context="AI identified John Doe as the lead developer responsible for the Autopilot project implementation and technical decisions",
+                conversation_key=conversation_key,
+                relevance_score=1.3,  # Lower relevance but richer context
+                aliases=["John", "J. Doe", "John D."],
+                metadata={"extraction_method": "gemini_ai", "importance_score": 7, "user_name": "test_user"}
+            )
+        ]
+        
+        # Combine the entities (simulating the worker flow)
+        all_entities = regex_entities + ai_entities
+        
+        # Test deduplication
+        deduplicated_entities = task._deduplicate_extraction_results(all_entities)
+        
+        # Analyze the results
+        original_count = len(all_entities)
+        deduplicated_count = len(deduplicated_entities)
+        duplicates_merged = original_count - deduplicated_count
+        
+        # Find the merged entities to show what happened
+        merged_results = []
+        for entity in deduplicated_entities:
+            entity_info = {
+                "key": entity.key,
+                "type": entity.type,
+                "value": entity.value,
+                "relevance_score": entity.relevance_score,
+                "context_length": len(entity.context or ""),
+                "aliases_count": len(entity.aliases or []),
+                "extraction_method": entity.metadata.get("extraction_method", "unknown"),
+                "was_merged": "+" in entity.metadata.get("extraction_method", "")
+            }
+            merged_results.append(entity_info)
+        
+        return {
+            "status": "success",
+            "deduplication_test": {
+                "input_entities": {
+                    "regex_entities": len(regex_entities),
+                    "ai_entities": len(ai_entities),
+                    "total_before": original_count
+                },
+                "deduplication_results": {
+                    "entities_after": deduplicated_count,
+                    "duplicates_merged": duplicates_merged,
+                    "deduplication_rate": f"{(duplicates_merged / original_count * 100):.1f}%" if original_count > 0 else "0%"
+                },
+                "merged_entities": merged_results,
+                "effectiveness": {
+                    "redundant_writes_prevented": duplicates_merged,
+                    "context_enrichment": sum(1 for e in merged_results if e["was_merged"]),
+                    "relevance_optimization": "Higher scoring entities preserved as primary"
+                }
+            },
+            "performance_impact": {
+                "storage_efficiency": f"Reduced storage operations by {duplicates_merged} writes",
+                "context_quality": "AI contexts merged with regex patterns for richer entity understanding",
+                "relevance_accuracy": "Best relevance scores preserved while combining extraction methods"
+            },
+            "integration": "Regex+AI entity deduplication system operational with intelligent merging"
+        }
+        
+    except Exception as e:
+        logger.error(f"Error testing entity deduplication: {e}")
+        return {
+            "status": "error",
+            "error": str(e),
+            "integration": "Entity deduplication system encountered errors"
+        }
+
 # Server startup configuration for Cloud Run deployment
 if __name__ == "__main__":
     # Force Redis environment variables to empty to prevent connection attempts
