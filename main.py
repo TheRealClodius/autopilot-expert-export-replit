@@ -3244,6 +3244,44 @@ async def run_deployment_diagnosis():
             "success": False
         }
 
+@app.get("/admin/test-atlassian-guru")
+async def test_atlassian_guru():
+    """Test the new AtlassianToolbelt specialist agent"""
+    try:
+        from agents.atlassian_guru import AtlassianToolbelt
+        
+        # Initialize the toolbelt
+        async with AtlassianToolbelt() as toolbelt:
+            # Test basic capabilities
+            capabilities = await toolbelt.get_capabilities()
+            
+            # Test health check
+            health_ok = await toolbelt.health_check()
+            
+            # Test a simple search task
+            search_result = await toolbelt.execute_task("Search for information about UiPath Autopilot features")
+            
+            return {
+                "status": "success",
+                "atlassian_toolbelt": {
+                    "health_check": health_ok,
+                    "capabilities": capabilities,
+                    "test_search": {
+                        "task": "Search for information about UiPath Autopilot features",
+                        "result": search_result
+                    }
+                },
+                "integration": "AtlassianToolbelt successfully integrated as black box tool"
+            }
+            
+    except Exception as e:
+        logger.error(f"AtlassianToolbelt test failed: {e}")
+        return {
+            "status": "error",
+            "error": str(e),
+            "message": "AtlassianToolbelt integration test failed"
+        }
+
 @app.post("/admin/clear-webhook-cache")
 async def clear_webhook_cache():
     """Clear the webhook cache to resolve duplicate detection issues"""

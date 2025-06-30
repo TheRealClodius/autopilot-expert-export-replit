@@ -16,6 +16,7 @@ from tools.vector_search import VectorSearchTool
 from tools.perplexity_search import PerplexitySearchTool
 from tools.outlook_meeting import OutlookMeetingTool
 from tools.atlassian_tool import AtlassianTool
+from agents.atlassian_guru import AtlassianToolbelt
 from agents.client_agent import ClientAgent
 from agents.observer_agent import ObserverAgent
 from services.memory_service import MemoryService
@@ -38,6 +39,7 @@ class OrchestratorAgent:
         self.outlook_tool = OutlookMeetingTool()
         self.trace_manager = trace_manager
         self.atlassian_tool = AtlassianTool(trace_manager=trace_manager)
+        self.atlassian_guru = AtlassianToolbelt()  # New specialized Atlassian agent
         self.client_agent = ClientAgent()
         self.observer_agent = ObserverAgent()
         self.memory_service = memory_service
@@ -904,47 +906,55 @@ Current Query: "{message.text}"
         """Execute a single tool action without retry logic"""
         
         if tool_name == "atlassian":
-            # Modern direct MCP tool execution (orchestrator generates this format)
-            mcp_tool = action.get("mcp_tool")
-            mcp_arguments = action.get("arguments", {})
+            # Use the new AtlassianToolbelt for all Atlassian operations
+            # Extract the task description from the action
+            task_description = None
             
-            if mcp_tool and mcp_arguments:
-                # Direct MCP call with correct format
-                logger.info(f"Executing direct MCP call: {mcp_tool} with args: {mcp_arguments}")
-                return await self.atlassian_tool.execute_mcp_tool(mcp_tool, mcp_arguments)
-            else:
-                # Legacy fallback for backward compatibility (use correct "limit" parameter)
+            # Extract task description - can be natural language or structured action
+            task_description = action.get("task")
+            
+            if not task_description:
+                # Fallback: build from legacy structured format
+                mcp_tool = action.get("mcp_tool")
+                arguments = action.get("arguments", {})
                 action_type = action.get("type")
-                if action_type == "search_jira_issues":
-                    return await self.atlassian_tool.execute_mcp_tool("jira_search", {
-                        "jql": action.get("query", ""),
-                        "limit": action.get("limit", action.get("max_results", 10))  # Fixed parameter name
-                    })
+                
+                if mcp_tool == "get_jira_issues" or action_type == "search_jira_issues":
+                    jql = arguments.get("jql") or action.get("query", "")
+                    task_description = f"Search for Jira issues using query: {jql}"
+                elif mcp_tool == "get_confluence_pages" or action_type == "search_confluence_pages":
+                    query = arguments.get("query") or action.get("query", "")
+                    task_description = f"Search for Confluence documentation about: {query}"
+                elif mcp_tool == "create_jira_issue" or action_type == "create_jira_issue":
+                    summary = arguments.get("summary") or action.get("summary", "")
+                    task_description = f"Create a new Jira issue: {summary}"
                 elif action_type == "get_jira_issue":
-                    return await self.atlassian_tool.execute_mcp_tool("jira_get", {
-                        "issue_key": action.get("issue_key", "")
-                    })
-                elif action_type == "search_confluence_pages":
-                    return await self.atlassian_tool.execute_mcp_tool("confluence_search", {
-                        "query": action.get("query", ""),
-                        "space_key": action.get("space_key"),
-                        "limit": action.get("limit", action.get("max_results", 10))  # Fixed parameter name
-                    })
+                    issue_key = action.get("issue_key", "")
+                    task_description = f"Get details for Jira issue: {issue_key}"
                 elif action_type == "get_confluence_page":
-                    return await self.atlassian_tool.execute_mcp_tool("confluence_get", {
-                        "page_id": action.get("page_id", "")
-                    })
-                elif action_type == "create_jira_issue":
-                    return await self.atlassian_tool.execute_mcp_tool("jira_create", {
-                        "project_key": action.get("project_key", ""),
-                        "issue_type": action.get("issue_type", "Task"),
-                        "summary": action.get("summary", ""),
-                        "description": action.get("description", ""),
-                        "priority": action.get("priority", "Medium"),
-                        "assignee": action.get("assignee")
-                    })
+                    page_id = action.get("page_id", "")
+                    task_description = f"Get Confluence page details: {page_id}"
                 else:
-                    return {"error": f"Unknown Atlassian action type: {action_type}"}
+                    # Generic fallback
+                    task_description = f"Execute Atlassian task: {mcp_tool or action_type or 'unknown task'}"
+            
+            # Use the AtlassianToolbelt to execute the task
+            logger.info(f"Delegating to AtlassianToolbelt: {task_description}")
+            result = await self.atlassian_guru.execute_task(task_description)
+            
+            # Convert AtlassianToolbelt result format to orchestrator format
+            if result.get("status") == "success":
+                return {
+                    "success": True,
+                    "result": result.get("data"),
+                    "message": result.get("message"),
+                    "execution_method": result.get("execution_method", "atlassian_guru")
+                }
+            else:
+                return {
+                    "error": result.get("message", "Atlassian operation failed"),
+                    "success": False
+                }
         
         elif tool_name == "vector_search":
             query = action.get("query", "")

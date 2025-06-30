@@ -20,8 +20,7 @@ orchestrator_prompt: >
 
   **When to use tools (PRIORITY ORDER):**
   - Use atlassian_search FIRST for ANY UiPath, Autopilot, project management, Jira issues, Confluence documentation, team member questions, or company-specific information
-  {{atlassian_tools_section}}
-  - Use vector_search ONLY for general technical concepts, programming help, or when Atlassian search finds nothing
+  - Use vector_search ONLY for general technical concepts, programming help, or when Atlassian search finds nothing  
   - Use perplexity_search for current events, news, recent developments, real-time information
   - Use outlook_meeting for scheduling meetings, checking availability, finding meeting times, calendar management
   - For greetings or casual chat, use no tools
@@ -48,43 +47,18 @@ orchestrator_prompt: >
     ] (if using outlook_meeting),
     "atlassian_actions": [
       {
-        "mcp_tool": "jira_search",
-        "arguments": {
-          "jql": "text ~ \"search terms\" OR summary ~ \"search terms\"",
-          "limit": 10
-        }
+        "task": "Search for information about UiPath Autopilot features"
       },
       {
-        "mcp_tool": "confluence_search", 
-        "arguments": {
-          "query": "search terms",
-          "limit": 10
-        }
+        "task": "Find Jira issues related to login problems"
       },
       {
-        "mcp_tool": "jira_get",
-        "arguments": {
-          "issue_key": "PROJ-123"
-        }
+        "task": "Create a new task for fixing the authentication system"
       },
       {
-        "mcp_tool": "confluence_get",
-        "arguments": {
-          "page_id": "12345"
-        }
-      },
-      {
-        "mcp_tool": "jira_create",
-        "arguments": {
-          "project_key": "PROJ",
-          "issue_type": "Task",
-          "summary": "Issue title",
-          "description": "Issue description",
-          "priority": "Medium",
-          "assignee": "username"
-        }
+        "task": "Get details for issue AUTOPILOT-123"
       }
-    ] (if using atlassian_search)
+    ] (if using atlassian_search - describe what you need in natural language)
   }
 
 # The prompt for the final client-facing agent.
