@@ -82,6 +82,21 @@ The system uses environment variables for configuration management and supports 
 
 ## Recent Changes
 
+✅ **June 30, 2025 - CRITICAL ORCHESTRATOR PROMPT INTEGRATION FIXED: ELIMINATED HARDCODED PROMPTS (PRODUCTION READY)**
+- **Root Issue Identified**: Orchestrator agent was completely bypassing prompts.yaml and using hardcoded system prompts, making the YAML file effectively dead code
+- **Architecture Problem**: Dynamic prompt generation in `_generate_dynamic_system_prompt()` method hardcoded all prompt content instead of loading from centralized configuration
+- **YAML Template System**: Implemented placeholder-based prompt injection with `{{atlassian_tools_section}}` placeholder for dynamic MCP tool discovery
+- **Clean Separation**: Orchestrator now loads base prompt from prompts.yaml and injects only the dynamic Atlassian tools section when tools are discovered
+- **Maintainability Restored**: Prompt modifications can now be made in prompts.yaml instead of buried in Python code
+- **Dynamic Tool Integration**: MCP server tool discovery results properly injected into YAML template while preserving all other prompt content
+- **Import Added**: Added `from utils.prompt_loader import get_orchestrator_prompt` to orchestrator agent for proper YAML integration
+- **Template Logic**: Replaced 50+ lines of hardcoded prompt strings with simple `base_prompt.replace("{{atlassian_tools_section}}", atlassian_tools_section)`
+- **Verification Complete**: Test confirms YAML prompt loading (3012 chars), placeholder replacement, no hardcoded strings, and proper dynamic tool injection
+- **Files Modified**: prompts.yaml (added placeholder), agents/orchestrator_agent.py (complete prompt system refactor)
+- **Architecture Achievement**: Restored intended separation between configuration (YAML) and code (Python) for all agent prompts
+- **User Impact**: Prompt changes in prompts.yaml now immediately affect orchestrator behavior instead of being ignored
+- **Status**: Critical architectural disconnect resolved - orchestrator properly uses centralized prompt management with dynamic tool discovery
+
 ✅ **June 30, 2025 - CONFIGURATION CLEANUP: CENTRALIZED MCP SERVER URL MANAGEMENT (PRODUCTION READY)**
 - **Configuration Centralization**: Moved MCP server URL configuration completely to config.py for single source of truth
 - **Environment-Aware Defaults**: Implemented intelligent default MCP server URL based on deployment environment (REPLIT_DEPLOYMENT)

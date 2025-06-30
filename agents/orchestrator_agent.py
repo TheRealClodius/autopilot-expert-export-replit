@@ -11,6 +11,7 @@ from typing import Dict, Any, List, Optional
 from datetime import datetime
 
 from utils.gemini_client import GeminiClient
+from utils.prompt_loader import get_orchestrator_prompt
 from tools.vector_search import VectorSearchTool
 from tools.perplexity_search import PerplexitySearchTool
 from tools.outlook_meeting import OutlookMeetingTool
@@ -55,67 +56,31 @@ class OrchestratorAgent:
             return []
     
     async def _generate_dynamic_system_prompt(self) -> str:
-        """Generate system prompt with actual available tools from MCP server"""
+        """Generate system prompt using YAML template with dynamic tool injection"""
         
-        # Base orchestrator prompt
-        base_prompt = """You are a step-by-step reasoning orchestrator. Use the ReAct pattern: Reason about what you need, Act by using tools, Observe results, then Reason again.
-
-**Your Process:**
-1. REASON: Think about what the user needs
-2. ACT: Use tools to gather information  
-3. OBSERVE: Review what you found
-4. REASON: Decide if you need more information
-5. ACT: Use additional tools if needed
-
-**Available Tools:**"""
+        # Load base prompt from prompts.yaml
+        base_prompt = get_orchestrator_prompt()
         
-        # Add core tools that are always available
-        tool_descriptions = [
-            "- vector_search: Search internal knowledge base",
-            "- perplexity_search: Search the web for current information", 
-            "- outlook_meeting: Schedule meetings, check availability, find meeting times, and manage calendar events"
-        ]
+        # Generate dynamic Atlassian tools section
+        atlassian_tools_section = ""
         
-        # Add dynamically discovered Atlassian tools
         if self.discovered_tools:
             atlassian_tools = [tool for tool in self.discovered_tools 
                              if any(keyword in tool.get('name', '').lower() 
                                   for keyword in ['jira', 'confluence', 'atlassian'])]
             
             if atlassian_tools:
-                tool_descriptions.append("\n**Atlassian Tools (from MCP server):**")
+                atlassian_tools_section = "\n  **Available Atlassian Tools from MCP server:**"
                 for tool in atlassian_tools:
                     name = tool.get('name', 'unknown')
                     description = tool.get('description', 'No description available')
-                    tool_descriptions.append(f"- {name}: {description}")
+                    atlassian_tools_section += f"\n  - {name}: {description}"
+                atlassian_tools_section += "\n  **For Atlassian MCP tools, use exact tool names returned by the server.**"
         
-        # Add response format instructions
-        response_format = """
-
-**Response Format:**
-Respond with JSON containing your analysis and actions:
-```json
-{
-  "analysis": "Your reasoning about what the user needs",
-  "tools_needed": ["list", "of", "tools"],
-  "vector_queries": ["queries for knowledge base search"],
-  "perplexity_queries": ["queries for web search"],
-  "meeting_actions": [{"action": "check_availability", "args": {...}}],
-  "atlassian_actions": [{"mcp_tool": "tool_name", "arguments": {...}}]
-}
-```
-
-**Tool Selection Guidelines:**
-- Use atlassian tools for UiPath/Autopilot project management, Jira issues, Confluence documentation
-- Use vector_search for general technical knowledge, programming help  
-- Use perplexity_search for current events, recent trends, real-time information
-- Use outlook_meeting for calendar and scheduling requests
-
-**For Atlassian MCP tools, use exact tool names returned by the server.**"""
+        # Inject the dynamic tools section into the placeholder
+        full_prompt = base_prompt.replace("{{atlassian_tools_section}}", atlassian_tools_section)
         
-        full_prompt = base_prompt + "\n" + "\n".join(tool_descriptions) + response_format
-        
-        logger.info(f"Generated dynamic system prompt with {len(self.discovered_tools)} discovered tools")
+        logger.info(f"Generated system prompt from YAML with {len(self.discovered_tools)} discovered tools")
         return full_prompt
         
     async def process_query(self, message: ProcessedMessage) -> Optional[Dict[str, Any]]:
