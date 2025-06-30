@@ -885,6 +885,290 @@ async def cleanup_test_data():
     except Exception as e:
         return {"status": "error", "error": str(e)}
 
+@app.delete("/admin/purge-vector-index")
+async def purge_vector_index():
+    """Admin endpoint to completely purge all vectors from Pinecone index"""
+    try:
+        from services.embedding_service import EmbeddingService
+        
+        embedding_service = EmbeddingService()
+        
+        if not embedding_service.pinecone_available:
+            return {"status": "error", "error": "Pinecone not available"}
+        
+        # Purge all vectors
+        result = await embedding_service.purge_all_vectors()
+        
+        return {"status": "complete", "purge_result": result}
+        
+    except Exception as e:
+        return {"status": "error", "error": str(e)}
+
+@app.post("/admin/ingest-channel-conversations")
+async def ingest_channel_conversations(
+    channel_id: str = "C087QKECFKQ",
+    days_back: int = 30,
+    sample_size: int = 50
+):
+    """
+    Admin endpoint to ingest conversations from a specific Slack channel
+    
+    Args:
+        channel_id: Slack channel ID (default: C087QKECFKQ)
+        days_back: How many days of history to process (default: 30)
+        sample_size: Maximum number of messages to process for testing (default: 50)
+    """
+    try:
+        from services.slack_connector import SlackConnector
+        from services.data_processor import DataProcessor
+        from services.embedding_service import EmbeddingService
+        from datetime import datetime, timedelta
+        
+        logger.info(f"Starting channel ingestion for {channel_id}")
+        
+        # Initialize services
+        slack_connector = SlackConnector()
+        data_processor = DataProcessor()
+        embedding_service = EmbeddingService()
+        
+        if not embedding_service.pinecone_available:
+            return {"status": "error", "error": "Pinecone not available"}
+        
+        # Calculate time range
+        end_time = datetime.now()
+        start_time = end_time - timedelta(days=days_back)
+        
+        logger.info(f"Extracting messages from {start_time} to {end_time}")
+        
+        # Step 1: Extract messages from channel
+        raw_messages = await slack_connector.extract_channel_messages(
+            channel_id=channel_id,
+            start_time=start_time,
+            end_time=end_time,
+            batch_size=min(sample_size, 100)
+        )
+        
+        if not raw_messages:
+            return {
+                "status": "no_data",
+                "message": f"No messages found in channel {channel_id} for the specified time range",
+                "channel_id": channel_id,
+                "time_range": f"{start_time.isoformat()} to {end_time.isoformat()}"
+            }
+        
+        # Apply sample limit
+        if len(raw_messages) > sample_size:
+            raw_messages = raw_messages[:sample_size]
+            logger.info(f"Limited to {sample_size} messages for testing")
+        
+        logger.info(f"Extracted {len(raw_messages)} raw messages")
+        
+        # Step 2: Process and clean messages
+        processed_messages = await data_processor.process_messages(raw_messages)
+        logger.info(f"Processed {len(processed_messages)} messages")
+        
+        # Step 3: Generate embeddings and store
+        embedded_count = await embedding_service.embed_and_store_messages(processed_messages)
+        logger.info(f"Successfully embedded {embedded_count} messages")
+        
+        # Step 4: Get final index stats
+        final_stats = await embedding_service.get_index_stats()
+        
+        result = {
+            "status": "success",
+            "channel_id": channel_id,
+            "time_range": {
+                "start": start_time.isoformat(),
+                "end": end_time.isoformat(),
+                "days_back": days_back
+            },
+            "processing_summary": {
+                "raw_messages_extracted": len(raw_messages),
+                "messages_processed": len(processed_messages),
+                "messages_embedded": embedded_count,
+                "sample_size_limit": sample_size
+            },
+            "index_stats_after": final_stats
+        }
+        
+        logger.info(f"Channel ingestion completed: {result}")
+        return result
+        
+    except Exception as e:
+        logger.error(f"Error in channel ingestion: {e}")
+        return {"status": "error", "error": str(e)}
+
+@app.post("/admin/purge-and-reingest-channel")
+async def purge_and_reingest_channel(
+    channel_id: str = "C087QKECFKQ",
+    days_back: int = 30,
+    sample_size: int = 50
+):
+    """
+    Complete workflow: Purge vector index and re-embed with channel conversations
+    
+    This is the main endpoint you should use for the complete process.
+    
+    Args:
+        channel_id: Slack channel ID (default: C087QKECFKQ)
+        days_back: How many days of history to process (default: 30)
+        sample_size: Maximum number of messages to process for testing (default: 50)
+    """
+    try:
+        from services.embedding_service import EmbeddingService
+        from services.slack_connector import SlackConnector
+        from services.data_processor import DataProcessor
+        from datetime import datetime, timedelta
+        
+        logger.info("=== STARTING COMPLETE VECTOR STORAGE REBUILD ===")
+        
+        # Initialize services
+        embedding_service = EmbeddingService()
+        slack_connector = SlackConnector()
+        data_processor = DataProcessor()
+        
+        if not embedding_service.pinecone_available:
+            return {"status": "error", "error": "Pinecone not available"}
+        
+        workflow_result = {
+            "status": "success",
+            "channel_id": channel_id,
+            "workflow_steps": []
+        }
+        
+        # STEP 1: Get initial index status
+        logger.info("Step 1: Getting initial index status...")
+        initial_stats = await embedding_service.get_index_stats()
+        workflow_result["workflow_steps"].append({
+            "step": 1,
+            "name": "initial_status",
+            "status": "completed",
+            "result": initial_stats
+        })
+        logger.info(f"Initial index contains {initial_stats.get('total_vectors', 0)} vectors")
+        
+        # STEP 2: Purge existing vectors
+        logger.info("Step 2: Purging all existing vectors...")
+        purge_result = await embedding_service.purge_all_vectors()
+        workflow_result["workflow_steps"].append({
+            "step": 2,
+            "name": "vector_purge",
+            "status": "completed" if purge_result["status"] == "success" else "failed",
+            "result": purge_result
+        })
+        
+        if purge_result["status"] != "success":
+            workflow_result["status"] = "partial_failure"
+            logger.error(f"Purge failed: {purge_result}")
+            return workflow_result
+        
+        logger.info(f"Purged {purge_result['vectors_purged']} vectors")
+        
+        # STEP 3: Extract channel messages
+        logger.info(f"Step 3: Extracting messages from channel {channel_id}...")
+        end_time = datetime.now()
+        start_time = end_time - timedelta(days=days_back)
+        
+        raw_messages = await slack_connector.extract_channel_messages(
+            channel_id=channel_id,
+            start_time=start_time,
+            end_time=end_time,
+            batch_size=min(sample_size, 100)
+        )
+        
+        # Apply sample limit
+        if len(raw_messages) > sample_size:
+            raw_messages = raw_messages[:sample_size]
+        
+        extraction_result = {
+            "raw_messages_count": len(raw_messages),
+            "time_range": f"{start_time.isoformat()} to {end_time.isoformat()}",
+            "sample_limited": len(raw_messages) == sample_size
+        }
+        
+        workflow_result["workflow_steps"].append({
+            "step": 3,
+            "name": "message_extraction", 
+            "status": "completed" if raw_messages else "no_data",
+            "result": extraction_result
+        })
+        
+        if not raw_messages:
+            workflow_result["status"] = "no_data"
+            logger.warning("No messages found in specified channel and time range")
+            return workflow_result
+        
+        logger.info(f"Extracted {len(raw_messages)} messages")
+        
+        # STEP 4: Process messages
+        logger.info("Step 4: Processing and cleaning messages...")
+        processed_messages = await data_processor.process_messages(raw_messages)
+        
+        processing_result = {
+            "processed_messages_count": len(processed_messages),
+            "processing_success_rate": len(processed_messages) / len(raw_messages) if raw_messages else 0
+        }
+        
+        workflow_result["workflow_steps"].append({
+            "step": 4,
+            "name": "message_processing",
+            "status": "completed",
+            "result": processing_result
+        })
+        
+        logger.info(f"Processed {len(processed_messages)} messages")
+        
+        # STEP 5: Generate embeddings and store
+        logger.info("Step 5: Generating embeddings and storing in Pinecone...")
+        embedded_count = await embedding_service.embed_and_store_messages(processed_messages)
+        
+        embedding_result = {
+            "messages_embedded": embedded_count,
+            "embedding_success_rate": embedded_count / len(processed_messages) if processed_messages else 0
+        }
+        
+        workflow_result["workflow_steps"].append({
+            "step": 5,
+            "name": "embedding_and_storage",
+            "status": "completed",
+            "result": embedding_result
+        })
+        
+        logger.info(f"Embedded and stored {embedded_count} messages")
+        
+        # STEP 6: Get final index status
+        logger.info("Step 6: Getting final index status...")
+        final_stats = await embedding_service.get_index_stats()
+        workflow_result["workflow_steps"].append({
+            "step": 6,
+            "name": "final_status",
+            "status": "completed",
+            "result": final_stats
+        })
+        
+        # Add summary
+        workflow_result["summary"] = {
+            "vectors_before": initial_stats.get("total_vectors", 0),
+            "vectors_after": final_stats.get("total_vectors", 0),
+            "net_change": final_stats.get("total_vectors", 0) - initial_stats.get("total_vectors", 0),
+            "messages_processed": len(processed_messages),
+            "messages_embedded": embedded_count,
+            "processing_time_range": f"{start_time.isoformat()} to {end_time.isoformat()}"
+        }
+        
+        logger.info("=== VECTOR STORAGE REBUILD COMPLETED SUCCESSFULLY ===")
+        logger.info(f"Summary: {workflow_result['summary']}")
+        
+        return workflow_result
+        
+    except Exception as e:
+        logger.error(f"Error in purge and reingest workflow: {e}")
+        return {
+            "status": "error", 
+            "error": str(e),
+            "workflow_steps": workflow_result.get("workflow_steps", []) if 'workflow_result' in locals() else []
+        }
+
 @app.get("/admin/orchestrator-test")
 async def orchestrator_test(query: str = "What's the latest update on the UiPath integration project?"):
     """Admin endpoint to test orchestrator query analysis specifically"""

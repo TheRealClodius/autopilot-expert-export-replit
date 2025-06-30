@@ -284,3 +284,54 @@ class EmbeddingService:
         except Exception as e:
             logger.error(f"Pinecone connection test failed: {e}")
             return False
+    
+    async def purge_all_vectors(self) -> Dict[str, Any]:
+        """
+        Completely purge all vectors from the Pinecone index.
+        
+        Returns:
+            Dictionary with purge results and statistics
+        """
+        try:
+            logger.info("Starting complete vector index purge...")
+            
+            # Get stats before purge
+            stats_before = await self.get_index_stats()
+            vectors_before = stats_before.get("total_vectors", 0)
+            
+            logger.info(f"Index contains {vectors_before} vectors before purge")
+            
+            # Delete all vectors (no filter = delete everything)
+            self.index.delete(delete_all=True)
+            
+            logger.info("Purge command executed, waiting for completion...")
+            
+            # Wait a moment for the delete operation to propagate
+            import asyncio
+            await asyncio.sleep(2)
+            
+            # Get stats after purge
+            stats_after = await self.get_index_stats()
+            vectors_after = stats_after.get("total_vectors", 0)
+            
+            result = {
+                "status": "success",
+                "vectors_before": vectors_before,
+                "vectors_after": vectors_after,
+                "vectors_purged": vectors_before - vectors_after,
+                "index_stats_before": stats_before,
+                "index_stats_after": stats_after
+            }
+            
+            logger.info(f"Vector purge completed: {result}")
+            return result
+            
+        except Exception as e:
+            logger.error(f"Error purging vectors: {e}")
+            return {
+                "status": "error",
+                "error": str(e),
+                "vectors_before": 0,
+                "vectors_after": 0,
+                "vectors_purged": 0
+            }
