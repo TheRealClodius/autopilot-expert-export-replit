@@ -101,17 +101,17 @@ class AtlassianTool:
         current_time = time.time()
         
         # Check if we have a valid cache
-        if (self._tools_cache is not None and 
-            self._cache_timestamp is not None and 
-            current_time - self._cache_timestamp < self._cache_ttl_seconds):
+        if (AtlassianTool._tools_cache is not None and 
+            AtlassianTool._cache_timestamp is not None and 
+            current_time - AtlassianTool._cache_timestamp < AtlassianTool._cache_ttl_seconds):
             
             # Update our available tools list from cache
-            tools = self._tools_cache.get('tools', [])
+            tools = AtlassianTool._tools_cache.get('tools', [])
             self.available_tools = [tool['name'] for tool in tools 
                                   if any(keyword in tool['name'].lower() 
                                        for keyword in ['jira', 'confluence', 'atlassian'])]
             
-            logger.debug(f"Using cached tools discovery ({len(tools)} tools, cache age: {current_time - self._cache_timestamp:.1f}s)")
+            logger.debug(f"Using cached tools discovery ({len(tools)} tools, cache age: {current_time - AtlassianTool._cache_timestamp:.1f}s)")
             return tools
         
         # Cache miss or expired - fetch from server
@@ -132,8 +132,8 @@ class AtlassianTool:
                     tools = data['result']['tools']
                     
                     # Update cache
-                    self._tools_cache = {'tools': tools}
-                    self._cache_timestamp = current_time
+                    AtlassianTool._tools_cache = {'tools': tools}
+                    AtlassianTool._cache_timestamp = current_time
                     
                     # Update our available tools list with actual tool names
                     self.available_tools = [tool['name'] for tool in tools 
