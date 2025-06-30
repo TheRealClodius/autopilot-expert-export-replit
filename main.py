@@ -3183,8 +3183,8 @@ async def diagnose_deployment_errors():
                 results["error_analysis"]["status"] = "No errors detected in test execution"
                 
         else:
-            results["production_execution"]["error"] = "AtlassianTool not available"
-            results["recommendations"].append("Check AtlassianTool initialization and credentials")
+            results["production_execution"]["error"] = "AtlassianToolbelt not available"
+            results["recommendations"].append("Check AtlassianToolbelt initialization and credentials")
             
     except asyncio.TimeoutError:
         results["production_execution"]["error"] = "Execution timeout (30s)"
