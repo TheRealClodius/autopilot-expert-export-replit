@@ -53,15 +53,24 @@ class TokenManager:
         Returns:
             Exact token count
         """
+        # Type validation to prevent non-string inputs
+        if not isinstance(text, str):
+            logger.warning(f"Non-string input to count_tokens: {type(text)}, returning 0 tokens")
+            return 0
+            
         if not text:
             return 0
         
         try:
             return len(self.encoding.encode(text))
         except Exception as e:
-            logger.error(f"Error counting tokens: {e}")
-            # Fallback to character-based approximation
-            return len(text) // 4
+            logger.error(f"Error counting tokens with tiktoken: {e}")
+            # Fallback to character-based approximation for robustness
+            try:
+                return len(text) // 4
+            except Exception as fallback_e:
+                logger.error(f"Even fallback token counting failed: {fallback_e}")
+                return 0
     
     def tokenize_message(self, message: Dict[str, Any]) -> TokenizedMessage:
         """
@@ -73,8 +82,23 @@ class TokenManager:
         Returns:
             TokenizedMessage with precise token count
         """
+        # Type validation for message input
+        if not isinstance(message, dict):
+            logger.warning(f"Non-dict input to tokenize_message: {type(message)}, using empty message")
+            message = {"user_name": "Unknown", "text": ""}
+        
         user_name = message.get("user_name", "Unknown")
         text = message.get("text", "")
+        
+        # Ensure text is string type
+        if not isinstance(text, str):
+            logger.warning(f"Non-string text in message: {type(text)}, converting to string")
+            text = str(text) if text is not None else ""
+        
+        # Ensure user_name is string type  
+        if not isinstance(user_name, str):
+            logger.warning(f"Non-string user_name in message: {type(user_name)}, converting to string")
+            user_name = str(user_name) if user_name is not None else "Unknown"
         
         # Determine speaker
         is_bot = user_name.lower() in ["bot", "autopilot", "assistant"]

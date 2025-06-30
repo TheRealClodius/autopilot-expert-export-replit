@@ -3641,6 +3641,65 @@ async def test_precise_token_management():
             precise_results["total_precise_tokens"]
         )
         
+        # Test 7: Type validation and error handling robustness
+        robustness_tests = []
+        
+        # Test various invalid inputs to ensure type checking works
+        test_inputs = [
+            {"name": "None input", "value": None},
+            {"name": "Integer input", "value": 123},
+            {"name": "List input", "value": ["hello", "world"]},
+            {"name": "Empty string", "value": ""},
+            {"name": "Unicode text", "value": "Hello 世界 🌍"},
+            {"name": "Very long text", "value": "A" * 10000}
+        ]
+        
+        for test_input in test_inputs:
+            try:
+                result = token_manager.count_tokens(test_input["value"])
+                robustness_tests.append({
+                    "test": test_input["name"],
+                    "input_type": str(type(test_input["value"])),
+                    "token_count": result,
+                    "status": "success"
+                })
+            except Exception as e:
+                robustness_tests.append({
+                    "test": test_input["name"],
+                    "input_type": str(type(test_input["value"])),
+                    "error": str(e),
+                    "status": "error"
+                })
+        
+        # Test invalid message structures
+        invalid_messages = [
+            {"name": "Non-dict message", "value": "not a dict"},
+            {"name": "Missing text field", "value": {"user_name": "Alice"}},
+            {"name": "Non-string text", "value": {"user_name": "Alice", "text": 123}},
+            {"name": "None text", "value": {"user_name": "Alice", "text": None}},
+            {"name": "Non-string user_name", "value": {"user_name": 456, "text": "Hello"}}
+        ]
+        
+        message_robustness_tests = []
+        for test_msg in invalid_messages:
+            try:
+                tokenized = token_manager.tokenize_message(test_msg["value"])
+                message_robustness_tests.append({
+                    "test": test_msg["name"],
+                    "result": {
+                        "speaker": tokenized.speaker,
+                        "text_preview": tokenized.text[:20] + "..." if len(tokenized.text) > 20 else tokenized.text,
+                        "token_count": tokenized.token_count
+                    },
+                    "status": "success"
+                })
+            except Exception as e:
+                message_robustness_tests.append({
+                    "test": test_msg["name"],
+                    "error": str(e),
+                    "status": "error"
+                })
+
         return {
             "status": "success",
             "test_results": {
@@ -3657,13 +3716,19 @@ async def test_precise_token_management():
                     "token_efficiency": old_hybrid.get("token_efficiency", {})
                 },
                 "context_token_breakdown": context_breakdown,
+                "robustness_testing": {
+                    "type_validation_tests": robustness_tests,
+                    "message_structure_tests": message_robustness_tests
+                },
                 "test_query": current_query
             },
             "summary": {
                 "accuracy_improvement": f"{efficiency_comparison.get('accuracy_percentage', 0)}%",
                 "token_difference": efficiency_comparison.get("token_difference", 0),
                 "is_more_efficient": efficiency_comparison.get("is_more_efficient", False),
-                "description": "Precise tiktoken counting vs character-based estimation comparison"
+                "robustness_tests_passed": len([t for t in robustness_tests if t["status"] == "success"]),
+                "message_tests_passed": len([t for t in message_robustness_tests if t["status"] == "success"]),
+                "description": "Precise tiktoken counting with comprehensive type validation and error handling"
             }
         }
         
