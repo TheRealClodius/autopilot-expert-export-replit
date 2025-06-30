@@ -20,6 +20,7 @@ from agents.atlassian_guru import AtlassianToolbelt
 from agents.client_agent import ClientAgent
 from agents.observer_agent import ObserverAgent
 from services.memory_service import MemoryService
+from services.token_manager import TokenManager
 from services.entity_store import EntityStore
 from services.progress_tracker import ProgressTracker, ProgressEventType, emit_thinking, emit_searching, emit_processing, emit_generating, emit_error, emit_warning, emit_retry, emit_reasoning, emit_considering, emit_analyzing, StreamingReasoningEmitter
 from services.trace_manager import trace_manager
@@ -48,6 +49,7 @@ class OrchestratorAgent:
         self.client_agent = ClientAgent()
         self.observer_agent = ObserverAgent()
         self.memory_service = memory_service
+        self.token_manager = TokenManager(model_name="gpt-4")  # Initialize precise token manager
         self.entity_store = EntityStore(memory_service)  # Add entity store for structured memory
         self.progress_tracker = progress_tracker
         self.discovered_tools = []  # Will be populated with actual MCP tools
@@ -1438,17 +1440,19 @@ Current Query: "{message.text}"
     async def _construct_hybrid_history(self, conversation_key: str,
                                         current_query: str) -> Dict[str, Any]:
         """
-        Construct hybrid memory system with rolling long-term summary and token-managed live history.
+        Construct hybrid memory system with rolling long-term summary and precise token-managed live history.
+        Uses tiktoken for exact token counting and intelligent truncation with smooth summarization transitions.
         
         Args:
             conversation_key: Unique conversation identifier
             current_query: Current user query
             
         Returns:
-            Dictionary containing summarized_history and live_history
+            Dictionary containing summarized_history and live_history with precise token counts
         """
         MAX_LIVE_MESSAGES = 10
-        MAX_LIVE_TOKENS = 2000  # Approximate token limit for live history
+        MAX_LIVE_TOKENS = 2000  # Exact token limit for live history
+        PRESERVE_RECENT = 2  # Always preserve the 2 most recent exchanges
 
         try:
             # Get recent messages from sliding window
@@ -1463,91 +1467,93 @@ Current Query: "{message.text}"
                     "message_count": 0
                 }
 
-            # Check if we need to move messages to long-term summary via abstractive summarization
-            if len(recent_messages) >= MAX_LIVE_MESSAGES:
-                # Take the oldest 2-3 messages for abstractive summarization
-                messages_to_archive = recent_messages[-3:]  # Last 3 messages (oldest)
-                
-                # Queue abstractive summarization task
-                await self._queue_abstractive_summarization(
-                    conversation_key,
-                    summary_key,
-                    messages_to_archive,
-                    long_term_summary.get("summary", "")
+            # Use precise token management to determine which messages to keep vs summarize
+            if recent_messages:
+                # Get precise token-managed breakdown
+                messages_to_keep, messages_to_summarize, token_stats = self.token_manager.build_token_managed_history(
+                    recent_messages, MAX_LIVE_TOKENS, PRESERVE_RECENT
                 )
                 
-                # For immediate context, keep the current simple append logic as fallback
-                # until the background task completes
-                oldest_message = recent_messages[-1]
-                user_name = oldest_message.get("user_name", "Unknown")
-                text = oldest_message.get("text", "")
+                # If we have messages that need summarization, queue abstractive summarization
+                if messages_to_summarize and len(messages_to_summarize) >= 2:
+                    # Convert TokenizedMessage objects back to raw message format for summarization
+                    raw_messages_to_summarize = [msg.original_message for msg in messages_to_summarize]
+                    
+                    # Queue abstractive summarization task for smooth transition
+                    await self._queue_abstractive_summarization(
+                        conversation_key,
+                        summary_key,
+                        raw_messages_to_summarize,
+                        long_term_summary.get("summary", "")
+                    )
+                    
+                    # For immediate context, create basic summary as fallback
+                    for msg in messages_to_summarize:
+                        if long_term_summary["summary"]:
+                            long_term_summary["summary"] += f"\n{msg.speaker}: {msg.text[:100]}..."
+                        else:
+                            long_term_summary["summary"] = f"{msg.speaker}: {msg.text[:100]}..."
+                    
+                    long_term_summary["message_count"] += len(messages_to_summarize)
+
+                # Format live history from tokenized messages
+                live_history_text = self.token_manager.format_messages_for_context(messages_to_keep)
+                precise_token_count = token_stats["total_tokens"]
                 
-                is_bot = user_name.lower() in ["bot", "autopilot", "assistant"]
-                speaker = "Bot" if is_bot else "User"
+                # Calculate efficiency gains compared to old character-based system
+                old_char_estimate = sum(len(f"{msg.speaker}: {msg.text}") // 4 for msg in messages_to_keep)
+                efficiency_stats = self.token_manager.get_token_efficiency_stats(
+                    old_char_estimate, precise_token_count
+                )
                 
-                # Simple append for immediate use (will be replaced by abstractive summary)
-                if long_term_summary["summary"]:
-                    long_term_summary["summary"] += f"\n{speaker}: {text[:100]}..."
-                else:
-                    long_term_summary["summary"] = f"{speaker}: {text[:100]}..."
+                hybrid_history = {
+                    "summarized_history": long_term_summary["summary"],
+                    "summarized_message_count": long_term_summary["message_count"],
+                    "live_history": live_history_text,
+                    "live_message_count": token_stats["kept_messages"],
+                    "precise_tokens": precise_token_count,  # Exact token count
+                    "estimated_tokens": precise_token_count,  # For backward compatibility
+                    "token_efficiency": efficiency_stats,  # Performance comparison
+                    "summarized_message_candidates": len(messages_to_summarize)
+                }
+
+                logger.info(
+                    f"Constructed precise hybrid history: {long_term_summary['message_count']} summarized, "
+                    f"{token_stats['kept_messages']} live messages, {precise_token_count} exact tokens "
+                    f"(vs {old_char_estimate} char estimate, {efficiency_stats['accuracy_percentage']}% accuracy)"
+                )
+
+            else:
+                # No recent messages, just use current query
+                query_tokens = self.token_manager.count_tokens(f"User: {current_query}")
                 
-                long_term_summary["message_count"] += 1
-
-            # Build live history transcript
-            live_history = []
-            total_tokens_estimate = 0
-
-            for msg in reversed(
-                    recent_messages):  # Process from oldest to newest
-                user_name = msg.get("user_name", "Unknown")
-                text = msg.get("text", "")
-
-                if not text:
-                    continue
-
-                # Determine speaker
-                is_bot = user_name.lower() in ["bot", "autopilot", "assistant"]
-                speaker = "Bot" if is_bot else "User"
-
-                # Estimate tokens (rough approximation: 1 token ≈ 4 characters)
-                message_tokens = len(f"{speaker}: {text}") // 4
-
-                # Check if adding this message would exceed token limit
-                if total_tokens_estimate + message_tokens > MAX_LIVE_TOKENS and live_history:
-                    # If we're over the limit and have at least one message, stop adding older messages
-                    break
-
-                live_history.insert(0, {"speaker": speaker, "text": text})
-                total_tokens_estimate += message_tokens
-
-            # Format live history as clean transcript
-            live_history_text = ""
-            for entry in live_history:
-                live_history_text += f"{entry['speaker']}: {entry['text']}\n"
-
-            hybrid_history = {
-                "summarized_history": long_term_summary["summary"],
-                "summarized_message_count": long_term_summary["message_count"],
-                "live_history": live_history_text.strip(),
-                "live_message_count": len(live_history),
-                "estimated_tokens": total_tokens_estimate
-            }
-
-            logger.info(
-                f"Constructed hybrid history: {long_term_summary['message_count']} summarized, {len(live_history)} live messages, ~{total_tokens_estimate} tokens"
-            )
+                hybrid_history = {
+                    "summarized_history": long_term_summary["summary"],
+                    "summarized_message_count": long_term_summary["message_count"],
+                    "live_history": f"User: {current_query}",
+                    "live_message_count": 1,
+                    "precise_tokens": query_tokens,
+                    "estimated_tokens": query_tokens,
+                    "token_efficiency": {"accuracy_percentage": 100, "is_more_efficient": True},
+                    "summarized_message_candidates": 0
+                }
 
             return hybrid_history
 
         except Exception as e:
             logger.error(f"Error constructing hybrid history: {e}")
-            # Fallback to simple recent messages
+            # Fallback to simple recent messages with character-based estimation
+            fallback_tokens = self.token_manager.count_tokens(f"User: {current_query}")
+            
             return {
                 "summarized_history": "",
                 "summarized_message_count": 0,
                 "live_history": f"User: {current_query}",
                 "live_message_count": 1,
-                "estimated_tokens": len(current_query) // 4
+                "precise_tokens": fallback_tokens,
+                "estimated_tokens": fallback_tokens,
+                "token_efficiency": {"accuracy_percentage": 100, "fallback": True},
+                "summarized_message_candidates": 0
             }
 
     async def _summarize_conversation_history(

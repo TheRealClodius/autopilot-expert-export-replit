@@ -1,4 +1,5 @@
 pyproject.toml
+agents/atlassian_guru.py
 agents/client_agent.py
 agents/observer_agent.py
 agents/orchestrator_agent.py
@@ -13,6 +14,7 @@ services/connection_pool.py
 services/data_processor.py
 services/document_ingestion.py
 services/embedding_service.py
+services/entity_store.py
 services/lazy_loader.py
 services/memory_service.py
 services/performance_optimizer.py
@@ -24,11 +26,11 @@ services/trace_manager.py
 services/trace_manager_old.py
 services/trace_manager_old_broken.py
 services/webhook_cache.py
-tools/atlassian_tool.py
-tools/atlassian_tool_old.py
 tools/outlook_meeting.py
 tools/perplexity_search.py
 tools/vector_search.py
 utils/gemini_client.py
 utils/prompt_loader.py
+workers/conversation_summarizer.py
+workers/entity_extractor.py
 workers/knowledge_update_worker.py

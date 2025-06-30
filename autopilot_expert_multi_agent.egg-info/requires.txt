@@ -31,3 +31,4 @@ cachetools>=5.5.2
 markdown>=3.8.2
 google-generativeai>=0.8.5
 tenacity>=8.5.0
+tiktoken>=0.9.0

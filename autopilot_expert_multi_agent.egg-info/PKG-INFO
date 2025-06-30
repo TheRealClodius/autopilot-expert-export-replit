@@ -36,3 +36,4 @@ Requires-Dist: cachetools>=5.5.2
 Requires-Dist: markdown>=3.8.2
 Requires-Dist: google-generativeai>=0.8.5
 Requires-Dist: tenacity>=8.5.0
+Requires-Dist: tiktoken>=0.9.0

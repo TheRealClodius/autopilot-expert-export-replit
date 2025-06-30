@@ -3535,6 +3535,146 @@ async def test_hybrid_memory():
 
 # Removed obsolete mcp-tools-cache-stats and clear-mcp-tools-cache endpoints - functionality replaced by AtlassianToolbelt
 
+@app.get("/admin/test-precise-token-management")
+async def test_precise_token_management():
+    """Test the new precise token management system with tiktoken vs character-based estimation"""
+    try:
+        from services.token_manager import TokenManager
+        from services.memory_service import MemoryService
+        from agents.orchestrator_agent import OrchestratorAgent
+        import uuid
+        
+        # Initialize components
+        memory_service = MemoryService()
+        orchestrator = OrchestratorAgent(memory_service)
+        token_manager = TokenManager(model_name="gpt-4")
+        
+        # Create test conversation data with varied message lengths
+        test_conversation_key = f"test_token_management:{uuid.uuid4()}"
+        
+        test_messages = [
+            {"user_name": "Alice", "text": "Hi there! How are you today?"},
+            {"user_name": "Bot", "text": "Hello Alice! I'm doing well, thank you for asking. How can I assist you today?"},
+            {"user_name": "Alice", "text": "I need help with understanding how UiPath Autopilot works in our enterprise environment. We have complex workflows involving multiple systems including Salesforce, SAP, and our custom CRM platform. Can you explain how Autopilot can help streamline these processes and what are the key benefits we should expect?"},
+            {"user_name": "Bot", "text": "UiPath Autopilot is designed to help automate complex enterprise workflows exactly like yours. For your Salesforce, SAP, and CRM integration, Autopilot can create intelligent automation workflows that connect these systems seamlessly. The key benefits include: 1) Reduced manual data entry across systems, 2) Intelligent process discovery to identify automation opportunities, 3) Real-time monitoring and optimization of your workflows, 4) AI-powered decision making to handle exceptions and edge cases. Would you like me to dive deeper into any specific aspect of how this would work with your current tech stack?"},
+            {"user_name": "Alice", "text": "That's very helpful! Can you give me specific examples?"},
+            {"user_name": "Bot", "text": "Absolutely! Here are some specific examples for your environment: 1) Automated lead sync: When a new lead enters Salesforce, Autopilot can automatically create corresponding records in your CRM and trigger SAP workflows for account setup. 2) Invoice processing: Extract data from invoices, validate against SAP pricing rules, and update both Salesforce opportunities and CRM records. 3) Customer onboarding: Orchestrate the entire process from CRM lead capture through SAP account creation and Salesforce opportunity tracking."},
+            {"user_name": "Alice", "text": "Excellent! What about ROI and implementation timeline?"},
+            {"user_name": "Bot", "text": "Great question! Based on similar enterprise implementations: ROI typically ranges from 200-400% within the first year, with payback periods of 6-9 months. Implementation timeline depends on complexity: Phase 1 (pilot workflows): 2-3 months, Phase 2 (core processes): 4-6 months, Phase 3 (advanced automation): 6-12 months. The key is starting with high-impact, low-complexity processes to demonstrate value quickly."},
+            {"user_name": "Alice", "text": "Perfect! Can you schedule a meeting with our technical team next week?"},
+            {"user_name": "Bot", "text": "I'd be happy to help coordinate that! I can check availability and suggest meeting times. Could you provide the email addresses of the technical team members you'd like to include, and what days work best for your schedule next week?"},
+            {"user_name": "Alice", "text": "Let me get back to you on the email addresses. Thanks for all the help!"},
+            {"user_name": "Bot", "text": "You're very welcome, Alice! Feel free to reach out anytime when you have those email addresses or any other questions about UiPath Autopilot. Have a great day!"}
+        ]
+        
+        # Store messages in memory service
+        for msg in test_messages:
+            await memory_service.store_raw_message(test_conversation_key, msg)
+        
+        # Test 1: Character-based estimation (old method)
+        old_method_results = {
+            "total_chars": 0,
+            "estimated_tokens": 0,
+            "message_count": len(test_messages)
+        }
+        
+        for msg in test_messages:
+            user_name = msg.get("user_name", "Unknown")
+            text = msg.get("text", "")
+            is_bot = user_name.lower() in ["bot", "autopilot", "assistant"]
+            speaker = "Bot" if is_bot else "User"
+            formatted_text = f"{speaker}: {text}"
+            
+            old_method_results["total_chars"] += len(formatted_text)
+            old_method_results["estimated_tokens"] += len(formatted_text) // 4
+        
+        # Test 2: Precise token counting with tiktoken
+        precise_results = {
+            "tokenized_messages": [],
+            "total_precise_tokens": 0,
+            "message_count": len(test_messages)
+        }
+        
+        for msg in test_messages:
+            tokenized_msg = token_manager.tokenize_message(msg)
+            precise_results["tokenized_messages"].append({
+                "speaker": tokenized_msg.speaker,
+                "text_preview": tokenized_msg.text[:50] + "..." if len(tokenized_msg.text) > 50 else tokenized_msg.text,
+                "precise_tokens": tokenized_msg.token_count,
+                "char_estimate": len(tokenized_msg.formatted_text) // 4
+            })
+            precise_results["total_precise_tokens"] += tokenized_msg.token_count
+        
+        # Test 3: Token-managed history with different limits
+        token_limits = [500, 1000, 1500, 2000]
+        token_management_results = []
+        
+        for limit in token_limits:
+            messages_to_keep, messages_to_summarize, token_stats = token_manager.build_token_managed_history(
+                test_messages, limit, preserve_recent=2
+            )
+            
+            token_management_results.append({
+                "token_limit": limit,
+                "kept_messages": token_stats["kept_messages"],
+                "summarized_messages": token_stats["summarized_messages"],
+                "actual_tokens_used": token_stats["total_tokens"],
+                "efficiency": f"{(token_stats['total_tokens']/limit)*100:.1f}%" if limit > 0 else "0%"
+            })
+        
+        # Test 4: Hybrid history construction comparison
+        current_query = "What are the next steps for our UiPath Autopilot implementation?"
+        
+        # Old method simulation
+        old_hybrid = await orchestrator._construct_hybrid_history(test_conversation_key, current_query)
+        
+        # Test 5: Context token calculation
+        context_breakdown = token_manager.calculate_context_tokens(
+            summarized_history=old_hybrid.get("summarized_history", ""),
+            live_history=old_hybrid.get("live_history", ""),
+            current_query=current_query
+        )
+        
+        # Test 6: Efficiency comparison
+        efficiency_comparison = token_manager.get_token_efficiency_stats(
+            old_method_results["estimated_tokens"],
+            precise_results["total_precise_tokens"]
+        )
+        
+        return {
+            "status": "success",
+            "test_results": {
+                "old_character_method": old_method_results,
+                "precise_tiktoken_method": precise_results,
+                "efficiency_comparison": efficiency_comparison,
+                "token_management_by_limit": token_management_results,
+                "hybrid_history_test": {
+                    "conversation_key": test_conversation_key,
+                    "summarized_messages": old_hybrid.get("summarized_message_count", 0),
+                    "live_messages": old_hybrid.get("live_message_count", 0),
+                    "precise_tokens": old_hybrid.get("precise_tokens", "not_available"),
+                    "old_estimated_tokens": old_hybrid.get("estimated_tokens", 0),
+                    "token_efficiency": old_hybrid.get("token_efficiency", {})
+                },
+                "context_token_breakdown": context_breakdown,
+                "test_query": current_query
+            },
+            "summary": {
+                "accuracy_improvement": f"{efficiency_comparison.get('accuracy_percentage', 0)}%",
+                "token_difference": efficiency_comparison.get("token_difference", 0),
+                "is_more_efficient": efficiency_comparison.get("is_more_efficient", False),
+                "description": "Precise tiktoken counting vs character-based estimation comparison"
+            }
+        }
+        
+    except Exception as e:
+        logger.error(f"Precise token management test failed: {e}")
+        return {
+            "status": "error",
+            "error": str(e),
+            "description": "Failed to complete precise token management test"
+        }
+
 @app.get("/admin/test-entity-extraction")
 async def test_entity_extraction():
     """Test the new entity extraction and structured memory system"""
