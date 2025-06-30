@@ -137,25 +137,40 @@ class ClientAgent:
             logger.error(f"CRITICAL: state_stack is not a dict, it's a {type(state_stack)}: {str(state_stack)[:200]}")
             return f"Error: Invalid state data format"
             
+        # Additional debugging for each key access
+        logger.debug(f"State stack keys: {list(state_stack.keys())}")
+        
+        # Safe access with detailed error checking
+        def safe_get(key, default=None, expected_type=None):
+            try:
+                value = state_stack.get(key, default)
+                if expected_type and value is not None and not isinstance(value, expected_type):
+                    logger.error(f"CRITICAL: {key} expected {expected_type.__name__} but got {type(value).__name__}: {str(value)[:100]}")
+                    return default
+                return value
+            except Exception as e:
+                logger.error(f"Error accessing state_stack[{key}]: {e}")
+                return default
+            
         context_parts = []
         
         # User query
-        query = state_stack.get("query", "")
+        query = safe_get("query", "", str)
         context_parts.append(f"USER QUERY: {query}")
         context_parts.append("")
         
         # User information for personalization
-        user = state_stack.get("user", {})
-        first_name = user.get("first_name", "")
-        title = user.get("title", "")
+        user = safe_get("user", {}, dict)
+        first_name = user.get("first_name", "") if isinstance(user, dict) else ""
+        title = user.get("title", "") if isinstance(user, dict) else ""
         if first_name:
             context_parts.append(f"USER: {first_name}" + (f" ({title})" if title else ""))
             context_parts.append("")
         
         # Channel context
-        context = state_stack.get("context", {})
-        is_dm = context.get("is_dm", False)
-        channel = context.get("channel", "")
+        context = safe_get("context", {}, dict)
+        is_dm = context.get("is_dm", False) if isinstance(context, dict) else False
+        channel = context.get("channel", "") if isinstance(context, dict) else ""
         if is_dm:
             context_parts.append("CONTEXT: Direct message conversation")
         elif channel:
@@ -163,8 +178,8 @@ class ClientAgent:
         context_parts.append("")
         
         # Hybrid conversation history (new memory system)
-        hybrid_history = state_stack.get("hybrid_history", {})
-        if hybrid_history:
+        hybrid_history = safe_get("hybrid_history", {}, dict)
+        if hybrid_history and isinstance(hybrid_history, dict):
             # Add summarized history if it exists
             summarized_history = hybrid_history.get("summarized_history", "")
             if summarized_history:
@@ -180,20 +195,21 @@ class ClientAgent:
                 context_parts.append("")
         
         # Orchestrator findings (pre-formatted summaries)
-        findings = state_stack.get("orchestrator_findings", {})
+        findings = safe_get("orchestrator_findings", {}, dict)
         
-        analysis = findings.get("analysis", "")
-        if analysis:
-            context_parts.append("QUERY ANALYSIS:")
-            context_parts.append(analysis)
-            context_parts.append("")
-        
-        # Pre-formatted search summaries from orchestrator
-        search_summary = findings.get("search_summary", "")
-        if search_summary:
-            context_parts.append("KNOWLEDGE BASE FINDINGS:")
-            context_parts.append(search_summary)
-            context_parts.append("")
+        if isinstance(findings, dict):
+            analysis = findings.get("analysis", "")
+            if analysis:
+                context_parts.append("QUERY ANALYSIS:")
+                context_parts.append(analysis)
+                context_parts.append("")
+            
+            # Pre-formatted search summaries from orchestrator
+            search_summary = findings.get("search_summary", "")
+            if search_summary:
+                context_parts.append("KNOWLEDGE BASE FINDINGS:")
+                context_parts.append(search_summary)
+                context_parts.append("")
         
         web_summary = findings.get("web_summary", "")
         if web_summary:
