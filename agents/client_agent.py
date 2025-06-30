@@ -372,22 +372,6 @@ class ClientAgent:
         """
         Check if response contains raw JSON fragments instead of natural language.
         """
-        json_indicators = [
-            '"analysis":', '"intent":', '"tools":', '"search_results":',
-            '"vector_results":', '"web_results":', '"atlassian_results":',
-            '{"', '"}', '"type":', '"action":'
-        ]
-        
-        # Count JSON-like patterns
-        json_count = sum(1 for indicator in json_indicators if indicator in text)
-        
-        # If we find multiple JSON patterns, it's likely contaminated
-        return json_count >= 3
-    
-    def _contains_raw_json(self, text: str) -> bool:
-        """
-        Check if response contains raw JSON fragments instead of natural language.
-        """
         if not text:
             return True
         
