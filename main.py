@@ -1166,7 +1166,7 @@ async def purge_and_reingest_channel(
         return {
             "status": "error", 
             "error": str(e),
-            "workflow_steps": workflow_result.get("workflow_steps", []) if 'workflow_result' in locals() else []
+            "workflow_steps": []
         }
 
 @app.get("/admin/orchestrator-test")

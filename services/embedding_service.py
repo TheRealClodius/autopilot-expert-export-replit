@@ -24,6 +24,7 @@ class EmbeddingService:
         self.client = None
         self.pc = None
         self.index = None
+        self.pinecone_available = False
         self._initialize_services()
         
     def _initialize_services(self):
@@ -34,12 +35,18 @@ class EmbeddingService:
             logger.info(f"Initialized Gemini client for embeddings")
             
             # Initialize Pinecone
-            self.pc = Pinecone(api_key=settings.PINECONE_API_KEY)
-            self.index = self.pc.Index(settings.PINECONE_INDEX_NAME)
-            logger.info(f"Connected to Pinecone index: {settings.PINECONE_INDEX_NAME}")
+            if settings.PINECONE_API_KEY and settings.PINECONE_INDEX_NAME:
+                self.pc = Pinecone(api_key=settings.PINECONE_API_KEY)
+                self.index = self.pc.Index(settings.PINECONE_INDEX_NAME)
+                self.pinecone_available = True
+                logger.info(f"Connected to Pinecone index: {settings.PINECONE_INDEX_NAME}")
+            else:
+                logger.warning("Pinecone API key or index name not configured")
+                self.pinecone_available = False
             
         except Exception as e:
             logger.error(f"Error initializing embedding service: {e}")
+            self.pinecone_available = False
             raise
     
     async def embed_text(self, text: str) -> Optional[List[float]]:
