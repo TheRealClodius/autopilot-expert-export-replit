@@ -424,7 +424,7 @@ Current Query: "{message.text}"
                         try:
                             # Use generalized retry pattern for vector search
                             vector_action = {"type": "search", "query": query, "top_k": 5, "filters": {}}
-                            result = await self._execute_tool_action_with_generalized_retry("vector_search", vector_action, message)
+                            result = await self._execute_tool_action("vector_search", vector_action, message)
                             
                             if result and not result.get("error"):
                                 # Extract actual results from the wrapped response
@@ -751,10 +751,11 @@ Current Query: "{message.text}"
         except Exception as e:
             logger.error(f"Error triggering observation: {e}")
     
-    async def _execute_tool_action_with_generalized_retry(self, tool_name: str, action: Dict[str, Any], message: ProcessedMessage) -> Dict[str, Any]:
+    async def _execute_tool_action(self, tool_name: str, action: Dict[str, Any], message: ProcessedMessage) -> Dict[str, Any]:
         """
-        Generalized ReAct pattern for ANY tool: Reason → Act → Observe → Reason → Act
-        Automatically observes tool failures and reasons about corrections. 5 loops max, then HITL.
+        Execute a tool action with simple error handling.
+        Relies on tenacity-based network retries in individual tools.
+        Logical errors are surfaced to the user for clear feedback.
         
         Args:
             tool_name: Name of the tool (atlassian, vector_search, perplexity, etc.)
@@ -762,66 +763,36 @@ Current Query: "{message.text}"
             message: Original processed message for context
             
         Returns:
-            Result from successful execution, final error, or HITL escalation
+            Result from execution or clear error message for user
         """
         action_type = action.get("mcp_tool") or action.get("type", "unknown_action")
-        max_retries = 5  # 5 loops max as specified
         
-        for attempt in range(max_retries):
-            try:
-                # REASON: Determine what action to take based on current attempt
-                if attempt == 0:
-                    if self.progress_tracker:
-                        await emit_reasoning(self.progress_tracker, "executing_action", f"attempting {tool_name} {action_type}")
-                else:
-                    if self.progress_tracker:
-                        await emit_reasoning(self.progress_tracker, "retry_reasoning", f"analyzing failure and adjusting approach (attempt {attempt + 1}/{max_retries})")
+        try:
+            if self.progress_tracker:
+                await emit_reasoning(self.progress_tracker, "executing_action", f"executing {tool_name} {action_type}")
+            
+            # Execute the action using the appropriate tool
+            result = await self._execute_single_tool_action(tool_name, action)
+            
+            # Check if action succeeded
+            if result and not result.get("error"):
+                return result
+            else:
+                # Tool execution failed - surface the error clearly to the user
+                error_msg = result.get("error", "Unknown error") if result else "No result returned"
                 
-                # ACT: Execute the action using the appropriate tool
-                result = await self._execute_single_tool_action(tool_name, action)
+                # Provide user-friendly error message
+                user_friendly_error = self._format_user_friendly_error(tool_name, action_type, error_msg)
                 
-                # OBSERVE: Check if action succeeded
-                if result and not result.get("error"):
-                    # Success - return result
-                    if attempt > 0 and self.progress_tracker:
-                        await emit_processing(self.progress_tracker, "retry_success", f"{tool_name} {action_type} succeeded after {attempt + 1} attempts")
-                    return result
-                else:
-                    # OBSERVE: Action failed - analyze the error
-                    error_msg = result.get("error", "Unknown error") if result else "No result returned"
-                    
-                    if self.progress_tracker:
-                        await emit_warning(self.progress_tracker, "action_failed", f"{tool_name} {action_type} failed: {error_msg[:50]}...")
-                    
-                    # REASON: Analyze failure and determine if retry is worthwhile
-                    should_retry, adjusted_action = await self._generalized_failure_reasoning(tool_name, action, error_msg, attempt, message)
-                    
-                    if should_retry and attempt < max_retries - 1:
-                        # Update action for next attempt based on reasoning
-                        action = adjusted_action
-                        if self.progress_tracker:
-                            await emit_retry(self.progress_tracker, "intelligent_retry", f"retrying {tool_name} {action_type} with corrected approach")
-                        continue
-                    else:
-                        # Final failure after all retries
-                        if attempt == max_retries - 1:
-                            # HITL: Human-in-the-loop escalation
-                            hitl_msg = f"After {max_retries} attempts, {tool_name} {action_type} failed. Last error: {error_msg[:100]}... This may require human intervention to resolve the underlying issue."
-                            if self.progress_tracker:
-                                await emit_error(self.progress_tracker, "hitl_escalation", "escalating to human intervention after max retries")
-                            return {"error": hitl_msg, "hitl_required": True}
-                        else:
-                            return result
+                if self.progress_tracker:
+                    await emit_warning(self.progress_tracker, "action_failed", f"{tool_name} search encountered an issue")
+                
+                return {"error": user_friendly_error, "user_facing": True}
                         
-            except Exception as e:
-                logger.error(f"{tool_name} action {action_type} attempt {attempt + 1} failed: {str(e)}")
-                if attempt == max_retries - 1:
-                    hitl_msg = f"All retry attempts failed due to technical errors: {str(e)}. Human intervention may be required."
-                    return {"error": hitl_msg, "hitl_required": True}
-                elif self.progress_tracker:
-                    await emit_warning(self.progress_tracker, "execution_error", f"attempt {attempt + 1} encountered technical issue")
-        
-        return {"error": f"Maximum retries ({max_retries}) exceeded", "hitl_required": True}
+        except Exception as e:
+            logger.error(f"{tool_name} action {action_type} failed: {str(e)}")
+            user_friendly_error = self._format_user_friendly_error(tool_name, action_type, str(e))
+            return {"error": user_friendly_error, "user_facing": True}
     
     async def _execute_mcp_action_direct(self, action: Dict[str, Any]) -> Dict[str, Any]:
         """
@@ -1053,8 +1024,49 @@ Current Query: "{message.text}"
         else:
             return {"error": f"Unknown tool: {tool_name}"}
     
-
-    
-
-
-
+    def _format_user_friendly_error(self, tool_name: str, action_type: str, error_msg: str) -> str:
+        """
+        Convert technical error messages into user-friendly format.
+        
+        Args:
+            tool_name: Name of the tool that failed
+            action_type: Type of action that failed
+            error_msg: Technical error message
+            
+        Returns:
+            User-friendly error message
+        """
+        # Convert common technical errors to user-friendly messages
+        error_lower = error_msg.lower()
+        
+        if "syntax" in error_lower or "malformed" in error_lower:
+            if tool_name == "atlassian":
+                return "I couldn't process that search because the query format wasn't recognized. Could you try phrasing it differently?"
+            elif tool_name == "vector_search":
+                return "I had trouble understanding your search query. Could you try using different keywords?"
+            else:
+                return "I couldn't process your request because the query format wasn't recognized. Could you try rephrasing it?"
+        
+        elif "permission" in error_lower or "forbidden" in error_lower or "unauthorized" in error_lower:
+            if tool_name == "atlassian":
+                return "I don't have permission to access that information in Jira or Confluence. Please check with your administrator."
+            else:
+                return "I don't have permission to access that information. Please check with your administrator."
+        
+        elif "not found" in error_lower or "404" in error_msg:
+            if tool_name == "atlassian":
+                return "I couldn't find any matching results in Jira or Confluence. Try searching with different keywords."
+            else:
+                return "I couldn't find any matching results. Try searching with different keywords."
+        
+        elif "timeout" in error_lower or "connection" in error_lower:
+            return "The search is taking longer than expected. Please try again in a moment."
+        
+        else:
+            # Generic fallback that encourages user to try differently
+            if tool_name == "atlassian":
+                return "I encountered an issue searching Jira and Confluence. Could you try rephrasing your request?"
+            elif tool_name == "vector_search":
+                return "I had trouble searching our knowledge base. Could you try using different keywords?"
+            else:
+                return "I encountered an issue processing your request. Could you try rephrasing it?"
