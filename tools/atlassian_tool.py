@@ -46,6 +46,13 @@ class AtlassianTool:
         self.session_id = None
         self.messages_endpoint = None
         
+        # Initialize reusable HTTP client with connection pooling
+        self.http_client = httpx.AsyncClient(
+            timeout=60.0,
+            follow_redirects=True,
+            limits=httpx.Limits(max_connections=10, max_keepalive_connections=5)
+        )
+        
         # Initialize trace manager for LangSmith monitoring
         if trace_manager and TRACE_MANAGER_AVAILABLE:
             self.trace_manager = trace_manager
@@ -66,37 +73,50 @@ class AtlassianTool:
         else:
             logger.warning("Atlassian tool initialized but credentials missing")
     
+    async def __aenter__(self):
+        """Async context manager entry"""
+        return self
+    
+    async def __aexit__(self, exc_type, exc_val, exc_tb):
+        """Async context manager exit - cleanup HTTP client"""
+        await self.close()
+    
+    async def close(self):
+        """Close the HTTP client and cleanup connections"""
+        if hasattr(self, 'http_client') and self.http_client:
+            await self.http_client.aclose()
+            logger.debug("HTTP client closed and connections cleaned up")
+    
     async def discover_available_tools(self) -> List[Dict[str, Any]]:
         """Dynamically discover available tools from the MCP server"""
         try:
-            async with httpx.AsyncClient(timeout=30.0) as client:
-                tools_request = {
-                    "jsonrpc": "2.0",
-                    "id": 1,
-                    "method": "tools/list",
-                    "params": {}
-                }
-                
-                response = await client.post(f"{self.mcp_server_url}/mcp", json=tools_request)
-                
-                if response.status_code == 200:
-                    data = response.json()
-                    if 'result' in data and 'tools' in data['result']:
-                        tools = data['result']['tools']
-                        
-                        # Update our available tools list with actual tool names
-                        self.available_tools = [tool['name'] for tool in tools 
-                                              if any(keyword in tool['name'].lower() 
-                                                   for keyword in ['jira', 'confluence', 'atlassian'])]
-                        
-                        logger.info(f"Discovered {len(self.available_tools)} Atlassian tools: {self.available_tools}")
-                        return tools
-                    else:
-                        logger.warning("No tools found in MCP server response")
-                        return []
+            tools_request = {
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "tools/list",
+                "params": {}
+            }
+            
+            response = await self.http_client.post(f"{self.mcp_server_url}/mcp", json=tools_request)
+            
+            if response.status_code == 200:
+                data = response.json()
+                if 'result' in data and 'tools' in data['result']:
+                    tools = data['result']['tools']
+                    
+                    # Update our available tools list with actual tool names
+                    self.available_tools = [tool['name'] for tool in tools 
+                                          if any(keyword in tool['name'].lower() 
+                                               for keyword in ['jira', 'confluence', 'atlassian'])]
+                    
+                    logger.info(f"Discovered {len(self.available_tools)} Atlassian tools: {self.available_tools}")
+                    return tools
                 else:
-                    logger.error(f"Failed to discover tools: {response.status_code} - {response.text}")
+                    logger.warning("No tools found in MCP server response")
                     return []
+            else:
+                logger.error(f"Failed to discover tools: {response.status_code} - {response.text}")
+                return []
                     
         except Exception as e:
             logger.error(f"Error discovering available tools: {e}")
@@ -136,20 +156,19 @@ class AtlassianTool:
                 'Accept': 'text/event-stream',
                 'Cache-Control': 'no-cache'
             }
-            async with httpx.AsyncClient(timeout=10.0) as client:
-                # Get SSE endpoint to obtain session info
-                response = await client.get(self.sse_endpoint, headers=headers)
-                
-                # Parse the SSE response to get the endpoint
-                lines = response.text.strip().split('\n')
-                for line in lines:
-                    if line.startswith('data: '):
-                        endpoint_path = line[6:]  # Remove 'data: ' prefix
-                        self.messages_endpoint = f"{self.mcp_server_url}{endpoint_path}"
-                        logger.debug(f"Got messages endpoint: {self.messages_endpoint}")
-                        return self.messages_endpoint
+            # Get SSE endpoint to obtain session info
+            response = await self.http_client.get(self.sse_endpoint, headers=headers)
+            
+            # Parse the SSE response to get the endpoint
+            lines = response.text.strip().split('\n')
+            for line in lines:
+                if line.startswith('data: '):
+                    endpoint_path = line[6:]  # Remove 'data: ' prefix
+                    self.messages_endpoint = f"{self.mcp_server_url}{endpoint_path}"
+                    logger.debug(f"Got messages endpoint: {self.messages_endpoint}")
+                    return self.messages_endpoint
                         
-                raise Exception("Could not parse SSE response for endpoint")
+            raise Exception("Could not parse SSE response for endpoint")
                 
         except Exception as e:
             logger.error(f"Error getting SSE session endpoint: {e}")
