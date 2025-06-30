@@ -49,8 +49,10 @@ class OrchestratorAgent:
         self.client_agent = ClientAgent()
         self.observer_agent = ObserverAgent()
         self.memory_service = memory_service
-        self.token_manager = TokenManager(model_name="gpt-4")  # Initialize precise token manager
-        self.entity_store = EntityStore(memory_service)  # Add entity store for structured memory
+        self.token_manager = TokenManager(
+            model_name="gpt-4")  # Initialize precise token manager
+        self.entity_store = EntityStore(
+            memory_service)  # Add entity store for structured memory
         self.progress_tracker = progress_tracker
         self.discovered_tools = []  # Will be populated with actual MCP tools
 
@@ -230,7 +232,7 @@ class OrchestratorAgent:
                 asyncio.create_task(
                     self._trigger_observation(message, response_text,
                                               gathered_information))
-                
+
                 # Queue entity extraction from the conversation exchange (background task)
                 asyncio.create_task(
                     self._queue_entity_extraction(message, response_text))
@@ -310,10 +312,10 @@ class OrchestratorAgent:
                 "channel": {
                     "name": message.channel_name,
                     "is_dm": message.is_dm,
-                    "thread_context": message.thread_context
                 },
                 "conversation_memory": hybrid_history,
-                "relevant_entities": relevant_entities  # Add structured entity context
+                "relevant_entities":
+                relevant_entities  # Add structured entity context
             }
 
             # Discover available tools from MCP server first
@@ -824,7 +826,6 @@ Current Query: "{message.text}"
                 "context": {
                     "channel": message.channel_name,
                     "is_dm": message.is_dm,
-                    "thread_context": message.thread_context
                 },
                 "hybrid_history": hybrid_history,
                 "orchestrator_findings": {
@@ -1471,49 +1472,56 @@ Current Query: "{message.text}"
             if recent_messages:
                 # Get precise token-managed breakdown
                 messages_to_keep, messages_to_summarize, token_stats = self.token_manager.build_token_managed_history(
-                    recent_messages, MAX_LIVE_TOKENS, PRESERVE_RECENT
-                )
-                
+                    recent_messages, MAX_LIVE_TOKENS, PRESERVE_RECENT)
+
                 # If we have messages that need summarization, queue abstractive summarization
                 if messages_to_summarize and len(messages_to_summarize) >= 2:
                     # Convert TokenizedMessage objects back to raw message format for summarization
-                    raw_messages_to_summarize = [msg.original_message for msg in messages_to_summarize]
-                    
+                    raw_messages_to_summarize = [
+                        msg.original_message for msg in messages_to_summarize
+                    ]
+
                     # Queue abstractive summarization task for smooth transition
                     await self._queue_abstractive_summarization(
-                        conversation_key,
-                        summary_key,
+                        conversation_key, summary_key,
                         raw_messages_to_summarize,
-                        long_term_summary.get("summary", "")
-                    )
-                    
+                        long_term_summary.get("summary", ""))
+
                     # For immediate context, create basic summary as fallback
                     for msg in messages_to_summarize:
                         if long_term_summary["summary"]:
-                            long_term_summary["summary"] += f"\n{msg.speaker}: {msg.text[:100]}..."
+                            long_term_summary[
+                                "summary"] += f"\n{msg.speaker}: {msg.text[:100]}..."
                         else:
-                            long_term_summary["summary"] = f"{msg.speaker}: {msg.text[:100]}..."
-                    
-                    long_term_summary["message_count"] += len(messages_to_summarize)
+                            long_term_summary[
+                                "summary"] = f"{msg.speaker}: {msg.text[:100]}..."
+
+                    long_term_summary["message_count"] += len(
+                        messages_to_summarize)
 
                 # Format live history from tokenized messages
-                live_history_text = self.token_manager.format_messages_for_context(messages_to_keep)
+                live_history_text = self.token_manager.format_messages_for_context(
+                    messages_to_keep)
                 precise_token_count = token_stats["total_tokens"]
-                
+
                 # Calculate efficiency gains compared to old character-based system
-                old_char_estimate = sum(len(f"{msg.speaker}: {msg.text}") // 4 for msg in messages_to_keep)
+                old_char_estimate = sum(
+                    len(f"{msg.speaker}: {msg.text}") // 4
+                    for msg in messages_to_keep)
                 efficiency_stats = self.token_manager.get_token_efficiency_stats(
-                    old_char_estimate, precise_token_count
-                )
-                
+                    old_char_estimate, precise_token_count)
+
                 hybrid_history = {
                     "summarized_history": long_term_summary["summary"],
-                    "summarized_message_count": long_term_summary["message_count"],
+                    "summarized_message_count":
+                    long_term_summary["message_count"],
                     "live_history": live_history_text,
                     "live_message_count": token_stats["kept_messages"],
                     "precise_tokens": precise_token_count,  # Exact token count
-                    "estimated_tokens": precise_token_count,  # For backward compatibility
-                    "token_efficiency": efficiency_stats,  # Performance comparison
+                    "estimated_tokens":
+                    precise_token_count,  # For backward compatibility
+                    "token_efficiency":
+                    efficiency_stats,  # Performance comparison
                     "summarized_message_candidates": len(messages_to_summarize)
                 }
 
@@ -1525,16 +1533,21 @@ Current Query: "{message.text}"
 
             else:
                 # No recent messages, just use current query
-                query_tokens = self.token_manager.count_tokens(f"User: {current_query}")
-                
+                query_tokens = self.token_manager.count_tokens(
+                    f"User: {current_query}")
+
                 hybrid_history = {
                     "summarized_history": long_term_summary["summary"],
-                    "summarized_message_count": long_term_summary["message_count"],
+                    "summarized_message_count":
+                    long_term_summary["message_count"],
                     "live_history": f"User: {current_query}",
                     "live_message_count": 1,
                     "precise_tokens": query_tokens,
                     "estimated_tokens": query_tokens,
-                    "token_efficiency": {"accuracy_percentage": 100, "is_more_efficient": True},
+                    "token_efficiency": {
+                        "accuracy_percentage": 100,
+                        "is_more_efficient": True
+                    },
                     "summarized_message_candidates": 0
                 }
 
@@ -1543,8 +1556,9 @@ Current Query: "{message.text}"
         except Exception as e:
             logger.error(f"Error constructing hybrid history: {e}")
             # Fallback to simple recent messages with character-based estimation
-            fallback_tokens = self.token_manager.count_tokens(f"User: {current_query}")
-            
+            fallback_tokens = self.token_manager.count_tokens(
+                f"User: {current_query}")
+
             return {
                 "summarized_history": "",
                 "summarized_message_count": 0,
@@ -1552,7 +1566,10 @@ Current Query: "{message.text}"
                 "live_message_count": 1,
                 "precise_tokens": fallback_tokens,
                 "estimated_tokens": fallback_tokens,
-                "token_efficiency": {"accuracy_percentage": 100, "fallback": True},
+                "token_efficiency": {
+                    "accuracy_percentage": 100,
+                    "fallback": True
+                },
                 "summarized_message_candidates": 0
             }
 
@@ -1586,9 +1603,10 @@ Current Query: "{message.text}"
             summary += f". Last user said: \"{user_messages[-1]}...\""
 
         return summary
-    
-    async def _queue_abstractive_summarization(self, conversation_key: str, summary_key: str,
-                                               messages_to_archive: List[Dict[str, Any]], existing_summary: str):
+
+    async def _queue_abstractive_summarization(
+            self, conversation_key: str, summary_key: str,
+            messages_to_archive: List[Dict[str, Any]], existing_summary: str):
         """
         Queue abstractive summarization task for background processing.
         
@@ -1601,34 +1619,34 @@ Current Query: "{message.text}"
         try:
             # Import Celery task (avoid circular imports)
             from workers.conversation_summarizer import summarize_conversation_chunk, update_conversation_summary
-            
+
             # Create summarization task chain:
             # 1. Generate abstractive summary
             # 2. Update conversation summary in Redis
-            
-            logger.info(f"Queuing abstractive summarization for {conversation_key} with {len(messages_to_archive)} messages")
-            
+
+            logger.info(
+                f"Queuing abstractive summarization for {conversation_key} with {len(messages_to_archive)} messages"
+            )
+
             # Queue the summarization task
             summarization_result = summarize_conversation_chunk.delay(
                 conversation_key=conversation_key,
                 messages_to_summarize=messages_to_archive,
-                existing_summary=existing_summary
-            )
-            
+                existing_summary=existing_summary)
+
             # The task will handle updating the summary in Redis when complete
             # We don't await here since it's a background task
-            
-            logger.info(f"Abstractive summarization task queued: {summarization_result.id}")
-            
+
+            logger.info(
+                f"Abstractive summarization task queued: {summarization_result.id}"
+            )
+
         except Exception as e:
             logger.error(f"Failed to queue abstractive summarization: {e}")
             # Continue with simple archiving as fallback
 
     async def _search_relevant_entities(
-        self, 
-        query_text: str, 
-        conversation_key: str
-    ) -> Dict[str, Any]:
+            self, query_text: str, conversation_key: str) -> Dict[str, Any]:
         """
         Search for entities relevant to the current query.
         This provides structured memory recall for facts mentioned earlier.
@@ -1643,21 +1661,20 @@ Current Query: "{message.text}"
         try:
             # Extract keywords from the query for entity search
             query_keywords = self._extract_query_keywords(query_text)
-            
+
             if not query_keywords:
                 return {"entities": [], "search_performed": False}
-            
+
             # Search for matching entities
             matching_entities = await self.entity_store.search_entities(
                 query_keywords=query_keywords,
                 conversation_key=conversation_key,
-                limit=10
-            )
-            
+                limit=10)
+
             # Format entities for context injection
             formatted_entities = []
             entity_summary = {}
-            
+
             for entity in matching_entities:
                 formatted_entity = {
                     "key": entity.key,
@@ -1668,12 +1685,15 @@ Current Query: "{message.text}"
                     "mentioned_at": entity.mentioned_at
                 }
                 formatted_entities.append(formatted_entity)
-                
+
                 # Count entities by type for summary
-                entity_summary[entity.type] = entity_summary.get(entity.type, 0) + 1
-            
-            logger.info(f"Found {len(formatted_entities)} relevant entities for query: {query_keywords}")
-            
+                entity_summary[entity.type] = entity_summary.get(
+                    entity.type, 0) + 1
+
+            logger.info(
+                f"Found {len(formatted_entities)} relevant entities for query: {query_keywords}"
+            )
+
             return {
                 "entities": formatted_entities,
                 "entity_summary": entity_summary,
@@ -1681,11 +1701,11 @@ Current Query: "{message.text}"
                 "search_performed": True,
                 "total_found": len(formatted_entities)
             }
-            
+
         except Exception as e:
             logger.error(f"Error searching relevant entities: {e}")
             return {"entities": [], "search_performed": False, "error": str(e)}
-    
+
     def _extract_query_keywords(self, query_text: str) -> List[str]:
         """
         Extract relevant keywords from query text for entity search.
@@ -1697,54 +1717,56 @@ Current Query: "{message.text}"
             List of keywords to search for
         """
         import re
-        
+
         # Normalize text
         text_lower = query_text.lower()
-        
+
         # Extract potential keywords
         keywords = []
-        
+
         # Look for JIRA ticket patterns
-        jira_matches = re.findall(r'\b([A-Z]+-\d+)\b', query_text, re.IGNORECASE)
+        jira_matches = re.findall(r'\b([A-Z]+-\d+)\b', query_text,
+                                  re.IGNORECASE)
         keywords.extend(jira_matches)
-        
+
         # Look for project names (capitalized words)
-        project_matches = re.findall(r'\b([A-Z][a-z]+(?:\s+[A-Z][a-z]*)*)\b', query_text)
+        project_matches = re.findall(r'\b([A-Z][a-z]+(?:\s+[A-Z][a-z]*)*)\b',
+                                     query_text)
         keywords.extend([match for match in project_matches if len(match) > 2])
-        
+
         # Look for mentions of specific entities
         entity_keywords = [
             "ticket", "issue", "project", "deadline", "document", "template",
             "report", "meeting", "user", "owner", "assigned", "status"
         ]
-        
+
         for keyword in entity_keywords:
             if keyword in text_lower:
                 keywords.append(keyword)
-        
+
         # Extract quoted terms
         quoted_matches = re.findall(r'"([^"]+)"', query_text)
         keywords.extend(quoted_matches)
-        
+
         # Extract important nouns (simple approach)
         words = re.findall(r'\b[A-Za-z]{3,}\b', query_text)
-        important_words = [word for word in words if word.lower() not in {
-            'the', 'and', 'for', 'are', 'was', 'were', 'been', 'have', 'has',
-            'had', 'will', 'would', 'could', 'should', 'can', 'what', 'when',
-            'where', 'why', 'how', 'who', 'which', 'this', 'that', 'with'
-        }]
+        important_words = [
+            word for word in words if word.lower() not in {
+                'the', 'and', 'for', 'are', 'was', 'were', 'been', 'have',
+                'has', 'had', 'will', 'would', 'could', 'should', 'can',
+                'what', 'when', 'where', 'why', 'how', 'who', 'which', 'this',
+                'that', 'with'
+            }
+        ]
         keywords.extend(important_words[:5])  # Limit to 5 most relevant words
-        
+
         # Remove duplicates and empty strings
         keywords = list(set([k.strip() for k in keywords if k.strip()]))
-        
+
         return keywords[:10]  # Limit to 10 keywords for performance
-    
-    async def _queue_entity_extraction(
-        self, 
-        message: ProcessedMessage, 
-        bot_response: str
-    ):
+
+    async def _queue_entity_extraction(self, message: ProcessedMessage,
+                                       bot_response: str):
         """
         Queue background entity extraction from the conversation exchange.
         
@@ -1755,10 +1777,10 @@ Current Query: "{message.text}"
         try:
             # Import Celery task (avoid circular imports)
             from workers.entity_extractor import extract_entities_from_conversation
-            
+
             # Construct conversation key
             conversation_key = f"conv:{message.channel_id}:{message.thread_ts or message.message_ts}"
-            
+
             # Queue entity extraction task
             extraction_task = extract_entities_from_conversation.delay(
                 conversation_key=conversation_key,
@@ -1771,11 +1793,12 @@ Current Query: "{message.text}"
                     "user_title": message.user_title,
                     "user_department": message.user_department,
                     "timestamp": datetime.now().isoformat()
-                }
+                })
+
+            logger.info(
+                f"Entity extraction task queued: {extraction_task.id} for conversation: {conversation_key}"
             )
-            
-            logger.info(f"Entity extraction task queued: {extraction_task.id} for conversation: {conversation_key}")
-            
+
         except Exception as e:
             logger.error(f"Failed to queue entity extraction: {e}")
             # Don't raise - this is a background optimization, not critical

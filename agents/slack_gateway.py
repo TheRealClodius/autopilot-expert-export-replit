@@ -96,11 +96,6 @@ class SlackGateway:
             # Get channel information
             channel_info = await self._get_channel_info(channel_id)
             
-            # Get thread context if this is a threaded message
-            thread_context = None
-            if thread_ts:
-                thread_context = await self._get_thread_context(channel_id, thread_ts)
-            
             # Extract user profile information
             profile = user_info.get("profile", {})
             display_name = profile.get("display_name") or profile.get("real_name") or user_info.get("name", "Unknown")
@@ -124,8 +119,7 @@ class SlackGateway:
                 is_dm=is_dm,
                 is_mention=is_mention,
                 thread_ts=thread_ts,
-                message_ts=message_ts or "",
-                thread_context=thread_context
+                message_ts=message_ts or ""
             )
             
             logger.info(f"Processed message from {user_info.get('name')} in {channel_info.get('name')}")
@@ -513,28 +507,3 @@ class SlackGateway:
         except Exception as e:
             logger.error(f"Error getting channel info for {channel_id}: {e}")
             return {"name": "Unknown"}
-    
-    async def _get_thread_context(self, channel_id: str, thread_ts: str, limit: int = 5) -> Optional[str]:
-        """Get recent context from thread"""
-        try:
-            response = self.client.conversations_replies(
-                channel=channel_id,
-                ts=thread_ts,
-                limit=limit
-            )
-            
-            if response["ok"] and response["messages"]:
-                context_messages = []
-                for msg in response["messages"][-limit:]:
-                    user_id = msg.get("user", "Unknown")
-                    text = msg.get("text", "")
-                    if text:
-                        context_messages.append(f"{user_id}: {text}")
-                
-                return "\n".join(context_messages)
-            
-            return None
-            
-        except Exception as e:
-            logger.error(f"Error getting thread context: {e}")
-            return None

@@ -41,8 +41,7 @@ class ProcessedMessage(BaseModel):
     is_dm: bool = False
     is_mention: bool = False
     thread_ts: Optional[str] = None
-    message_ts: Optional[str] = ""
-    thread_context: Optional[str] = None
+    message_ts: str
     
     class Config:
         extra = "allow"
