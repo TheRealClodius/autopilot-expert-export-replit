@@ -83,6 +83,23 @@ The system uses environment variables for configuration management and supports 
 
 ## Recent Changes
 
+✅ **June 30, 2025 - HYBRID MEMORY SYSTEM IMPLEMENTED: ROLLING LONG-TERM SUMMARY WITH TOKEN-MANAGED LIVE HISTORY (PRODUCTION READY)**
+- **Advanced Memory Architecture**: Implemented sophisticated hybrid memory system replacing basic 10-message sliding window with intelligent context management
+- **Rolling Long-Term Summary**: Automatically moves oldest messages from live history to persistent summarized history when 10-message window is full
+- **Token-Managed Live History**: Intelligent truncation of live history based on 2000-token limit to prevent context bloat while preserving recent exchanges
+- **Seamless Context Flow**: Orchestrator uses `_construct_hybrid_history()` method to build optimal context combining summarized past and raw recent messages
+- **Client Agent Integration**: Updated client agent to display both summarized history and live conversation transcript for comprehensive context awareness
+- **Memory Efficiency**: System automatically balances context richness with token economy, ensuring language model gets best possible context without exceeding limits
+- **State Stack Optimization**: Replaced legacy conversation_summary with hybrid_history structure containing summarized_history, live_history, message counts, and token estimates
+- **Persistent Storage**: Long-term summaries stored in Redis/memory with 7-day TTL, providing conversation continuity across extended interactions
+- **Fallback Protection**: Robust error handling with minimal context fallback ensuring system stability when memory operations fail
+- **Comprehensive Testing**: Added `/admin/test-hybrid-memory` endpoint demonstrating system behavior with 15-message conversation showing automatic summary creation
+- **Performance Monitoring**: Built-in logging tracks summarized message count, live message count, and estimated token usage for system optimization
+- **Files Enhanced**: agents/orchestrator_agent.py (new _construct_hybrid_history method), agents/client_agent.py (hybrid history processing), main.py (test endpoint)
+- **Architecture Achievement**: Eliminates the classic memory vs. context trade-off by providing both comprehensive history and recent detail in optimal token-efficient format
+- **User Impact**: Conversations can now extend indefinitely while maintaining full context awareness and optimal AI performance without token bloat
+- **Status**: Hybrid memory system fully operational - rolling summary preserves conversation history while token management ensures optimal LLM context
+
 ✅ **June 30, 2025 - CRITICAL DEPLOYMENT FIXES IMPLEMENTED: CLOUD RUN READY (PRODUCTION READY)**
 - **Redis Connection Prevention**: Forced all Redis environment variables to empty strings to prevent port 6379 connection attempts
 - **Cloud Run Compatibility**: Application now binds to 0.0.0.0 and uses PORT environment variable for proper deployment

@@ -3316,6 +3316,99 @@ async def clear_webhook_cache():
             "error": f"Failed to clear cache: {str(e)}"
         }
 
+@app.get("/admin/test-hybrid-memory")
+async def test_hybrid_memory():
+    """Test the new hybrid memory system with rolling long-term summary and token-managed live history"""
+    try:
+        memory_service = MemoryService()
+        orchestrator = OrchestratorAgent(memory_service)
+        
+        # Simulate a conversation with multiple messages
+        test_conversation_id = "test_conv_123"
+        conversation_key = f"conv:{test_conversation_id}:1234567890.001"
+        
+        # Store multiple test messages to build up history
+        test_messages = [
+            {"user_name": "alice", "text": "What's the status of the Q4 project?", "type": "user"},
+            {"user_name": "bot", "text": "The Q4 project is on track. We've completed 75% of the milestones.", "type": "bot"},
+            {"user_name": "bob", "text": "Are there any blockers I should know about?", "type": "user"},
+            {"user_name": "bot", "text": "Currently there are no critical blockers. The team is working on optimization tasks.", "type": "bot"},
+            {"user_name": "alice", "text": "When is the next milestone review?", "type": "user"},
+            {"user_name": "bot", "text": "The next milestone review is scheduled for next Tuesday at 2 PM.", "type": "bot"},
+            {"user_name": "charlie", "text": "Can you share the latest performance metrics?", "type": "user"},
+            {"user_name": "bot", "text": "Current performance shows 92% uptime and response times under 200ms.", "type": "bot"},
+            {"user_name": "alice", "text": "Excellent! Any concerns for next quarter?", "type": "user"},
+            {"user_name": "bot", "text": "For Q1, we need to focus on scaling infrastructure and team expansion.", "type": "bot"},
+            {"user_name": "bob", "text": "What about budget allocation?", "type": "user"},
+            {"user_name": "bot", "text": "Budget review meeting is planned for December 15th.", "type": "bot"}
+        ]
+        
+        # Store messages to simulate a conversation history
+        for msg in test_messages:
+            await memory_service.store_raw_message(conversation_key, msg)
+        
+        # Test hybrid history construction
+        current_query = "Can you summarize our discussion about project planning?"
+        hybrid_history = await orchestrator._construct_hybrid_history(conversation_key, current_query)
+        
+        # Get current memory stats
+        recent_messages = await memory_service.get_recent_messages(conversation_key, limit=10)
+        
+        # Test the system with over 10 messages to trigger long-term summary
+        additional_messages = [
+            {"user_name": "dave", "text": "How's the team morale?", "type": "user"},
+            {"user_name": "bot", "text": "Team morale is high with recent success.", "type": "bot"},
+            {"user_name": "eve", "text": "Any training needs?", "type": "user"}
+        ]
+        
+        for msg in additional_messages:
+            await memory_service.store_raw_message(conversation_key, msg)
+        
+        # Test again with more messages to see long-term summary activation
+        hybrid_history_with_summary = await orchestrator._construct_hybrid_history(conversation_key, "What are the key takeaways?")
+        
+        return {
+            "status": "success",
+            "test_data": {
+                "total_messages_stored": len(test_messages) + len(additional_messages),
+                "recent_messages_count": len(recent_messages),
+                "conversation_key": conversation_key
+            },
+            "initial_hybrid_history": {
+                "summarized_message_count": hybrid_history.get("summarized_message_count", 0),
+                "live_message_count": hybrid_history.get("live_message_count", 0),
+                "estimated_tokens": hybrid_history.get("estimated_tokens", 0),
+                "has_summarized_history": bool(hybrid_history.get("summarized_history")),
+                "live_history_preview": hybrid_history.get("live_history", "")[:200] + "..." if len(hybrid_history.get("live_history", "")) > 200 else hybrid_history.get("live_history", "")
+            },
+            "after_additional_messages": {
+                "summarized_message_count": hybrid_history_with_summary.get("summarized_message_count", 0),
+                "live_message_count": hybrid_history_with_summary.get("live_message_count", 0),
+                "estimated_tokens": hybrid_history_with_summary.get("estimated_tokens", 0),
+                "has_summarized_history": bool(hybrid_history_with_summary.get("summarized_history")),
+                "summarized_history_preview": hybrid_history_with_summary.get("summarized_history", "")[:200] + "..." if len(hybrid_history_with_summary.get("summarized_history", "")) > 200 else hybrid_history_with_summary.get("summarized_history", ""),
+                "live_history_preview": hybrid_history_with_summary.get("live_history", "")[:200] + "..." if len(hybrid_history_with_summary.get("live_history", "")) > 200 else hybrid_history_with_summary.get("live_history", "")
+            },
+            "memory_system": {
+                "type": "hybrid",
+                "features": [
+                    "Rolling long-term summary",
+                    "Token-managed live history", 
+                    "Automatic message overflow handling",
+                    "10-message sliding window",
+                    "2000-token live history limit"
+                ]
+            }
+        }
+        
+    except Exception as e:
+        logger.error(f"Hybrid memory test failed: {e}")
+        return {
+            "status": "error",
+            "error": str(e),
+            "message": "Hybrid memory system test failed"
+        }
+
 # Removed obsolete test-http-client-optimization endpoint - functionality replaced by AtlassianToolbelt
 
 # Removed obsolete mcp-tools-cache-stats and clear-mcp-tools-cache endpoints - functionality replaced by AtlassianToolbelt
