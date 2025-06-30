@@ -211,23 +211,23 @@ class ClientAgent:
                 context_parts.append(search_summary)
                 context_parts.append("")
         
-        web_summary = findings.get("web_summary", "")
-        if web_summary:
-            context_parts.append("WEB RESEARCH FINDINGS:")
-            context_parts.append(web_summary)
-            context_parts.append("")
-        
-        atlassian_summary = findings.get("atlassian_summary", "")
-        if atlassian_summary:
-            context_parts.append("PROJECT INFORMATION:")
-            context_parts.append(atlassian_summary)
-            context_parts.append("")
-        
-        meeting_summary = findings.get("meeting_summary", "")
-        if meeting_summary:
-            context_parts.append("MEETING ACTIONS:")
-            context_parts.append(meeting_summary)
-            context_parts.append("")
+            web_summary = findings.get("web_summary", "")
+            if web_summary:
+                context_parts.append("WEB RESEARCH FINDINGS:")
+                context_parts.append(web_summary)
+                context_parts.append("")
+            
+            atlassian_summary = findings.get("atlassian_summary", "")
+            if atlassian_summary:
+                context_parts.append("PROJECT INFORMATION:")
+                context_parts.append(atlassian_summary)
+                context_parts.append("")
+            
+            meeting_summary = findings.get("meeting_summary", "")
+            if meeting_summary:
+                context_parts.append("MEETING ACTIONS:")
+                context_parts.append(meeting_summary)
+                context_parts.append("")
         
         return "\n".join(context_parts)
     

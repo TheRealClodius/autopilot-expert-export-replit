@@ -864,14 +864,13 @@ Current Query: "{message.text}"
                     "live_message_count": 1,
                     "estimated_tokens": len(message.text) // 4
                 },
-                "orchestrator_analysis": {
-                    "intent":
-                    execution_plan.get("analysis",
-                                       "Error occurred during analysis"),
+                "orchestrator_findings": {
+                    "analysis": execution_plan.get("analysis", "Error occurred during analysis"),
                     "tools_used": [],
-                    "search_results": [],
-                    "web_results": [],
-                    "atlassian_results": []
+                    "search_summary": "",
+                    "web_summary": "",
+                    "meeting_summary": "",
+                    "atlassian_summary": ""
                 },
                 "response_thread_ts": message.thread_ts or message.message_ts,
                 "trace_id": self._get_current_trace_id()
