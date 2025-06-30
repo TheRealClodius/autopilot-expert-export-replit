@@ -159,7 +159,7 @@ class EmbeddingService:
             logger.info(f"Embedding and storing {len(messages)} messages...")
             
             # Extract texts for embedding
-            texts = [msg.get("content", "") for msg in messages]
+            texts = [msg.get("text", msg.get("content", "")) for msg in messages]
             
             # Generate embeddings in batches
             embeddings = await self.embed_batch(texts)
@@ -174,7 +174,7 @@ class EmbeddingService:
                     continue
                 
                 vector = {
-                    "id": message["id"],
+                    "id": message.get("message_id", message.get("id", f"msg_{i}")),
                     "values": embedding,
                     "metadata": self._prepare_metadata_for_pinecone(message)
                 }
