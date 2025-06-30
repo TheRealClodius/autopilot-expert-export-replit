@@ -14,6 +14,14 @@ import time
 from typing import Dict, Any, Optional, List
 import httpx
 from config import settings
+from tenacity import (
+    retry,
+    stop_after_attempt,
+    wait_exponential,
+    retry_if_exception_type,
+    before_sleep_log,
+    after_log
+)
 
 # Import trace manager for LangSmith monitoring
 try:
@@ -93,9 +101,38 @@ class AtlassianTool:
             await self.http_client.aclose()
             logger.debug("HTTP client closed and connections cleaned up")
     
+    @retry(
+        stop=stop_after_attempt(3),
+        wait=wait_exponential(multiplier=1, min=1, max=10),
+        retry=retry_if_exception_type((httpx.ConnectError, httpx.TimeoutException, httpx.NetworkError)),
+        before_sleep=before_sleep_log(logger, logging.WARNING),
+        after=after_log(logger, logging.INFO)
+    )
+    async def _discover_tools_with_retry(self) -> List[Dict[str, Any]]:
+        """Internal method to discover tools with retry logic"""
+        tools_request = {
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "tools/list",
+            "params": {}
+        }
+        
+        response = await self.http_client.post(f"{self.mcp_server_url}/mcp", json=tools_request)
+        
+        if response.status_code == 200:
+            data = response.json()
+            if 'result' in data and 'tools' in data['result']:
+                return data['result']['tools']
+            else:
+                logger.warning("No tools found in MCP server response")
+                return []
+        else:
+            # Raise an exception to trigger retry for non-200 status codes
+            raise httpx.RequestError(f"Failed to discover tools: {response.status_code} - {response.text}")
+
     async def discover_available_tools(self) -> List[Dict[str, Any]]:
         """
-        Dynamically discover available tools from the MCP server with caching.
+        Dynamically discover available tools from the MCP server with caching and retry logic.
         Uses a 5-minute cache to avoid unnecessary latency on every request.
         """
         current_time = time.time()
@@ -114,43 +151,25 @@ class AtlassianTool:
             logger.debug(f"Using cached tools discovery ({len(tools)} tools, cache age: {current_time - AtlassianTool._cache_timestamp:.1f}s)")
             return tools
         
-        # Cache miss or expired - fetch from server
+        # Cache miss or expired - fetch from server with retry
         try:
             logger.debug("Fetching tools from MCP server (cache miss or expired)")
-            tools_request = {
-                "jsonrpc": "2.0",
-                "id": 1,
-                "method": "tools/list",
-                "params": {}
-            }
+            tools = await self._discover_tools_with_retry()
             
-            response = await self.http_client.post(f"{self.mcp_server_url}/mcp", json=tools_request)
+            # Update cache
+            AtlassianTool._tools_cache = {'tools': tools}
+            AtlassianTool._cache_timestamp = current_time
             
-            if response.status_code == 200:
-                data = response.json()
-                if 'result' in data and 'tools' in data['result']:
-                    tools = data['result']['tools']
-                    
-                    # Update cache
-                    AtlassianTool._tools_cache = {'tools': tools}
-                    AtlassianTool._cache_timestamp = current_time
-                    
-                    # Update our available tools list with actual tool names
-                    self.available_tools = [tool['name'] for tool in tools 
-                                          if any(keyword in tool['name'].lower() 
-                                               for keyword in ['jira', 'confluence', 'atlassian'])]
-                    
-                    logger.info(f"Discovered and cached {len(self.available_tools)} Atlassian tools: {self.available_tools}")
-                    return tools
-                else:
-                    logger.warning("No tools found in MCP server response")
-                    return []
-            else:
-                logger.error(f"Failed to discover tools: {response.status_code} - {response.text}")
-                return []
+            # Update our available tools list with actual tool names
+            self.available_tools = [tool['name'] for tool in tools 
+                                  if any(keyword in tool['name'].lower() 
+                                       for keyword in ['jira', 'confluence', 'atlassian'])]
+            
+            logger.info(f"Discovered and cached {len(self.available_tools)} Atlassian tools: {self.available_tools}")
+            return tools
                     
         except Exception as e:
-            logger.error(f"Error discovering available tools: {e}")
+            logger.error(f"Error discovering available tools after retries: {e}")
             return []
     
     @classmethod
@@ -211,34 +230,104 @@ class AtlassianTool:
         
         return all(var for var in required_vars)
     
+    @retry(
+        stop=stop_after_attempt(3),
+        wait=wait_exponential(multiplier=1, min=1, max=10),
+        retry=retry_if_exception_type((httpx.ConnectError, httpx.TimeoutException, httpx.NetworkError)),
+        before_sleep=before_sleep_log(logger, logging.WARNING),
+        after=after_log(logger, logging.INFO)
+    )
     async def _get_session_endpoint(self) -> str:
-        """Get the messages endpoint from SSE initialization"""
+        """Get the messages endpoint from SSE initialization with retry logic"""
         if self.messages_endpoint:
             return self.messages_endpoint
             
-        try:
-            headers = {
-                'Accept': 'text/event-stream',
-                'Cache-Control': 'no-cache'
-            }
-            # Get SSE endpoint to obtain session info
-            response = await self.http_client.get(self.sse_endpoint, headers=headers)
-            
-            # Parse the SSE response to get the endpoint
-            lines = response.text.strip().split('\n')
-            for line in lines:
-                if line.startswith('data: '):
-                    endpoint_path = line[6:]  # Remove 'data: ' prefix
-                    self.messages_endpoint = f"{self.mcp_server_url}{endpoint_path}"
-                    logger.debug(f"Got messages endpoint: {self.messages_endpoint}")
-                    return self.messages_endpoint
-                        
-            raise Exception("Could not parse SSE response for endpoint")
-                
-        except Exception as e:
-            logger.error(f"Error getting SSE session endpoint: {e}")
-            raise
+        headers = {
+            'Accept': 'text/event-stream',
+            'Cache-Control': 'no-cache'
+        }
+        # Get SSE endpoint to obtain session info
+        response = await self.http_client.get(self.sse_endpoint, headers=headers)
+        
+        # Parse the SSE response to get the endpoint
+        lines = response.text.strip().split('\n')
+        for line in lines:
+            if line.startswith('data: '):
+                endpoint_path = line[6:]  # Remove 'data: ' prefix
+                self.messages_endpoint = f"{self.mcp_server_url}{endpoint_path}"
+                logger.debug(f"Got messages endpoint: {self.messages_endpoint}")
+                return self.messages_endpoint
+                    
+        raise Exception("Could not parse SSE response for endpoint")
     
+    @retry(
+        stop=stop_after_attempt(3),
+        wait=wait_exponential(multiplier=1, min=1, max=10),
+        retry=retry_if_exception_type((httpx.ConnectError, httpx.TimeoutException, httpx.NetworkError)),
+        before_sleep=before_sleep_log(logger, logging.WARNING),
+        after=after_log(logger, logging.INFO)
+    )
+    async def _initialize_mcp_session(self, base_endpoint: str, headers: Dict[str, str]) -> tuple[httpx.Response, str]:
+        """Initialize MCP session with retry logic"""
+        session_request = {
+            "jsonrpc": "2.0",
+            "id": str(uuid.uuid4()),
+            "method": "initialize",
+            "params": {
+                "protocolVersion": "2024-11-05",
+                "capabilities": {},
+                "clientInfo": {
+                    "name": "atlassian-client",
+                    "version": "1.0.0"
+                }
+            }
+        }
+        
+        logger.debug(f"Initializing MCP session with request: {session_request}")
+        session_response = await self.http_client.post(base_endpoint, json=session_request, headers=headers)
+        
+        # Handle redirect to session-specific endpoint
+        redirect_url = None
+        if session_response.status_code == 307:
+            redirect_url = session_response.headers.get("location")
+            if redirect_url:
+                logger.debug(f"Following redirect to session URL: {redirect_url}")
+                session_response = await self.http_client.post(redirect_url, json=session_request, headers=headers)
+            
+            if session_response.status_code != 200:
+                # Raise exception to trigger retry
+                raise httpx.RequestError(f"Failed to initialize MCP session: {session_response.status_code} - {session_response.text}")
+        
+        return session_response, redirect_url if redirect_url else base_endpoint
+
+    @retry(
+        stop=stop_after_attempt(3),
+        wait=wait_exponential(multiplier=1, min=1, max=10),
+        retry=retry_if_exception_type((httpx.ConnectError, httpx.TimeoutException, httpx.NetworkError)),
+        before_sleep=before_sleep_log(logger, logging.WARNING),
+        after=after_log(logger, logging.INFO)
+    )
+    async def _execute_mcp_tool_call(self, tool_endpoint: str, tool_request: Dict[str, Any], headers: Dict[str, str]) -> httpx.Response:
+        """Execute MCP tool call with retry logic"""
+        return await self.http_client.post(tool_endpoint, json=tool_request, headers=headers)
+
+    @retry(
+        stop=stop_after_attempt(3),
+        wait=wait_exponential(multiplier=1, min=1, max=10),
+        retry=retry_if_exception_type((httpx.ConnectError, httpx.TimeoutException, httpx.NetworkError)),
+        before_sleep=before_sleep_log(logger, logging.WARNING),
+        after=after_log(logger, logging.INFO)
+    )
+    async def check_server_health(self) -> bool:
+        """Check if MCP server is healthy and responding with retry logic"""
+        try:
+            response = await self.http_client.get(f"{self.mcp_server_url}/health")
+            return response.status_code == 200
+        except Exception as e:
+            logger.warning(f"MCP server health check failed: {e}")
+            # Re-raise to trigger retry
+            raise
+
     async def execute_mcp_tool(self, tool_name: str, arguments: Dict[str, Any]) -> Dict[str, Any]:
         """
         Execute MCP tool via SSE client to running server
@@ -278,38 +367,15 @@ class AtlassianTool:
             
             logger.info(f"Connecting to remote MCP server at: {working_url}")
             
-            # Using reusable HTTP client instead of creating new one
-            # Step 1: Create session via redirect handling
-            session_request = {
-                "jsonrpc": "2.0",
-                "id": str(uuid.uuid4()),
-                "method": "initialize",
-                "params": {
-                    "protocolVersion": "2024-11-05",
-                    "capabilities": {},
-                    "clientInfo": {
-                        "name": "atlassian-client",
-                        "version": "1.0.0"
-                    }
+            # Step 1: Initialize MCP session with retry logic
+            try:
+                session_response, tool_endpoint = await self._initialize_mcp_session(base_endpoint, headers)
+            except Exception as e:
+                logger.error(f"Failed to initialize MCP session after retries: {e}")
+                return {
+                    "error": "session_init_failed_after_retries",
+                    "message": f"Failed to initialize MCP session after retries: {str(e)}"
                 }
-            }
-            
-            logger.debug(f"Initializing MCP session with request: {session_request}")
-            session_response = await self.http_client.post(base_endpoint, json=session_request, headers=headers)
-            
-            # Handle redirect to session-specific endpoint
-            if session_response.status_code == 307:
-                redirect_url = session_response.headers.get("location")
-                if redirect_url:
-                    logger.debug(f"Following redirect to session URL: {redirect_url}")
-                    session_response = await self.http_client.post(redirect_url, json=session_request, headers=headers)
-                
-                if session_response.status_code != 200:
-                    logger.error(f"Failed to initialize MCP session: {session_response.status_code} - {session_response.text}")
-                    return {
-                        "error": f"session_init_failed_{session_response.status_code}",
-                        "message": f"Failed to initialize MCP session: {session_response.text}"
-                    }
                 
                 # Extract session info from SSE response
                 session_id = session_response.headers.get("mcp-session-id")
@@ -404,7 +470,14 @@ class AtlassianTool:
                 tool_request["params"]["name"] = mapped_tool_name
                 
                 logger.debug(f"Calling MCP tool with request: {tool_request}")
-                response = await self.http_client.post(str(session_url), json=tool_request, headers=tool_headers)
+                try:
+                    response = await self._execute_mcp_tool_call(str(session_url), tool_request, tool_headers)
+                except Exception as e:
+                    logger.error(f"Failed to execute MCP tool call after retries: {e}")
+                    return {
+                        "error": "tool_call_failed_after_retries",
+                        "message": f"Failed to execute MCP tool call after retries: {str(e)}"
+                    }
                 
                 logger.debug(f"Tool call response status: {response.status_code}")
                 logger.debug(f"Tool call response headers: {response.headers}")
