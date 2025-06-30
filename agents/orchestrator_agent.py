@@ -593,7 +593,8 @@ Current Query: "{message.text}"
     
     async def _build_state_stack(self, message: ProcessedMessage, gathered_information: Dict[str, Any], execution_plan: Dict[str, Any]) -> Dict[str, Any]:
         """
-        Build comprehensive state stack for Client Agent containing all context needed.
+        Build simplified state stack for Client Agent with orchestrator-generated summaries.
+        Shifts data processing responsibility to orchestrator, making client agent focus on presentation.
         
         Args:
             message: Original processed message
@@ -601,7 +602,7 @@ Current Query: "{message.text}"
             execution_plan: Orchestrator's execution plan with insights
             
         Returns:
-            Complete state stack for client agent
+            Simplified state stack with pre-formatted summaries for client agent
         """
         try:
             # Get conversation history
@@ -609,29 +610,18 @@ Current Query: "{message.text}"
             conversation_key = f"conv:{message.channel_id}:{thread_identifier}"
             recent_messages = await self.memory_service.get_recent_messages(conversation_key, limit=10)
             
-            # Get conversation context for potential long-term summary
-            conversation_context = await self.memory_service.get_conversation_context(conversation_key)
+            # Generate orchestrator summaries for all search results (orchestrator does the heavy lifting)
+            search_summary = await self._summarize_search_results(gathered_information.get("vector_results", []))
+            web_summary = await self._summarize_web_results(gathered_information.get("perplexity_results", []))
+            meeting_summary = await self._summarize_meeting_results(gathered_information.get("meeting_results", []))
+            atlassian_summary = await self._summarize_atlassian_results(gathered_information.get("atlassian_results", []))
             
-            # Organize recent messages into user queries and agent responses
-            user_queries = []
-            agent_responses = []
+            # Create conversation summary from recent messages
+            conversation_summary = await self._summarize_conversation_history(recent_messages)
             
-            for msg in recent_messages:
-                if msg.get("user_name") != "bot" and msg.get("user_name") != "autopilot":
-                    user_queries.append({
-                        "text": msg.get("text", ""),
-                        "user": msg.get("user_name", "Unknown"),
-                        "timestamp": msg.get("message_ts", "")
-                    })
-                else:
-                    agent_responses.append({
-                        "text": msg.get("text", ""),
-                        "timestamp": msg.get("message_ts", "")
-                    })
-            
-            # Build streamlined state stack without redundant information
+            # Build simplified state stack for Client Agent (orchestrator does the heavy lifting)
             state_stack = {
-                "query": message.text,  # Client agent expects "query" key
+                "query": message.text,
                 "user": {
                     "name": message.user_name,
                     "first_name": message.user_first_name,
@@ -642,30 +632,22 @@ Current Query: "{message.text}"
                 "context": {
                     "channel": message.channel_name,
                     "is_dm": message.is_dm,
-                    "thread_ts": message.thread_ts
+                    "thread_context": message.thread_context
                 },
-                "conversation_history": {
-                    "recent_exchanges": self._deduplicate_messages([
-                        {"role": "user" if msg.get("user_name") != "bot" and msg.get("user_name") != "autopilot" else "assistant", 
-                         "text": msg.get("text", "")[:200],  # Truncate long messages
-                         "timestamp": msg.get("message_ts", "")}
-                        for msg in recent_messages[-6:]  # Only last 6 messages for context
-                    ]) if recent_messages else [],
-                    "long_conversation_summary": conversation_context if len(recent_messages) >= 8 else None
-                },
-                "orchestrator_analysis": {
-                    "intent": execution_plan.get("analysis", ""),
+                "conversation_summary": conversation_summary,
+                "orchestrator_findings": {
+                    "analysis": execution_plan.get("analysis", ""),
                     "tools_used": execution_plan.get("tools_needed", []),
-                    "search_results": gathered_information.get("vector_results", [])[:3] if gathered_information.get("vector_results") else [],  # Limit to top 3 results
-                    "web_results": gathered_information.get("perplexity_results", [])[:2] if gathered_information.get("perplexity_results") else [],  # Limit to top 2 web results
-                    "meeting_results": gathered_information.get("meeting_results", []),  # Include all meeting results
-                    "atlassian_results": gathered_information.get("atlassian_results", [])  # Include all Atlassian results
+                    "search_summary": search_summary,
+                    "web_summary": web_summary,
+                    "meeting_summary": meeting_summary,
+                    "atlassian_summary": atlassian_summary
                 },
                 "response_thread_ts": message.thread_ts or message.message_ts,
                 "trace_id": self._get_current_trace_id()
             }
             
-            logger.info(f"Built state stack with {len(user_queries)} user queries, {len(agent_responses)} agent responses, {len(gathered_information.get('vector_results', []))} vector results")
+            logger.info(f"Built simplified state stack with orchestrator summaries")
             return state_stack
             
         except Exception as e:
@@ -1070,3 +1052,140 @@ Current Query: "{message.text}"
                 return "I had trouble searching our knowledge base. Could you try using different keywords?"
             else:
                 return "I encountered an issue processing your request. Could you try rephrasing it?"
+    
+    async def _summarize_search_results(self, vector_results: List[Dict[str, Any]]) -> str:
+        """
+        Summarize vector search results into a clean, formatted summary for client agent.
+        Orchestrator does the heavy lifting of data processing.
+        """
+        if not vector_results:
+            return ""
+        
+        summary_parts = []
+        summary_parts.append(f"Found {len(vector_results)} relevant documents:")
+        
+        for i, result in enumerate(vector_results[:3], 1):  # Top 3 results
+            content = result.get("content", "")[:150]  # Truncate content
+            source = result.get("source", "Unknown source")
+            score = result.get("score", 0.0)
+            summary_parts.append(f"{i}. {content}... (from {source}, relevance: {score:.2f})")
+        
+        return "\n".join(summary_parts)
+    
+    async def _summarize_web_results(self, perplexity_results: List[Dict[str, Any]]) -> str:
+        """
+        Summarize web search results into a clean, formatted summary for client agent.
+        """
+        if not perplexity_results:
+            return ""
+        
+        summary_parts = []
+        summary_parts.append(f"Found {len(perplexity_results)} web sources:")
+        
+        for i, result in enumerate(perplexity_results[:2], 1):  # Top 2 results
+            content = result.get("content", "")[:150]  # Truncate content
+            sources = result.get("sources", [])
+            source_text = f" (sources: {len(sources)} citations)" if sources else ""
+            summary_parts.append(f"{i}. {content}...{source_text}")
+        
+        return "\n".join(summary_parts)
+    
+    async def _summarize_meeting_results(self, meeting_results: List[Dict[str, Any]]) -> str:
+        """
+        Summarize meeting actions into a clean, formatted summary for client agent.
+        """
+        if not meeting_results:
+            return ""
+        
+        summary_parts = []
+        for result in meeting_results:
+            action_type = result.get("action_type", "unknown")
+            success = result.get("success", False)
+            
+            if success:
+                if action_type == "schedule_meeting":
+                    summary_parts.append("✓ Meeting scheduled successfully")
+                elif action_type == "find_meeting_times":
+                    suggestions = result.get("meeting_data", {}).get("meeting_time_suggestions", {}).get("suggestions", [])
+                    summary_parts.append(f"✓ Found {len(suggestions)} available meeting times")
+                elif action_type == "get_calendar":
+                    events = result.get("meeting_data", {}).get("calendar_events", {}).get("events", [])
+                    summary_parts.append(f"✓ Retrieved {len(events)} calendar events")
+            else:
+                summary_parts.append(f"✗ {action_type.replace('_', ' ').title()} failed")
+        
+        return "\n".join(summary_parts)
+    
+    async def _summarize_atlassian_results(self, atlassian_results: List[Dict[str, Any]]) -> str:
+        """
+        Summarize Atlassian actions into a clean, formatted summary with clickable links.
+        """
+        if not atlassian_results:
+            return ""
+        
+        summary_parts = []
+        for result in atlassian_results:
+            action_type = result.get("action_type") or result.get("mcp_tool", "unknown")
+            success = result.get("success", False)
+            
+            if success:
+                result_data = result.get("result", [])
+                
+                if action_type in ["jira_search", "search_jira_issues"]:
+                    if isinstance(result_data, list):
+                        summary_parts.append(f"✓ Found {len(result_data)} Jira issues:")
+                        for issue in result_data[:3]:  # Top 3 issues
+                            key = issue.get("key", "")
+                            summary = issue.get("summary", "")[:60]
+                            if key:
+                                url = f"https://uipath.atlassian.net/browse/{key}"
+                                summary_parts.append(f"  • <{url}|{key}>: {summary}...")
+                
+                elif action_type in ["confluence_search", "search_confluence_pages"]:
+                    if isinstance(result_data, list):
+                        summary_parts.append(f"✓ Found {len(result_data)} Confluence pages:")
+                        for page in result_data[:3]:  # Top 3 pages
+                            title = page.get("title", "")[:60]
+                            url = page.get("url", "")
+                            if url:
+                                summary_parts.append(f"  • <{url}|{title}>...")
+                
+                elif action_type in ["jira_create", "create_jira_issue"]:
+                    if isinstance(result_data, dict):
+                        key = result_data.get("key", "")
+                        if key:
+                            url = f"https://uipath.atlassian.net/browse/{key}"
+                            summary_parts.append(f"✓ Created Jira issue: <{url}|{key}>")
+            else:
+                summary_parts.append(f"✗ {action_type.replace('_', ' ').title()} failed")
+        
+        return "\n".join(summary_parts)
+    
+    async def _summarize_conversation_history(self, recent_messages: List[Dict[str, Any]]) -> str:
+        """
+        Summarize recent conversation history into a clean, concise summary.
+        """
+        if not recent_messages or len(recent_messages) < 3:
+            return ""
+        
+        # Extract just the last few exchanges for context
+        user_messages = []
+        bot_messages = []
+        
+        for msg in recent_messages[-6:]:  # Last 6 messages
+            user_name = msg.get("user_name", "")
+            text = msg.get("text", "")[:100]  # Truncate
+            
+            if user_name not in ["bot", "autopilot"] and text:
+                user_messages.append(text)
+            elif text:
+                bot_messages.append(text)
+        
+        if not user_messages and not bot_messages:
+            return ""
+        
+        summary = f"Recent conversation: {len(user_messages)} user messages, {len(bot_messages)} bot responses"
+        if user_messages:
+            summary += f". Last user said: \"{user_messages[-1]}...\""
+        
+        return summary
