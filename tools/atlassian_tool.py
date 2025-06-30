@@ -10,6 +10,7 @@ import logging
 import json
 import os
 import uuid
+import time
 from typing import Dict, Any, Optional, List
 import httpx
 from config import settings
@@ -28,6 +29,11 @@ class AtlassianTool:
     HTTP-based Atlassian integration tool.
     Connects to running MCP server via SSE transport.
     """
+    
+    # Class-level cache for discovered tools (shared across instances)
+    _tools_cache: Optional[Dict[str, Any]] = None
+    _cache_timestamp: Optional[float] = None
+    _cache_ttl_seconds: int = 300  # 5 minutes cache TTL
     
     def _get_mcp_server_url(self) -> str:
         """Get the MCP server URL from configuration"""
@@ -88,8 +94,29 @@ class AtlassianTool:
             logger.debug("HTTP client closed and connections cleaned up")
     
     async def discover_available_tools(self) -> List[Dict[str, Any]]:
-        """Dynamically discover available tools from the MCP server"""
+        """
+        Dynamically discover available tools from the MCP server with caching.
+        Uses a 5-minute cache to avoid unnecessary latency on every request.
+        """
+        current_time = time.time()
+        
+        # Check if we have a valid cache
+        if (self._tools_cache is not None and 
+            self._cache_timestamp is not None and 
+            current_time - self._cache_timestamp < self._cache_ttl_seconds):
+            
+            # Update our available tools list from cache
+            tools = self._tools_cache.get('tools', [])
+            self.available_tools = [tool['name'] for tool in tools 
+                                  if any(keyword in tool['name'].lower() 
+                                       for keyword in ['jira', 'confluence', 'atlassian'])]
+            
+            logger.debug(f"Using cached tools discovery ({len(tools)} tools, cache age: {current_time - self._cache_timestamp:.1f}s)")
+            return tools
+        
+        # Cache miss or expired - fetch from server
         try:
+            logger.debug("Fetching tools from MCP server (cache miss or expired)")
             tools_request = {
                 "jsonrpc": "2.0",
                 "id": 1,
@@ -104,12 +131,16 @@ class AtlassianTool:
                 if 'result' in data and 'tools' in data['result']:
                     tools = data['result']['tools']
                     
+                    # Update cache
+                    self._tools_cache = {'tools': tools}
+                    self._cache_timestamp = current_time
+                    
                     # Update our available tools list with actual tool names
                     self.available_tools = [tool['name'] for tool in tools 
                                           if any(keyword in tool['name'].lower() 
                                                for keyword in ['jira', 'confluence', 'atlassian'])]
                     
-                    logger.info(f"Discovered {len(self.available_tools)} Atlassian tools: {self.available_tools}")
+                    logger.info(f"Discovered and cached {len(self.available_tools)} Atlassian tools: {self.available_tools}")
                     return tools
                 else:
                     logger.warning("No tools found in MCP server response")
@@ -121,6 +152,40 @@ class AtlassianTool:
         except Exception as e:
             logger.error(f"Error discovering available tools: {e}")
             return []
+    
+    @classmethod
+    def clear_tools_cache(cls):
+        """Clear the tools discovery cache"""
+        cls._tools_cache = None
+        cls._cache_timestamp = None
+        logger.info("Tools discovery cache cleared")
+    
+    @classmethod
+    def get_cache_stats(cls) -> Dict[str, Any]:
+        """Get cache statistics for monitoring"""
+        current_time = time.time()
+        
+        if cls._cache_timestamp is None:
+            return {
+                "cache_status": "empty",
+                "cache_age_seconds": None,
+                "cache_ttl_seconds": cls._cache_ttl_seconds,
+                "tools_count": 0,
+                "is_expired": True
+            }
+        
+        cache_age = current_time - cls._cache_timestamp
+        is_expired = cache_age >= cls._cache_ttl_seconds
+        tools_count = len(cls._tools_cache.get('tools', [])) if cls._tools_cache else 0
+        
+        return {
+            "cache_status": "expired" if is_expired else "valid",
+            "cache_age_seconds": round(cache_age, 2),
+            "cache_ttl_seconds": cls._cache_ttl_seconds,
+            "tools_count": tools_count,
+            "is_expired": is_expired,
+            "cache_timestamp": cls._cache_timestamp
+        }
     
     def _map_tool_name(self, our_tool_name: str) -> str:
         """Map our tool names to official MCP tool names

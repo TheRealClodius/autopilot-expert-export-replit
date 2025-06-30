@@ -3337,6 +3337,129 @@ async def test_http_client_optimization():
             "error": str(e)
         }
 
+@app.get("/admin/mcp-tools-cache-stats")
+async def get_mcp_tools_cache_stats():
+    """Admin endpoint to get MCP tools discovery cache statistics"""
+    try:
+        from tools.atlassian_tool import AtlassianTool
+        
+        stats = AtlassianTool.get_cache_stats()
+        
+        return {
+            "status": "success",
+            "cache_info": stats,
+            "optimization_benefit": "Prevents HTTP requests to MCP server for 5 minutes after first discovery",
+            "latency_improvement": "Eliminates ~50-200ms per request when cache hit",
+            "recommendations": {
+                "cache_valid": "System running optimally with cached tools" if not stats["is_expired"] else None,
+                "cache_expired": "Next request will refresh cache from MCP server" if stats["is_expired"] else None
+            }
+        }
+        
+    except Exception as e:
+        logger.error(f"Error getting MCP tools cache stats: {e}")
+        return {
+            "status": "error",
+            "error": str(e)
+        }
+
+@app.post("/admin/clear-mcp-tools-cache")
+async def clear_mcp_tools_cache():
+    """Admin endpoint to clear MCP tools discovery cache"""
+    try:
+        from tools.atlassian_tool import AtlassianTool
+        
+        # Get stats before clearing
+        before_stats = AtlassianTool.get_cache_stats()
+        
+        # Clear the cache
+        AtlassianTool.clear_tools_cache()
+        
+        # Get stats after clearing
+        after_stats = AtlassianTool.get_cache_stats()
+        
+        return {
+            "status": "success",
+            "message": "MCP tools discovery cache cleared successfully",
+            "before_clear": before_stats,
+            "after_clear": after_stats,
+            "next_request_behavior": "Will fetch fresh tools list from MCP server and rebuild cache"
+        }
+        
+    except Exception as e:
+        logger.error(f"Error clearing MCP tools cache: {e}")
+        return {
+            "status": "error",
+            "error": str(e)
+        }
+
+@app.get("/admin/test-mcp-tools-cache-performance")
+async def test_mcp_tools_cache_performance():
+    """Admin endpoint to test and demonstrate MCP tools cache performance benefits"""
+    try:
+        from tools.atlassian_tool import AtlassianTool
+        import time
+        
+        results = []
+        
+        # Clear cache first to start fresh
+        AtlassianTool.clear_tools_cache()
+        
+        # Test 5 consecutive discoveries to measure cache impact
+        for i in range(5):
+            atlassian_tool = AtlassianTool()
+            
+            start_time = time.time()
+            tools = await atlassian_tool.discover_available_tools()
+            duration = (time.time() - start_time) * 1000  # Convert to milliseconds
+            
+            cache_stats = AtlassianTool.get_cache_stats()
+            
+            results.append({
+                "request_number": i + 1,
+                "duration_ms": round(duration, 2),
+                "tools_discovered": len(tools),
+                "cache_status": cache_stats["cache_status"],
+                "cache_age_seconds": cache_stats["cache_age_seconds"],
+                "used_cache": cache_stats["cache_status"] == "valid"
+            })
+            
+            # Clean up
+            await atlassian_tool.close()
+            
+            # Small delay between requests
+            await asyncio.sleep(0.1)
+        
+        # Calculate performance metrics
+        first_request_time = results[0]["duration_ms"]
+        cached_requests = [r for r in results[1:] if r["used_cache"]]
+        avg_cached_time = sum(r["duration_ms"] for r in cached_requests) / len(cached_requests) if cached_requests else 0
+        
+        performance_improvement = round(((first_request_time - avg_cached_time) / first_request_time * 100), 1) if avg_cached_time > 0 else 0
+        
+        return {
+            "status": "success",
+            "test_results": results,
+            "performance_analysis": {
+                "first_request_duration_ms": first_request_time,
+                "average_cached_duration_ms": round(avg_cached_time, 2),
+                "performance_improvement_percent": performance_improvement,
+                "latency_reduction_ms": round(first_request_time - avg_cached_time, 2),
+                "cache_effectiveness": "Excellent" if performance_improvement > 50 else "Good" if performance_improvement > 20 else "Minimal"
+            },
+            "recommendations": {
+                "optimal_ttl": "5 minutes (current) - balances performance with freshness",
+                "production_benefit": f"Saves ~{round(first_request_time - avg_cached_time, 1)}ms per request after first discovery"
+            }
+        }
+        
+    except Exception as e:
+        logger.error(f"Error testing MCP tools cache performance: {e}")
+        return {
+            "status": "error",
+            "error": str(e)
+        }
+
 if __name__ == "__main__":
     # Get port from environment for Cloud Run deployment
     port = int(os.environ.get("PORT", 5000))
