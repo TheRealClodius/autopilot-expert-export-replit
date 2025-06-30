@@ -3320,3 +3320,29 @@ async def clear_webhook_cache():
 
 # Removed obsolete mcp-tools-cache-stats and clear-mcp-tools-cache endpoints - functionality replaced by AtlassianToolbelt
 
+# Server startup configuration for Cloud Run deployment
+if __name__ == "__main__":
+    # Force Redis environment variables to empty to prevent connection attempts
+    os.environ["REDIS_URL"] = ""
+    os.environ["REDIS_PASSWORD"] = ""
+    os.environ["CELERY_BROKER_URL"] = ""
+    os.environ["CELERY_RESULT_BACKEND"] = ""
+    
+    # Get port from environment for Cloud Run compatibility
+    port = int(os.environ.get("PORT", 5000))
+    
+    # Initialize services before starting server
+    initialize_services()
+    
+    # Start the server
+    logger.info(f"Starting Autopilot Expert Multi-Agent System on 0.0.0.0:{port}")
+    uvicorn.run(
+        app,
+        host="0.0.0.0",  # Listen on all interfaces for Cloud Run
+        port=port,       # Use PORT environment variable
+        log_level="info",
+        access_log=True,
+        timeout_keep_alive=30,
+        timeout_graceful_shutdown=10
+    )
+
