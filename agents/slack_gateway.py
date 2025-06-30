@@ -55,7 +55,11 @@ class SlackGateway:
             thread_ts = event.get("thread_ts")
             message_ts = event.get("ts")
             
+            # Debug logging for message validation
+            logger.info(f"🔍 DEBUG: text='{text}', user_id='{user_id}', channel_id='{channel_id}'")
+            
             if not text or not user_id or not channel_id:
+                logger.warning(f"❌ Message failed validation: text={bool(text)}, user_id={bool(user_id)}, channel_id={bool(channel_id)}")
                 return None
                 
             # Check if this is a mention or DM
@@ -76,7 +80,11 @@ class SlackGateway:
                 bot_participated_in_thread
             )
             
+            # Debug logging for filtering decision
+            logger.info(f"🔍 FILTER DEBUG: is_dm={is_dm}, is_mention={is_mention}, is_thread_reply={is_thread_reply}, bot_participated={bot_participated_in_thread}, should_respond={should_respond}")
+            
             if not should_respond:
+                logger.warning(f"❌ Message filtered out: channel={channel_id}, user={user_id}, text='{text[:50]}...'")
                 return None
             
             # Start LangSmith conversation session for proper grouping

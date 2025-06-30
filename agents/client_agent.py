@@ -44,11 +44,10 @@ class ClientAgent:
             # Get trace manager for LangSmith integration 
             trace_id = state_stack.get("trace_id")
             if trace_id:
-                client_trace_id = await trace_manager.start_agent_operation(
-                    parent_trace_id=trace_id,
+                client_trace_id = await trace_manager.log_agent_operation(
                     agent_name="client_agent",
                     operation="response_generation",
-                    input_data={"query": state_stack.get("query", "")[:100]}
+                    input_data=state_stack.get("query", "")[:100]
                 )
             else:
                 client_trace_id = None
