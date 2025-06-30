@@ -213,31 +213,31 @@ class AtlassianTool:
             
             logger.info(f"Connecting to remote MCP server at: {working_url}")
             
-            async with httpx.AsyncClient(timeout=60.0, follow_redirects=True) as client:
-                # Step 1: Create session via redirect handling
-                session_request = {
-                    "jsonrpc": "2.0",
-                    "id": str(uuid.uuid4()),
-                    "method": "initialize",
-                    "params": {
-                        "protocolVersion": "2024-11-05",
-                        "capabilities": {},
-                        "clientInfo": {
-                            "name": "atlassian-client",
-                            "version": "1.0.0"
-                        }
+            # Using reusable HTTP client instead of creating new one
+            # Step 1: Create session via redirect handling
+            session_request = {
+                "jsonrpc": "2.0",
+                "id": str(uuid.uuid4()),
+                "method": "initialize",
+                "params": {
+                    "protocolVersion": "2024-11-05",
+                    "capabilities": {},
+                    "clientInfo": {
+                        "name": "atlassian-client",
+                        "version": "1.0.0"
                     }
                 }
-                
-                logger.debug(f"Initializing MCP session with request: {session_request}")
-                session_response = await client.post(base_endpoint, json=session_request, headers=headers)
-                
-                # Handle redirect to session-specific endpoint
-                if session_response.status_code == 307:
-                    redirect_url = session_response.headers.get("location")
-                    if redirect_url:
-                        logger.debug(f"Following redirect to session URL: {redirect_url}")
-                        session_response = await client.post(redirect_url, json=session_request, headers=headers)
+            }
+            
+            logger.debug(f"Initializing MCP session with request: {session_request}")
+            session_response = await self.http_client.post(base_endpoint, json=session_request, headers=headers)
+            
+            # Handle redirect to session-specific endpoint
+            if session_response.status_code == 307:
+                redirect_url = session_response.headers.get("location")
+                if redirect_url:
+                    logger.debug(f"Following redirect to session URL: {redirect_url}")
+                    session_response = await self.http_client.post(redirect_url, json=session_request, headers=headers)
                 
                 if session_response.status_code != 200:
                     logger.error(f"Failed to initialize MCP session: {session_response.status_code} - {session_response.text}")
@@ -301,7 +301,7 @@ class AtlassianTool:
                     initialized_headers["mcp-session-id"] = session_id
                 
                 logger.debug(f"Sending initialized notification: {initialized_request}")
-                init_response = await client.post(str(session_url), json=initialized_request, headers=initialized_headers)
+                init_response = await self.http_client.post(str(session_url), json=initialized_request, headers=initialized_headers)
                 logger.debug(f"Initialized response: {init_response.status_code}")
                 
                 # Wait for the initialization to complete before proceeding
@@ -339,7 +339,7 @@ class AtlassianTool:
                 tool_request["params"]["name"] = mapped_tool_name
                 
                 logger.debug(f"Calling MCP tool with request: {tool_request}")
-                response = await client.post(str(session_url), json=tool_request, headers=tool_headers)
+                response = await self.http_client.post(str(session_url), json=tool_request, headers=tool_headers)
                 
                 logger.debug(f"Tool call response status: {response.status_code}")
                 logger.debug(f"Tool call response headers: {response.headers}")
@@ -515,7 +515,7 @@ class AtlassianTool:
         """Check if MCP server is healthy and responding"""
         try:
             async with httpx.AsyncClient(timeout=5.0) as client:
-                response = await client.get(f"{self.mcp_server_url}/health")
+                response = await self.http_client.get(f"{self.mcp_server_url}/health")
                 return response.status_code == 200
         except Exception as e:
             logger.error(f"MCP server health check failed: {e}")
