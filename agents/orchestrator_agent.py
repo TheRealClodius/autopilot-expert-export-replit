@@ -20,6 +20,7 @@ from agents.atlassian_guru import AtlassianToolbelt
 from agents.client_agent import ClientAgent
 from agents.observer_agent import ObserverAgent
 from services.memory_service import MemoryService
+from services.entity_store import EntityStore
 from services.progress_tracker import ProgressTracker, ProgressEventType, emit_thinking, emit_searching, emit_processing, emit_generating, emit_error, emit_warning, emit_retry, emit_reasoning, emit_considering, emit_analyzing, StreamingReasoningEmitter
 from services.trace_manager import trace_manager
 from models.schemas import ProcessedMessage
@@ -47,6 +48,7 @@ class OrchestratorAgent:
         self.client_agent = ClientAgent()
         self.observer_agent = ObserverAgent()
         self.memory_service = memory_service
+        self.entity_store = EntityStore(memory_service)  # Add entity store for structured memory
         self.progress_tracker = progress_tracker
         self.discovered_tools = []  # Will be populated with actual MCP tools
 
@@ -226,6 +228,10 @@ class OrchestratorAgent:
                 asyncio.create_task(
                     self._trigger_observation(message, response_text,
                                               gathered_information))
+                
+                # Queue entity extraction from the conversation exchange (background task)
+                asyncio.create_task(
+                    self._queue_entity_extraction(message, response_text))
 
                 total_time = time.time() - start_time
                 logger.info(f"Total processing time: {total_time:.2f}s")
@@ -286,6 +292,10 @@ class OrchestratorAgent:
             hybrid_history = await self._construct_hybrid_history(
                 conversation_key, message.text)
 
+            # Search for relevant entities from structured memory
+            relevant_entities = await self._search_relevant_entities(
+                message.text, conversation_key)
+
             # Prepare clean, optimized context for analysis
             context = {
                 "query": message.text,
@@ -300,7 +310,8 @@ class OrchestratorAgent:
                     "is_dm": message.is_dm,
                     "thread_context": message.thread_context
                 },
-                "conversation_memory": hybrid_history
+                "conversation_memory": hybrid_history,
+                "relevant_entities": relevant_entities  # Add structured entity context
             }
 
             # Discover available tools from MCP server first
@@ -1606,3 +1617,159 @@ Current Query: "{message.text}"
         except Exception as e:
             logger.error(f"Failed to queue abstractive summarization: {e}")
             # Continue with simple archiving as fallback
+
+    async def _search_relevant_entities(
+        self, 
+        query_text: str, 
+        conversation_key: str
+    ) -> Dict[str, Any]:
+        """
+        Search for entities relevant to the current query.
+        This provides structured memory recall for facts mentioned earlier.
+        
+        Args:
+            query_text: Current user query
+            conversation_key: Conversation identifier
+            
+        Returns:
+            Dictionary with relevant entities and their details
+        """
+        try:
+            # Extract keywords from the query for entity search
+            query_keywords = self._extract_query_keywords(query_text)
+            
+            if not query_keywords:
+                return {"entities": [], "search_performed": False}
+            
+            # Search for matching entities
+            matching_entities = await self.entity_store.search_entities(
+                query_keywords=query_keywords,
+                conversation_key=conversation_key,
+                limit=10
+            )
+            
+            # Format entities for context injection
+            formatted_entities = []
+            entity_summary = {}
+            
+            for entity in matching_entities:
+                formatted_entity = {
+                    "key": entity.key,
+                    "type": entity.type,
+                    "value": entity.value,
+                    "context": entity.context,
+                    "relevance_score": entity.relevance_score,
+                    "mentioned_at": entity.mentioned_at
+                }
+                formatted_entities.append(formatted_entity)
+                
+                # Count entities by type for summary
+                entity_summary[entity.type] = entity_summary.get(entity.type, 0) + 1
+            
+            logger.info(f"Found {len(formatted_entities)} relevant entities for query: {query_keywords}")
+            
+            return {
+                "entities": formatted_entities,
+                "entity_summary": entity_summary,
+                "search_keywords": query_keywords,
+                "search_performed": True,
+                "total_found": len(formatted_entities)
+            }
+            
+        except Exception as e:
+            logger.error(f"Error searching relevant entities: {e}")
+            return {"entities": [], "search_performed": False, "error": str(e)}
+    
+    def _extract_query_keywords(self, query_text: str) -> List[str]:
+        """
+        Extract relevant keywords from query text for entity search.
+        
+        Args:
+            query_text: User query to analyze
+            
+        Returns:
+            List of keywords to search for
+        """
+        import re
+        
+        # Normalize text
+        text_lower = query_text.lower()
+        
+        # Extract potential keywords
+        keywords = []
+        
+        # Look for JIRA ticket patterns
+        jira_matches = re.findall(r'\b([A-Z]+-\d+)\b', query_text, re.IGNORECASE)
+        keywords.extend(jira_matches)
+        
+        # Look for project names (capitalized words)
+        project_matches = re.findall(r'\b([A-Z][a-z]+(?:\s+[A-Z][a-z]*)*)\b', query_text)
+        keywords.extend([match for match in project_matches if len(match) > 2])
+        
+        # Look for mentions of specific entities
+        entity_keywords = [
+            "ticket", "issue", "project", "deadline", "document", "template",
+            "report", "meeting", "user", "owner", "assigned", "status"
+        ]
+        
+        for keyword in entity_keywords:
+            if keyword in text_lower:
+                keywords.append(keyword)
+        
+        # Extract quoted terms
+        quoted_matches = re.findall(r'"([^"]+)"', query_text)
+        keywords.extend(quoted_matches)
+        
+        # Extract important nouns (simple approach)
+        words = re.findall(r'\b[A-Za-z]{3,}\b', query_text)
+        important_words = [word for word in words if word.lower() not in {
+            'the', 'and', 'for', 'are', 'was', 'were', 'been', 'have', 'has',
+            'had', 'will', 'would', 'could', 'should', 'can', 'what', 'when',
+            'where', 'why', 'how', 'who', 'which', 'this', 'that', 'with'
+        }]
+        keywords.extend(important_words[:5])  # Limit to 5 most relevant words
+        
+        # Remove duplicates and empty strings
+        keywords = list(set([k.strip() for k in keywords if k.strip()]))
+        
+        return keywords[:10]  # Limit to 10 keywords for performance
+    
+    async def _queue_entity_extraction(
+        self, 
+        message: ProcessedMessage, 
+        bot_response: str
+    ):
+        """
+        Queue background entity extraction from the conversation exchange.
+        
+        Args:
+            message: Original user message
+            bot_response: Generated bot response
+        """
+        try:
+            # Import Celery task (avoid circular imports)
+            from workers.entity_extractor import extract_entities_from_conversation
+            
+            # Construct conversation key
+            conversation_key = f"conv:{message.channel_id}:{message.thread_ts or message.message_ts}"
+            
+            # Queue entity extraction task
+            extraction_task = extract_entities_from_conversation.delay(
+                conversation_key=conversation_key,
+                user_query=message.text,
+                bot_response=bot_response,
+                user_name=message.user_name,
+                additional_context={
+                    "channel_name": message.channel_name,
+                    "is_dm": message.is_dm,
+                    "user_title": message.user_title,
+                    "user_department": message.user_department,
+                    "timestamp": datetime.now().isoformat()
+                }
+            )
+            
+            logger.info(f"Entity extraction task queued: {extraction_task.id} for conversation: {conversation_key}")
+            
+        except Exception as e:
+            logger.error(f"Failed to queue entity extraction: {e}")
+            # Don't raise - this is a background optimization, not critical
