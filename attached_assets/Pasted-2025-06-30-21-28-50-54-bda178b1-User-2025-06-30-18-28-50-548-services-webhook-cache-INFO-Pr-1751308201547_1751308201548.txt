@@ -1,0 +1,112 @@
+2025-06-30 21:28:50.54
+bda178b1
+User
+2025-06-30 18:28:50,548 - services.webhook_cache - INFO - 📨 Processing message - Event ID: Ev093P62DG1K (duplicate detection temporarily disabled)
+2025-06-30 21:28:50.54
+bda178b1
+User
+2025-06-30 18:28:50,548 - __main__ - INFO - ⏱️ WEBHOOK CACHE: Cache check completed in 0.000s
+2025-06-30 21:28:50.54
+bda178b1
+User
+2025-06-30 18:28:50,548 - __main__ - INFO - 🚀 STEP 3D: Queueing background task at 1751308130.548918
+2025-06-30 21:28:50.54
+bda178b1
+User
+2025-06-30 18:28:50,548 - __main__ - INFO - 📊 STEP 3 TOTAL: Framework overhead = 0.000947s for ''
+2025-06-30 21:28:50.54
+bda178b1
+User
+2025-06-30 18:28:50,549 - __main__ - INFO - ⏱️ WEBHOOK TIMING: Background task queued at 1751308130.549 (queueing took: 0.000s)
+2025-06-30 21:28:50.54
+bda178b1
+User
+INFO: 34.121.19.132:0 - "POST /slack/events HTTP/1.1" 200 OK
+2025-06-30 21:28:50.54
+bda178b1
+User
+2025-06-30 18:28:50,549 - __main__ - INFO - ⚡ STEP 4 START: Background processing begins at 1751308130.549408 for ''
+2025-06-30 21:28:50.54
+bda178b1
+User
+2025-06-30 18:28:50,549 - __main__ - INFO - 📊 STEP 3→4 DELAY: Background task queue delay = 0.000490s
+2025-06-30 21:28:50.54
+bda178b1
+User
+2025-06-30 18:28:50,549 - __main__ - INFO - 📊 STEP 2 TOTAL: Slack edge→webhook = 5.546971s
+2025-06-30 21:28:50.54
+bda178b1
+User
+2025-06-30 18:28:50,549 - __main__ - INFO - 🔄 STEP 4A: Gateway processing starts at 1751308130.549534
+2025-06-30 21:28:50.64
+bda178b1
+User
+2025-06-30 18:28:50,645 - __main__ - INFO - ✅ STEP 4A: Gateway complete at 1751308130.645329 (took 0.095795s)
+2025-06-30 21:28:50.64
+bda178b1
+User
+2025-06-30 18:28:50,645 - __main__ - INFO - Message filtered out by Slack Gateway
+2025-06-30 21:28:50.64
+bda178b1
+User
+2025-06-30 18:28:50,646 - __main__ - INFO - 📥 SLACK WEBHOOK RECEIVED: 1751308130.646218
+2025-06-30 21:28:50.64
+bda178b1
+User
+2025-06-30 18:28:50,646 - __main__ - INFO - 📋 WEBHOOK HEADERS: {'host': 'intelligent-autopilot-andreiclodius.replit.app', 'user-agent': 'Slackbot 1.0 (+https://api.slack.com/robots)', 'content-length': '2921', 'accept': '*/*', 'accept-encoding': 'gzip,deflate', 'content-type': 'application/json', 'server-timing': 'depproxy;dur=1751308130265', 'traceparent': '00-c14d2c447ce73f52ec395e6dc775366e-1c98f535c611dfcf-00', 'via': '1.1 google', 'x-cloud-trace-context': 'c14d2c447ce73f52ec395e6dc775366e/2060666440827133903', 'x-forwarded-for': '3.225.221.5, 34.117.33.233, 35.191.26.150,34.60.247.238', 'x-forwarded-host': 'intelligent-autopilot-andreiclodius.replit.app', 'x-forwarded-proto': 'https', 'x-replit-user-bio': '', 'x-replit-user-id': '', 'x-replit-user-name': '', 'x-replit-user-profile-image': '', 'x-replit-user-roles': '', 'x-replit-user-teams': '', 'x-replit-user-url': '', 'x-slack-request-timestamp': '1751308130', 'x-slack-retry-num': '1', 'x-slack-retry-reason': 'http_timeout', 'x-slack-signature': 'v0=96f163fd7b7c8dd4c7f71297a3047b2ce0bc9934491ca2c28c4e49fb9647d7de'}
+2025-06-30 21:28:50.64
+bda178b1
+User
+2025-06-30 18:28:50,646 - __main__ - INFO - 📄 RAW WEBHOOK BODY LENGTH: 2921 bytes
+2025-06-30 21:28:50.64
+bda178b1
+User
+2025-06-30 18:28:50,646 - __main__ - INFO - 📥 STEP 2: Slack webhook received at 1751308130.646218
+2025-06-30 21:28:50.64
+bda178b1
+User
+2025-06-30 18:28:50,646 - __main__ - INFO - 🔄 STEP 3A: Framework routing start at 1751308130.646603 (step2→3 delay: 0.000385s)
+2025-06-30 21:28:50.64
+bda178b1
+User
+2025-06-30 18:28:50,646 - __main__ - INFO - 📋 STEP 3B: JSON parsing complete at 1751308130.646713 (parsing: 0.000110s)
+2025-06-30 21:28:50.64
+bda178b1
+User
+2025-06-30 18:28:50,646 - services.production_logger - INFO - PRODUCTION_STEP: {"trace_id": "dbec76f0", "component": "slack_gateway", "action": "message_received", "step_type": "slack_start", "data": {"message_type": "message", "channel": "D092WU3A3A9", "user": null, "query_preview": ""}}
+2025-06-30 21:28:50.64
+bda178b1
+User
+2025-06-30 18:28:50,646 - services.production_logger - INFO - [dbec76f0] slack_gateway.message_received
+2025-06-30 21:28:50.64
+bda178b1
+User
+2025-06-30 18:28:50,646 - services.production_logger - INFO - Started Slack trace for user query: unknown...
+2025-06-30 21:28:50.64
+bda178b1
+User
+2025-06-30 18:28:50,646 - __main__ - INFO - ✅ STEP 3C: Event validation complete at 1751308130.646983 (validation: 0.000270s)
+2025-06-30 21:28:50.64
+bda178b1
+User
+2025-06-30 18:28:50,647 - services.production_logger - INFO - PRODUCTION_STEP: {"trace_id": "dbec76f0", "component": "main", "action": "event_validation", "step_type": "validation", "data": {"event_type": "message", "validation_time_ms": 0.26988983154296875}}
+2025-06-30 21:28:50.64
+bda178b1
+User
+2025-06-30 18:28:50,647 - services.production_logger - INFO - [dbec76f0] main.event_validation
+2025-06-30 21:28:50.64
+bda178b1
+User
+2025-06-30 18:28:50,647 - __main__ - INFO - 📊 STEP 2 ANALYSIS: Slack edge→webhook delay: 5.645118s
+2025-06-30 21:28:50.64
+bda178b1
+User
+2025-06-30 18:28:50,647 - services.webhook_cache - INFO - 📨 Processing message - Event ID: Ev093HU50KNX (duplicate detection temporarily disabled)
+2025-06-30 21:28:50.64
+bda178b1
+User
+2025-06-30 18:28:50,647 - __main__ - INFO - ⏱️ WEBHOOK CACHE: Cache check completed in 0.000s
+2025-06-30 21:28:50.64
+bda178b1
+User
+2025-06-30 18:28:50,647 - __main__ - INFO - 🚀 STEP 3D: Queueing background task at 1751308130.647240
