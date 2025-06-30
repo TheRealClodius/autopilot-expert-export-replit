@@ -147,6 +147,14 @@ class SlackGateway:
         Returns:
             True if successful, False otherwise
         """
+        # CRITICAL SAFETY CHECK: Prevent sending messages during development/testing
+        from config import Settings
+        settings = Settings()
+        if settings.DISABLE_SLACK_RESPONSES:
+            logger.warning("🛡️ SAFETY: Slack responses disabled - would have sent message but blocked for safety")
+            logger.info(f"Blocked message to {response_data.get('channel_id')}: {response_data.get('text', '')[:100]}...")
+            return True  # Return True to prevent error handling
+            
         try:
             channel_id = response_data.get("channel_id")
             text = response_data.get("text")

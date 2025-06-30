@@ -118,7 +118,7 @@ class ClientAgent:
             temperature=0.8  # Higher temperature for more creative responses
         )
         
-        return response.get("text", "") if response else ""
+        return response if response else ""
     
     def _get_personality_system_prompt(self) -> str:
         """
@@ -132,6 +132,11 @@ class ClientAgent:
         Format clean context from orchestrator summaries for creative response generation.
         Much simpler than the old 250+ line function - orchestrator did the heavy lifting.
         """
+        # Debug check to ensure state_stack is a dictionary
+        if not isinstance(state_stack, dict):
+            logger.error(f"CRITICAL: state_stack is not a dict, it's a {type(state_stack)}: {str(state_stack)[:200]}")
+            return f"Error: Invalid state data format"
+            
         context_parts = []
         
         # User query
