@@ -82,6 +82,17 @@ The system uses environment variables for configuration management and supports 
 
 ## Recent Changes
 
+✅ **June 30, 2025 - CONFIGURATION CLEANUP: CENTRALIZED MCP SERVER URL MANAGEMENT (PRODUCTION READY)**
+- **Configuration Centralization**: Moved MCP server URL configuration completely to config.py for single source of truth
+- **Environment-Aware Defaults**: Implemented intelligent default MCP server URL based on deployment environment (REPLIT_DEPLOYMENT)
+- **Local Development**: Defaults to localhost:8001 for local development environment
+- **Production Deployment**: Automatically uses https://remote-mcp-server-andreiclodius.replit.app in deployment
+- **Code Cleanup**: Removed unused start_deployment.py file that was not being used by actual deployment process
+- **Cleaner Architecture**: Eliminated redundant environment variable setting and hardcoded URLs
+- **Files Modified**: config.py (centralized MCP URL configuration)
+- **Files Removed**: start_deployment.py (unused deployment script)
+- **Status**: Clean, centralized configuration management with environment-aware MCP server URL defaults
+
 ✅ **June 30, 2025 - COMPREHENSIVE NETWORK RETRY MECHANISM IMPLEMENTED (PRODUCTION RESILIENCE)**
 - **Critical Resilience Enhancement**: Implemented tenacity-based retry mechanism for all MCP server network operations to handle transient failures
 - **Complete Coverage**: Added retry logic to tool discovery, session initialization, tool execution, and health checks with exponential backoff
