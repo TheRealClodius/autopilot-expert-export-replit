@@ -426,6 +426,66 @@ class EntityStore:
         logger.debug(f"Merged entity {merged.key}: {len(merged.contexts)} contexts, score {merged.relevance_score:.2f}")
         return merged
     
+    async def _execute_redis_pipeline(self, entity_store_key: str, batch_entities: Dict[str, str]) -> bool:
+        """
+        Execute batched Redis operations using pipeline for optimal performance.
+        
+        Args:
+            entity_store_key: Redis hash key for the entity store
+            batch_entities: Dictionary of entity_key -> entity_json_data
+            
+        Returns:
+            True if successful, False otherwise
+        """
+        try:
+            if not self.memory_service.redis_available or not self.memory_service.redis_client:
+                return False
+            
+            # Create Redis pipeline for batched operations
+            if hasattr(self.memory_service.redis_client, 'pipeline'):
+                # Use Redis pipeline for batched operations
+                pipeline = self.memory_service.redis_client.pipeline()
+                
+                # Add all HSET operations to the pipeline
+                for entity_key, entity_data in batch_entities.items():
+                    pipeline.hset(entity_store_key, entity_key, entity_data)
+                
+                # Set TTL on the hash (only need to do this once)
+                pipeline.expire(entity_store_key, 86400 * 7)  # 7 days
+                
+                # Execute all operations in a single network round-trip
+                pipeline_result = pipeline.execute()
+                
+                # Await the result if it's a coroutine
+                if hasattr(pipeline_result, '__await__'):
+                    await pipeline_result
+                
+                logger.debug(f"Batch stored {len(batch_entities)} entities using Redis pipeline")
+                return True
+                
+            else:
+                # Fallback to individual operations if pipeline not available
+                for entity_key, entity_data in batch_entities.items():
+                    hset_result = self.memory_service.redis_client.hset(
+                        entity_store_key, 
+                        entity_key, 
+                        entity_data
+                    )
+                    if hasattr(hset_result, '__await__'):
+                        await hset_result
+                
+                # Set TTL once at the end
+                expire_result = self.memory_service.redis_client.expire(entity_store_key, 86400 * 7)
+                if hasattr(expire_result, '__await__'):
+                    await expire_result
+                
+                logger.debug(f"Batch stored {len(batch_entities)} entities using individual Redis operations")
+                return True
+                
+        except Exception as e:
+            logger.error(f"Error in Redis pipeline execution: {e}")
+            return False
+    
     async def store_entities(
         self, 
         entities: List[Entity],
@@ -461,24 +521,15 @@ class EntityStore:
                         merged_count += 1
                         logger.debug(f"Merged entity {entity.key}: {existing_entity.mention_count} -> {final_entity.mention_count} mentions")
                 
-                # Convert entity to JSON
+                # Convert entity to JSON and prepare for batch storage
                 entity_data = json.dumps(asdict(final_entity), default=str)
                 
-                # Store in Redis hash
+                # Collect entities for batch storage
                 if self.memory_service.redis_available and self.memory_service.redis_client:
-                    hset_result = self.memory_service.redis_client.hset(
-                        entity_store_key, 
-                        final_entity.key, 
-                        entity_data
-                    )
-                    # Set TTL on the hash
-                    expire_result = self.memory_service.redis_client.expire(entity_store_key, 86400 * 7)  # 7 days
-                    
-                    # Await the results if they are coroutines
-                    if hasattr(hset_result, '__await__'):
-                        await hset_result
-                    if hasattr(expire_result, '__await__'):
-                        await expire_result
+                    # We'll batch these after the loop
+                    if not hasattr(self, '_batch_entities'):
+                        self._batch_entities = {}
+                    self._batch_entities[final_entity.key] = entity_data
                 else:
                     # Use in-memory fallback
                     if entity_store_key not in self.memory_service._memory_cache:
@@ -490,6 +541,12 @@ class EntityStore:
                     self.memory_service._memory_cache[entity_store_key]['data'][final_entity.key] = entity_data
                 
                 stored_count += 1
+            
+            # Batch Redis operations using pipeline for better performance
+            if self.memory_service.redis_available and self.memory_service.redis_client and hasattr(self, '_batch_entities'):
+                await self._execute_redis_pipeline(entity_store_key, self._batch_entities)
+                # Clean up batch storage
+                delattr(self, '_batch_entities')
             
             logger.info(f"Stored {stored_count} entities for conversation: {conversation_key} ({merged_count} merged with existing)")
             return True
