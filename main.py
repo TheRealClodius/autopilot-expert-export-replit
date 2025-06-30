@@ -3220,8 +3220,19 @@ async def run_deployment_diagnosis():
         import subprocess
         import sys
         
+        # Use explicit python3 path instead of sys.executable for security
+        script_path = "deployment_diagnosis.py"
+        
+        # Verify the script exists before attempting to run it
+        import os
+        if not os.path.exists(script_path):
+            return {
+                "error": f"Diagnosis script not found: {script_path}",
+                "success": False
+            }
+        
         result = subprocess.run(
-            [sys.executable, "deployment_diagnosis.py"],
+            ["python3", script_path],
             capture_output=True,
             text=True,
             timeout=120
