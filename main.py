@@ -9,6 +9,7 @@ import logging
 import time
 from contextlib import asynccontextmanager
 from datetime import datetime
+from typing import Optional
 from fastapi import FastAPI, HTTPException, Request, BackgroundTasks
 from fastapi.responses import JSONResponse, PlainTextResponse
 import uvicorn
@@ -846,6 +847,163 @@ async def ingest_test_document():
         return {"status": "complete", "ingestion_result": result}
         
     except Exception as e:
+        return {"status": "error", "error": str(e)}
+
+@app.post("/admin/bulk-embed-channels")
+async def bulk_embed_channels(
+    max_messages_per_channel: Optional[int] = None,
+    run_async: bool = False
+):
+    """
+    Admin endpoint to trigger bulk channel embedding.
+    
+    Args:
+        max_messages_per_channel: Optional limit on messages per channel
+        run_async: If True, runs as background Celery task
+    """
+    try:
+        if run_async:
+            # Queue as Celery task
+            from workers.bulk_channel_embedder import bulk_embed_channels_task
+            
+            task = bulk_embed_channels_task.delay(max_messages_per_channel)
+            
+            return {
+                "status": "queued",
+                "task_id": task.id,
+                "message": "Bulk embedding queued as background task",
+                "max_messages_per_channel": max_messages_per_channel
+            }
+        else:
+            # Run synchronously
+            from workers.bulk_channel_embedder import run_bulk_embedding
+            
+            logger.info(f"Starting synchronous bulk embedding (max: {max_messages_per_channel})")
+            
+            stats = await run_bulk_embedding(max_messages_per_channel)
+            
+            return {
+                "status": "completed",
+                "channels_processed": stats.channels_processed,
+                "total_messages_extracted": stats.total_messages_extracted,
+                "total_messages_embedded": stats.total_messages_embedded,
+                "duration_seconds": (stats.end_time - stats.start_time).total_seconds(),
+                "errors": stats.errors,
+                "max_messages_per_channel": max_messages_per_channel
+            }
+            
+    except Exception as e:
+        logger.error(f"Bulk embedding failed: {e}")
+        return {"status": "error", "error": str(e)}
+
+@app.get("/admin/bulk-embedding-status/{task_id}")
+async def bulk_embedding_status(task_id: str):
+    """Check status of a bulk embedding background task."""
+    try:
+        from celery_app import celery_app
+        
+        result = celery_app.AsyncResult(task_id)
+        
+        if result.state == 'PENDING':
+            return {
+                "task_id": task_id,
+                "status": "pending",
+                "message": "Task is waiting to be processed"
+            }
+        elif result.state == 'PROGRESS':
+            return {
+                "task_id": task_id,
+                "status": "running",
+                "progress": result.info
+            }
+        elif result.state == 'SUCCESS':
+            return {
+                "task_id": task_id,
+                "status": "completed",
+                "result": result.result
+            }
+        elif result.state == 'FAILURE':
+            return {
+                "task_id": task_id,
+                "status": "failed",
+                "error": str(result.info)
+            }
+        else:
+            return {
+                "task_id": task_id,
+                "status": result.state,
+                "info": result.info
+            }
+            
+    except Exception as e:
+        return {"status": "error", "error": str(e)}
+
+@app.get("/admin/embedding-status")
+async def embedding_status():
+    """Get current channel embedding status."""
+    try:
+        from services.channel_embedding_scheduler import get_embedding_status
+        
+        status = get_embedding_status()
+        
+        # Add vector database stats
+        from services.embedding_service import EmbeddingService
+        embedding_service = EmbeddingService()
+        
+        try:
+            index_stats = await embedding_service.get_index_stats()
+            status["vector_database"] = {
+                "total_vectors": index_stats.get('total_vector_count', 0),
+                "dimension": index_stats.get('dimension', 0),
+                "index_fullness": index_stats.get('index_fullness', 0.0)
+            }
+        except Exception as e:
+            status["vector_database"] = {"error": str(e)}
+        
+        return status
+        
+    except Exception as e:
+        return {"status": "error", "error": str(e)}
+
+@app.post("/admin/scheduled-embedding-update")
+async def scheduled_embedding_update(
+    update_type: str = "smart",
+    max_messages_per_channel: int = None,
+    force_full_refresh: bool = False
+):
+    """
+    Run scheduled embedding update.
+    
+    Args:
+        update_type: "smart", "incremental", or "full"
+        max_messages_per_channel: Optional limit on messages
+        force_full_refresh: Force full refresh for smart mode
+    """
+    try:
+        from services.channel_embedding_scheduler import (
+            schedule_smart_update, 
+            schedule_incremental_update, 
+            schedule_full_refresh
+        )
+        
+        logger.info(f"Starting scheduled embedding update: {update_type}")
+        
+        if update_type == "smart":
+            result = await schedule_smart_update(force_full_refresh)
+        elif update_type == "incremental":
+            result = await schedule_incremental_update(max_messages_per_channel)
+        elif update_type == "full":
+            result = await schedule_full_refresh(max_messages_per_channel)
+        else:
+            return {
+                "status": "error",
+                "error": f"Invalid update_type: {update_type}. Use 'smart', 'incremental', or 'full'"
+            }
+        
+        return result
+        
+    except Exception as e:
+        logger.error(f"Scheduled embedding update failed: {e}")
         return {"status": "error", "error": str(e)}
 
 @app.get("/admin/search-test-content")
