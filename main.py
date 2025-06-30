@@ -4173,6 +4173,143 @@ async def test_gemini_json_retry():
             "message": "Failed to test JSON retry mechanism"
         }
 
+@app.get("/admin/test-relevance-score-guidance")
+async def test_relevance_score_guidance():
+    """Test that orchestrator properly uses entity relevance scores for decision making"""
+    try:
+        from agents.orchestrator_agent import OrchestratorAgent
+        from services.memory_service import MemoryService
+        from services.entity_store import EntityStore, Entity
+        from models.schemas import ProcessedMessage
+        import time
+        
+        # Initialize components
+        memory_service = MemoryService()
+        entity_store = EntityStore(memory_service)
+        orchestrator = OrchestratorAgent(memory_service)
+        
+        # Create test conversation key
+        conversation_key = "conv:test_channel:relevance_test"
+        
+        # Create entities with varying relevance scores
+        test_entities = [
+            Entity(
+                key="jira_ticket:critical_bug_123",
+                type="jira_ticket", 
+                value="CRITICAL-123",
+                context="High priority security bug affecting production authentication system",
+                conversation_key=conversation_key,
+                relevance_score=1.8,  # High relevance - should get strong attention
+                aliases=["CRITICAL-123", "auth bug"],
+                metadata={"priority": "critical", "extraction_method": "ai_enhanced"}
+            ),
+            Entity(
+                key="jira_ticket:minor_ui_456",
+                type="jira_ticket",
+                value="UI-456", 
+                context="Minor UI spacing issue in footer",
+                conversation_key=conversation_key,
+                relevance_score=0.3,  # Low relevance - should get less attention
+                aliases=["UI-456", "footer spacing"],
+                metadata={"priority": "low", "extraction_method": "pattern_matching"}
+            ),
+            Entity(
+                key="project:autopilot_v2",
+                type="project",
+                value="UiPath Autopilot v2.0",
+                context="Major Autopilot release with AI enhancements and new features",
+                conversation_key=conversation_key,
+                relevance_score=1.6,  # High relevance - should influence tool selection
+                aliases=["Autopilot v2", "AP v2.0"],
+                metadata={"importance": "high", "status": "active"}
+            ),
+            Entity(
+                key="person:john_tester",
+                type="person",
+                value="John Tester",
+                context="Mentioned once in passing during standup",
+                conversation_key=conversation_key, 
+                relevance_score=0.5,  # Low relevance - should not drive decisions
+                aliases=["John", "JT"],
+                metadata={"role": "qa", "team": "testing"}
+            )
+        ]
+        
+        # Store entities
+        await entity_store.store_entities(test_entities, conversation_key)
+        
+        # Create test message that could relate to multiple entities
+        test_message = ProcessedMessage(
+            channel_id="C_TEST_RELEVANCE",
+            user_id="U_TEST_USER",
+            text="What's the status on the authentication issues we discussed?",
+            message_ts="1640995200.001500",
+            thread_ts=None,
+            user_name="test_user",
+            user_first_name="Alice",
+            user_display_name="Alice Johnson", 
+            user_title="Product Manager",
+            user_department="Product",
+            channel_name="engineering",
+            is_dm=False,
+            thread_context=""
+        )
+        
+        # Test entity search and relevance scoring
+        entity_search_results = await orchestrator._search_relevant_entities(
+            test_message.text, conversation_key
+        )
+        
+        # Test orchestrator analysis with entity context
+        start_time = time.time()
+        execution_plan = await orchestrator._analyze_query_and_plan(test_message)
+        analysis_time = time.time() - start_time
+        
+        # Analyze how relevance scores influenced the plan
+        high_relevance_entities = [e for e in entity_search_results.get("entities", []) if e.get("relevance_score", 0) > 1.5]
+        low_relevance_entities = [e for e in entity_search_results.get("entities", []) if e.get("relevance_score", 0) < 0.6]
+        
+        return {
+            "status": "success",
+            "relevance_score_guidance": {
+                "prompt_guidance_added": "Pay closer attention to entities with higher relevance_score values",
+                "high_relevance_threshold": 1.5,
+                "entity_search_results": entity_search_results,
+                "analysis_time": round(analysis_time, 3),
+                "execution_plan": execution_plan
+            },
+            "entity_analysis": {
+                "total_entities_found": len(entity_search_results.get("entities", [])),
+                "high_relevance_entities": len(high_relevance_entities),
+                "high_relevance_details": [
+                    {
+                        "key": e.get("key"),
+                        "type": e.get("type"), 
+                        "relevance_score": e.get("relevance_score"),
+                        "value": e.get("value")
+                    } for e in high_relevance_entities
+                ],
+                "low_relevance_entities": len(low_relevance_entities),
+                "low_relevance_details": [
+                    {
+                        "key": e.get("key"),
+                        "type": e.get("type"),
+                        "relevance_score": e.get("relevance_score"), 
+                        "value": e.get("value")
+                    } for e in low_relevance_entities
+                ]
+            },
+            "expected_behavior": {
+                "high_relevance_should_drive_decisions": "CRITICAL-123 (1.8 score) and Autopilot v2.0 (1.6 score) should strongly influence tool selection",
+                "low_relevance_should_be_secondary": "UI-456 (0.3 score) and John Tester (0.5 score) should receive less attention",
+                "tool_selection_impact": "Query about 'authentication issues' should prioritize atlassian_search due to high-relevance CRITICAL-123 entity"
+            }
+        }
+        
+    except Exception as e:
+        logger.error(f"Relevance score guidance test failed: {e}")
+        return {"status": "error", "message": str(e)}
+
 # Server startup configuration for Cloud Run deployment
 if __name__ == "__main__":
     # Force Redis environment variables to empty to prevent connection attempts

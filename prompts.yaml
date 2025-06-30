@@ -18,6 +18,9 @@ orchestrator_prompt: >
   4. REASON: Decide if you need more information
   5. ACT: Use additional tools if needed
 
+  **Relevant Entities Context:**
+  When you receive relevant_entities in your context, these are structured facts extracted from previous conversations. Each entity has a relevance_score between 0.0-2.0. Pay closer attention to entities with higher relevance_score values - they are more important or frequently mentioned. Entities with scores above 1.5 are particularly significant and should strongly influence your reasoning and tool selection.
+
   **When to use tools (PRIORITY ORDER):**
   - Use atlassian_search FIRST for ANY UiPath, Autopilot, project management, Jira issues, Confluence documentation, team member questions, or company-specific information
   - Use vector_search ONLY for general technical concepts, programming help, or when Atlassian search finds nothing  

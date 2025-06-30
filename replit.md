@@ -83,6 +83,19 @@ The system uses environment variables for configuration management and supports 
 
 ## Recent Changes
 
+✅ **June 30, 2025 - ENTITY RELEVANCE SCORE GUIDANCE IMPLEMENTED: INTELLIGENT CONTEXT PRIORITIZATION (PRODUCTION READY)**
+- **System Prompt Enhancement**: Added explicit guidance to orchestrator about using entity relevance scores for decision making and tool selection
+- **Relevance Score Awareness**: Orchestrator now receives instruction to "pay closer attention to entities with higher relevance_score values" in system prompt
+- **Threshold-Based Prioritization**: Entities with scores above 1.5 are marked as "particularly significant" and should strongly influence reasoning and tool selection
+- **Context Injection Integration**: Relevance scores already injected into orchestrator context via `relevant_entities` field - now with proper guidance on usage
+- **Decision Making Enhancement**: High-relevance entities (score > 1.5) should drive tool selection, while low-relevance entities (< 0.6) receive secondary attention
+- **Test Infrastructure**: Added `/admin/test-relevance-score-guidance` endpoint demonstrating how relevance scores influence orchestrator decisions
+- **Practical Application**: Authentication issues query should prioritize atlassian_search when high-relevance CRITICAL-123 entity (score 1.8) is present
+- **Files Enhanced**: `prompts.yaml` (orchestrator prompt with relevance guidance), `main.py` (comprehensive test endpoint)
+- **Architecture Achievement**: Transforms entity relevance scores from passive metadata into active decision-making signals for intelligent context prioritization
+- **User Impact**: System now intelligently prioritizes important entities and facts based on their calculated relevance, leading to more contextual and accurate responses
+- **Production Benefits**: Reduces noise from low-relevance entities while ensuring critical facts drive tool selection and reasoning processes
+
 ✅ **June 30, 2025 - ROBUST JSON PARSING WITH RETRY MECHANISM IMPLEMENTED: SELF-CORRECTING GEMINI EXTRACTION (PRODUCTION READY)**
 - **Intelligent Retry System**: Built sophisticated retry mechanism for Gemini JSON parsing with automatic self-correction when malformed JSON is detected
 - **Self-Correcting Prompts**: When JSON parsing fails, system automatically sends follow-up prompt: "The previous response was not valid JSON. Please correct it and provide only the JSON."
