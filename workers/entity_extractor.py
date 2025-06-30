@@ -269,13 +269,12 @@ Format as JSON array: [
                 # Convert importance to relevance score
                 relevance_score = min(importance / 5.0, 2.0)  # Scale 1-10 to 0.2-2.0
                 
-                entity = Entity(
+                entity = self.entity_store.create_entity(
                     key=entity_key,
-                    type=entity_type,
+                    entity_type=entity_type,
                     value=entity_value,
                     context=entity_context,
                     conversation_key=conversation_key,
-                    mentioned_at=datetime.now().isoformat(),
                     relevance_score=relevance_score,
                     aliases=self.entity_store._generate_aliases(entity_type, entity_value),
                     metadata={

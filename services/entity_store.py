@@ -8,7 +8,8 @@ import json
 import re
 from typing import Dict, Any, List, Optional, Tuple, Set
 from datetime import datetime, timedelta
-from dataclasses import dataclass, asdict
+from dataclasses import dataclass, asdict, field
+from copy import deepcopy
 
 from config import settings
 from services.memory_service import MemoryService
@@ -16,23 +17,96 @@ from services.memory_service import MemoryService
 logger = logging.getLogger(__name__)
 
 @dataclass
+class EntityContext:
+    """Represents a single context where an entity was mentioned"""
+    context: str  # The text context where entity appeared
+    mentioned_at: str  # ISO timestamp when mentioned
+    relevance_score: float  # Relevance score for this specific mention
+    message_id: Optional[str] = None  # Optional message identifier
+
+@dataclass
 class Entity:
-    """Represents an extracted entity with metadata"""
+    """Represents an extracted entity with metadata and history"""
     key: str  # Unique identifier (e.g., "JIRA-123", "Project-Phoenix")
     type: str  # Entity type (jira_ticket, project, deadline, person, etc.)
     value: str  # Primary value/description
-    context: str  # Context where it was mentioned
     conversation_key: str  # Source conversation
-    mentioned_at: str  # ISO timestamp when mentioned
-    relevance_score: float = 1.0  # Relevance/importance score
-    aliases: List[str] = None  # Alternative names/references
-    metadata: Dict[str, Any] = None  # Additional structured data
+    relevance_score: float = 1.0  # Aggregated relevance/importance score
+    aliases: List[str] = field(default_factory=list)  # Alternative names/references
+    metadata: Dict[str, Any] = field(default_factory=dict)  # Additional structured data
+    contexts: List[EntityContext] = field(default_factory=list)  # All contexts where mentioned
+    first_mentioned_at: Optional[str] = None  # First time this entity appeared
+    last_mentioned_at: Optional[str] = None  # Most recent mention
+    mention_count: int = 0  # Total number of times mentioned
+    
+    # Legacy fields for backward compatibility
+    context: Optional[str] = None  # Deprecated - use contexts instead
+    mentioned_at: Optional[str] = None  # Deprecated - use first_mentioned_at/last_mentioned_at
     
     def __post_init__(self):
-        if self.aliases is None:
-            self.aliases = []
-        if self.metadata is None:
-            self.metadata = {}
+        # Handle legacy single context format
+        if self.context and not self.contexts:
+            legacy_context = EntityContext(
+                context=self.context,
+                mentioned_at=self.mentioned_at or datetime.now().isoformat(),
+                relevance_score=self.relevance_score
+            )
+            self.contexts = [legacy_context]
+            self.first_mentioned_at = legacy_context.mentioned_at
+            self.last_mentioned_at = legacy_context.mentioned_at
+            self.mention_count = 1
+        
+        # Ensure timestamps are set
+        if self.contexts and not self.first_mentioned_at:
+            sorted_contexts = sorted(self.contexts, key=lambda c: c.mentioned_at)
+            self.first_mentioned_at = sorted_contexts[0].mentioned_at
+            self.last_mentioned_at = sorted_contexts[-1].mentioned_at
+            self.mention_count = len(self.contexts)
+    
+    def add_context(self, context: EntityContext) -> None:
+        """Add a new context mention to this entity"""
+        self.contexts.append(context)
+        self.mention_count = len(self.contexts)
+        
+        # Update timestamps
+        if not self.first_mentioned_at or context.mentioned_at < self.first_mentioned_at:
+            self.first_mentioned_at = context.mentioned_at
+        if not self.last_mentioned_at or context.mentioned_at > self.last_mentioned_at:
+            self.last_mentioned_at = context.mentioned_at
+        
+        # Update relevance score (weighted average with recency bias)
+        if self.contexts:
+            # Give more weight to recent mentions
+            total_weight = 0
+            weighted_score = 0
+            for i, ctx in enumerate(self.contexts):
+                # More recent contexts get higher weight
+                weight = 1.0 + (i * 0.1)  # 1.0, 1.1, 1.2, etc.
+                weighted_score += ctx.relevance_score * weight
+                total_weight += weight
+            self.relevance_score = weighted_score / total_weight
+    
+    def get_recent_contexts(self, limit: int = 3) -> List[EntityContext]:
+        """Get the most recent contexts where this entity was mentioned"""
+        return sorted(self.contexts, key=lambda c: c.mentioned_at, reverse=True)[:limit]
+    
+    def get_context_summary(self) -> str:
+        """Get a summary of all contexts where this entity was mentioned"""
+        if not self.contexts:
+            return self.context or ""
+        
+        if len(self.contexts) == 1:
+            return self.contexts[0].context
+        
+        # Create summary of multiple contexts
+        recent_contexts = self.get_recent_contexts(3)
+        summary_parts = []
+        for ctx in recent_contexts:
+            # Truncate long contexts
+            truncated = ctx.context[:100] + "..." if len(ctx.context) > 100 else ctx.context
+            summary_parts.append(truncated)
+        
+        return f"Mentioned {self.mention_count} times. Recent: " + " | ".join(summary_parts)
 
 class EntityStore:
     """
@@ -128,13 +202,12 @@ class EntityStore:
                         surrounding_context = text[start_idx:end_idx].strip()
                         
                         # Create entity
-                        entity = Entity(
+                        entity = self.create_entity(
                             key=entity_key,
-                            type=entity_type,
+                            entity_type=entity_type,
                             value=entity_value,
                             context=surrounding_context,
                             conversation_key=conversation_key,
-                            mentioned_at=datetime.now().isoformat(),
                             relevance_score=relevance_score,
                             aliases=self._generate_aliases(entity_type, entity_value),
                             metadata={
@@ -230,17 +303,142 @@ class EntityStore:
         
         return list(entity_map.values())
     
+    def create_entity(
+        self,
+        key: str,
+        entity_type: str,
+        value: str,
+        context: str,
+        conversation_key: str,
+        relevance_score: float = 1.0,
+        aliases: List[str] = None,
+        metadata: Dict[str, Any] = None,
+        message_id: str = None
+    ) -> Entity:
+        """
+        Create a new entity with proper context structure.
+        
+        Args:
+            key: Unique identifier for the entity
+            entity_type: Type of entity (jira_ticket, project, etc.)
+            value: Primary value/description
+            context: Text context where entity was mentioned
+            conversation_key: Source conversation identifier
+            relevance_score: Relevance score for this mention
+            aliases: Alternative names/references
+            metadata: Additional structured data
+            message_id: Optional message identifier
+            
+        Returns:
+            New Entity instance with proper context structure
+        """
+        entity_context = EntityContext(
+            context=context,
+            mentioned_at=datetime.now().isoformat(),
+            relevance_score=relevance_score,
+            message_id=message_id
+        )
+        
+        return Entity(
+            key=key,
+            type=entity_type,
+            value=value,
+            conversation_key=conversation_key,
+            relevance_score=relevance_score,
+            aliases=aliases or [],
+            metadata=metadata or {},
+            contexts=[entity_context],
+            first_mentioned_at=entity_context.mentioned_at,
+            last_mentioned_at=entity_context.mentioned_at,
+            mention_count=1
+        )
+    
+    async def _get_existing_entity(self, entity_store_key: str, entity_key: str) -> Optional[Entity]:
+        """Retrieve an existing entity from storage"""
+        try:
+            if self.memory_service.redis_available and self.memory_service.redis_client:
+                hget_result = self.memory_service.redis_client.hget(entity_store_key, entity_key)
+                if hasattr(hget_result, '__await__'):
+                    entity_json = await hget_result
+                else:
+                    entity_json = hget_result
+            else:
+                # Use in-memory fallback
+                cache_item = self.memory_service._memory_cache.get(entity_store_key)
+                if cache_item and (not cache_item['expiry'] or datetime.now() < cache_item['expiry']):
+                    entity_json = cache_item['data'].get(entity_key)
+                else:
+                    entity_json = None
+            
+            if entity_json:
+                entity_dict = json.loads(entity_json)
+                return Entity(**entity_dict)
+            return None
+            
+        except Exception as e:
+            logger.warning(f"Error retrieving existing entity {entity_key}: {e}")
+            return None
+    
+    def _merge_entities(self, existing: Entity, new: Entity) -> Entity:
+        """
+        Merge a new entity with an existing one, combining contexts and updating metadata.
+        
+        Args:
+            existing: The entity already stored
+            new: The new entity to merge
+            
+        Returns:
+            Merged entity with combined information
+        """
+        # Create a copy of the existing entity to modify
+        merged = deepcopy(existing)
+        
+        # Create new context from the new entity
+        if new.contexts:
+            # Use the first context from new entity (should only be one for new extractions)
+            new_context = new.contexts[0]
+        else:
+            # Handle legacy format
+            new_context = EntityContext(
+                context=new.context or new.value,
+                mentioned_at=new.mentioned_at or datetime.now().isoformat(),
+                relevance_score=new.relevance_score
+            )
+        
+        # Add the new context to the merged entity
+        merged.add_context(new_context)
+        
+        # Merge aliases (avoid duplicates)
+        if new.aliases:
+            existing_aliases_lower = [alias.lower() for alias in merged.aliases]
+            for alias in new.aliases:
+                if alias.lower() not in existing_aliases_lower:
+                    merged.aliases.append(alias)
+        
+        # Merge metadata (new values override old ones)
+        if new.metadata:
+            merged.metadata.update(new.metadata)
+        
+        # Update primary value if new one is more descriptive
+        if len(new.value) > len(merged.value):
+            merged.value = new.value
+        
+        logger.debug(f"Merged entity {merged.key}: {len(merged.contexts)} contexts, score {merged.relevance_score:.2f}")
+        return merged
+    
     async def store_entities(
         self, 
         entities: List[Entity],
-        conversation_key: str
+        conversation_key: str,
+        merge_duplicates: bool = True
     ) -> bool:
         """
-        Store entities in Redis hash structure.
+        Store entities in Redis hash structure with intelligent merging.
         
         Args:
             entities: List of entities to store
             conversation_key: Source conversation identifier
+            merge_duplicates: Whether to merge with existing entities (default: True)
             
         Returns:
             True if successful, False otherwise
@@ -249,15 +447,28 @@ class EntityStore:
             entity_store_key = f"{conversation_key}:entity_store"
             
             stored_count = 0
+            merged_count = 0
+            
             for entity in entities:
+                final_entity = entity
+                
+                if merge_duplicates:
+                    # Check if entity already exists
+                    existing_entity = await self._get_existing_entity(entity_store_key, entity.key)
+                    if existing_entity:
+                        # Merge the new entity with existing one
+                        final_entity = self._merge_entities(existing_entity, entity)
+                        merged_count += 1
+                        logger.debug(f"Merged entity {entity.key}: {existing_entity.mention_count} -> {final_entity.mention_count} mentions")
+                
                 # Convert entity to JSON
-                entity_data = json.dumps(asdict(entity), default=str)
+                entity_data = json.dumps(asdict(final_entity), default=str)
                 
                 # Store in Redis hash
                 if self.memory_service.redis_available and self.memory_service.redis_client:
                     hset_result = self.memory_service.redis_client.hset(
                         entity_store_key, 
-                        entity.key, 
+                        final_entity.key, 
                         entity_data
                     )
                     # Set TTL on the hash
@@ -276,11 +487,11 @@ class EntityStore:
                             'expiry': datetime.now() + timedelta(days=7)
                         }
                     
-                    self.memory_service._memory_cache[entity_store_key]['data'][entity.key] = entity_data
+                    self.memory_service._memory_cache[entity_store_key]['data'][final_entity.key] = entity_data
                 
                 stored_count += 1
             
-            logger.info(f"Stored {stored_count} entities for conversation: {conversation_key}")
+            logger.info(f"Stored {stored_count} entities for conversation: {conversation_key} ({merged_count} merged with existing)")
             return True
             
         except Exception as e:
