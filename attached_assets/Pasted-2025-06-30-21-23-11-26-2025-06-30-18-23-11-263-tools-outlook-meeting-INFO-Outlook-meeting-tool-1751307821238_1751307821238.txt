@@ -1,0 +1,54 @@
+2025-06-30 21:23:11.26
+2025-06-30 18:23:11,263 - tools.outlook_meeting - INFO - Outlook meeting tool initialized successfully
+2025-06-30 21:23:11.27
+2025-06-30 18:23:11,273 - agents.atlassian_guru - INFO - AtlassianToolbelt initialized with MCP server: https://remote-mcp-server-andreiclodius.replit.app
+2025-06-30 21:23:11.32
+2025-06-30 18:23:11,319 - services.memory_service - WARNING - Redis not available, using in-memory cache: Redis URL must specify one of the following schemes (redis://, rediss://, unix://)
+2025-06-30 21:23:11.41
+error proxying request error=dial tcp 127.0.0.1:6379: connect: connection refused
+2025-06-30 21:23:11.77
+error proxying request error=dial tcp 127.0.0.1:6379: connect: connection refused
+2025-06-30 21:23:11.97
+2025-06-30 18:23:11,978 - services.token_manager - INFO - Token manager initialized with gpt-4 encoding
+2025-06-30 21:23:11.97
+2025-06-30 18:23:11,978 - services.webhook_cache - INFO - Webhook cache initialized
+2025-06-30 21:23:11.97
+2025-06-30 18:23:11,978 - services.prewarming_service - INFO - Pre-warming service initialized
+2025-06-30 21:23:11.97
+2025-06-30 18:23:11,978 - __main__ - INFO - Multi-agent system initialized successfully
+2025-06-30 21:23:12.01
+2025-06-30 18:23:12,009 - __main__ - INFO - Initializing multi-agent system with performance optimizations...
+2025-06-30 21:23:12.01
+2025-06-30 18:23:12,010 - services.memory_service - WARNING - Redis not available, using in-memory cache: Redis URL must specify one of the following schemes (redis://, rediss://, unix://)
+2025-06-30 21:23:12.13
+2025-06-30 18:23:12,135 - agents.slack_gateway - INFO - Retrieved bot user ID from Slack API: U092YQL6HTN
+2025-06-30 21:23:12.15
+2025-06-30 18:23:12,158 - tools.vector_search - INFO - Pinecone vector search initialized with index: uipath-slack-chatter
+2025-06-30 21:23:12.15
+2025-06-30 18:23:12,159 - tools.perplexity_search - INFO - Perplexity search tool initialized successfully
+2025-06-30 21:23:12.15
+2025-06-30 18:23:12,159 - tools.outlook_meeting - INFO - Outlook meeting tool initialized successfully
+2025-06-30 21:23:12.16
+2025-06-30 18:23:12,169 - agents.atlassian_guru - INFO - AtlassianToolbelt initialized with MCP server: https://remote-mcp-server-andreiclodius.replit.app
+2025-06-30 21:23:12.21
+2025-06-30 18:23:12,213 - services.memory_service - WARNING - Redis not available, using in-memory cache: Redis URL must specify one of the following schemes (redis://, rediss://, unix://)
+2025-06-30 21:23:12.21
+2025-06-30 18:23:12,214 - services.token_manager - INFO - Token manager initialized with gpt-4 encoding
+2025-06-30 21:23:12.22
+2025-06-30 18:23:12,221 - services.webhook_cache - INFO - Webhook cache initialized
+2025-06-30 21:23:12.22
+2025-06-30 18:23:12,225 - services.prewarming_service - INFO - Pre-warming service initialized
+2025-06-30 21:23:12.22
+2025-06-30 18:23:12,225 - __main__ - INFO - Multi-agent system initialized successfully
+2025-06-30 21:23:12.22
+2025-06-30 18:23:12,225 - __main__ - INFO - Starting Autopilot Expert Multi-Agent System on 0.0.0.0:6379
+2025-06-30 21:23:12.42
+INFO: Started server process [29]
+2025-06-30 21:23:12.42
+INFO: Waiting for application startup.
+2025-06-30 21:23:12.42
+INFO: Application startup complete.
+2025-06-30 21:23:12.42
+INFO: Uvicorn running on http://0.0.0.0:6379 (Press CTRL+C to quit)
+2025-06-30 21:23:13.45
+INFO: 127.0.0.1:34782 - "GET / HTTP/1.1" 200 OK
