@@ -82,6 +82,14 @@ The system uses environment variables for configuration management and supports 
 
 ## Recent Changes
 
+🔄 **June 30, 2025 - SLACK PERMISSIONS UPGRADE PENDING ADMIN APPROVAL**
+- **Comprehensive Permissions Requested**: Added 25+ Slack OAuth scopes for full workspace access including users:read, channels:read, groups:read, files:read, reactions:read, team:read
+- **User Access Enhancement**: New permissions will enable full user profile access (names, emails, titles, departments) for enhanced personalization
+- **Complete Channel Access**: Will provide access to all public channels, private channels (where invited), DMs, and group messages for comprehensive data ingestion
+- **Data Ingestion Ready**: System architecture already supports full workspace ingestion - waiting only for permission approval
+- **Current Status**: Bot token configured with limited scopes - admin approval pending for expanded workspace access
+- **Next Steps**: Once approved, reinstall Slack app to get updated bot token with full permissions
+
 ✅ **June 29, 2025 - CRITICAL DEPLOYMENT FIXES IMPLEMENTED (PRODUCTION READY)**
 - **Missing Deployment Script**: Created `start_deployment.py` file that was referenced in deployment configuration but didn't exist
 - **Cloud Run Single Port Fix**: Deployment now uses only port 5000 to comply with Autoscale single-port requirement
