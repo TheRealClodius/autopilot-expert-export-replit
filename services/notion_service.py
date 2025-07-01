@@ -137,7 +137,7 @@ class NotionService:
             
             # Prepare page properties using the correct field names
             properties = {
-                "Name": {
+                "Embeddings": {
                     "title": [{"text": {"content": f"Embedding Run {run_id}"}}]
                 },
                 "Run ID": {
@@ -147,13 +147,13 @@ class NotionService:
                     "date": {"start": timestamp.isoformat()}
                 },
                 "Run Status": {
-                    "status": {"name": run_data.get("status", "Not started")}
+                    "status": {"name": run_data.get("status", "Success")}
                 },
                 "Channels Checked": {
                     "number": run_data.get("channels_checked", 0)
                 },
                 "Messages Embedded": {
-                    "number": run_data.get("total_messages_embedded", 0)
+                    "number": run_data.get("messages_embedded", 0)
                 },
                 "Duration": {
                     "number": run_data.get("duration_seconds", 0)
@@ -311,11 +311,12 @@ class NotionService:
         return None
     
     def _extract_select_property(self, prop: Optional[Dict]) -> str:
-        """Extract selection from a Notion select property."""
-        if not prop or prop["type"] != "select":
+        """Extract selection from a Notion select or status property."""
+        if not prop or prop["type"] not in ["select", "status"]:
             return ""
         
-        select_obj = prop.get("select")
+        # Handle both select and status properties
+        select_obj = prop.get("select") or prop.get("status")
         if select_obj:
             return select_obj.get("name", "")
         return ""
