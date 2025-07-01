@@ -14,7 +14,7 @@ class Settings(BaseSettings):
     SLACK_SIGNING_SECRET: str = os.getenv("SLACK_SIGNING_SECRET", "")
     
     # SAFETY: Disable Slack responses during development/testing
-    DISABLE_SLACK_RESPONSES: bool = True  # Set to False only for production use
+    DISABLE_SLACK_RESPONSES: bool = False  # Set to False only for production use
     
     # Channels to monitor for ingestion (comma-separated)
     SLACK_CHANNELS_TO_MONITOR: str = os.getenv("SLACK_CHANNELS_TO_MONITOR", "")
