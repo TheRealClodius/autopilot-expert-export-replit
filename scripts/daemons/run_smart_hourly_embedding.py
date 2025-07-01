@@ -340,7 +340,7 @@ async def _patient_incremental_check(channel, last_ts, oldest_ts, data_processor
             from services.external_apis.enhanced_slack_connector import EnhancedSlackConnector
             connector = EnhancedSlackConnector()
             
-            response = await connector.client.conversations_history(
+            response = connector.client.conversations_history(
                 channel=channel["id"],
                 oldest=max(last_ts, oldest_ts),
                 limit=100,
