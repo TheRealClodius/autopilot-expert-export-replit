@@ -12,7 +12,7 @@ from typing import Dict, Any, List, Optional
 from datetime import datetime
 
 from utils.gemini_client import GeminiClient
-from utils.prompt_loader import get_orchestrator_prompt
+from utils.prompt_loader import get_orchestrator_prompt, get_orchestrator_evaluation_prompt
 from tools.vector_search import VectorSearchTool
 from tools.perplexity_search import PerplexitySearchTool
 from tools.outlook_meeting import OutlookMeetingTool
@@ -912,7 +912,7 @@ Let your intelligence flow freely before structuring your response."""
 
             response = await asyncio.wait_for(
                 self.gemini_client.generate_response(
-                    "You are an expert at evaluating search results. Assess if current results are sufficient to answer the user's query.",
+                    get_orchestrator_evaluation_prompt(),
                     observation_prompt,
                     model=self.gemini_client.flash_model,  # Use Flash for quick observation
                     max_tokens=500,

@@ -215,6 +215,11 @@ Your response should feel natural, like a person talking, not a database regurgi
         """Get the client agent prompt (cached)."""
         return self._get_cached_prompt("client_agent_prompt", "You are a helpful AI assistant.")
     
+    def get_orchestrator_evaluation_prompt(self) -> str:
+        """Get the orchestrator evaluation prompt (cached)."""
+        return self._get_cached_prompt("orchestrator_evaluation_prompt", 
+                                     "You are an expert at evaluating search results.")
+    
     # NOTE: Slack Gateway prompt removed - it's a pure interface layer
     
     def get_observer_agent_prompt(self) -> str:
@@ -271,3 +276,7 @@ def get_observer_agent_prompt() -> str:
 def reload_all_prompts():
     """Reload all prompts from file."""
     prompt_loader.reload_prompts()
+
+def get_orchestrator_evaluation_prompt() -> str:
+    """Get the orchestrator evaluation prompt from prompts.yaml"""
+    return prompt_loader.get_orchestrator_evaluation_prompt()
