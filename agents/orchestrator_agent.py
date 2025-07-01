@@ -129,7 +129,7 @@ class OrchestratorAgent:
                 logger.info(f"Orchestrator completed 5-step process in {total_time:.2f}s with {len(self.current_execution_steps)} steps")
                 
                 # Convert new clean format to legacy format for compatibility
-                return self._convert_clean_output_to_legacy_format(final_clean_output, message)
+                return await self._convert_clean_output_to_legacy_format(final_clean_output, message)
             
             return await self._create_fallback_response_new("I couldn't generate a complete response. Please try again.", message)
 
@@ -368,9 +368,14 @@ class OrchestratorAgent:
     # NEW: SUPPORTING METHODS FOR 5-STEP FRAMEWORK
     # ============================================================================
 
-    def _convert_clean_output_to_legacy_format(self, clean_output: Dict[str, Any], message: ProcessedMessage) -> Dict[str, Any]:
+    async def _convert_clean_output_to_legacy_format(self, clean_output: Dict[str, Any], message: ProcessedMessage) -> Dict[str, Any]:
         """NEW: Convert new clean output format to legacy format for compatibility"""
-        return {
+        
+        # Enhanced: Also generate enhanced client agent response
+        enhanced_response = asyncio.create_task(self._generate_enhanced_client_response(clean_output, message))
+        
+        # Legacy format for backward compatibility
+        legacy_response = {
             "channel_id": message.channel_id,
             "thread_ts": message.thread_ts or message.message_ts,
             "text": clean_output.get("synthesized_response", ""),
@@ -380,6 +385,52 @@ class OrchestratorAgent:
             "source_links": clean_output.get("source_links", []),
             "execution_summary": clean_output.get("execution_summary", {})
         }
+        
+        # Try to use enhanced client agent response if available
+        try:
+            enhanced_result = await asyncio.wait_for(enhanced_response, timeout=5.0)
+            if enhanced_result and enhanced_result.get("text"):
+                legacy_response["text"] = enhanced_result["text"]
+                legacy_response["suggestions"] = enhanced_result.get("suggestions", legacy_response["suggestions"])
+                legacy_response["enhanced_by_client_agent"] = True
+                logger.info("Successfully enhanced response using enhanced client agent")
+        except Exception as e:
+            logger.warning(f"Enhanced client agent failed, using orchestrator synthesis: {e}")
+            legacy_response["enhanced_by_client_agent"] = False
+        
+        return legacy_response
+    
+    async def _generate_enhanced_client_response(self, clean_output: Dict[str, Any], message: ProcessedMessage) -> Optional[Dict[str, Any]]:
+        """NEW: Generate enhanced response using the enhanced client agent"""
+        try:
+            # Prepare message context for enhanced client agent
+            message_context = {
+                "user": {
+                    "id": message.user_id,
+                    "name": message.user_name,
+                    "first_name": message.user_first_name,
+                    "display_name": message.user_display_name,
+                    "title": message.user_title,
+                    "department": message.user_department
+                },
+                "context": {
+                    "channel_id": message.channel_id,
+                    "channel_name": message.channel_name,
+                    "is_dm": message.is_dm,
+                    "thread_ts": message.thread_ts,
+                    "message_ts": message.message_ts
+                },
+                "query": message.text
+            }
+            
+            # Call enhanced client agent with clean orchestrator output
+            enhanced_response = await self.client_agent.generate_response(clean_output, message_context)
+            
+            return enhanced_response
+            
+        except Exception as e:
+            logger.error(f"Error generating enhanced client response: {e}")
+            return None
 
     async def _store_conversation_context(self, message: ProcessedMessage):
         """Store conversation context in memory systems"""

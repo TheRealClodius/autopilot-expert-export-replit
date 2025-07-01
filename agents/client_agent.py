@@ -1,6 +1,6 @@
 """
-Simplified Client Agent - Focuses purely on creative presentation and Slack formatting.
-Orchestrator does all data processing; client agent applies personality and formats for Slack.
+Enhanced Client Agent - Sophisticated personality with full orchestrator intelligence integration.
+Takes orchestrator's clean synthesized output and applies dynamic personality, contextual adaptations, and elegant presentation.
 """
 
 import asyncio
@@ -9,405 +9,505 @@ import time
 from typing import Dict, Any, Optional, List
 
 from utils.gemini_client import GeminiClient
+from utils.prompt_loader import get_client_agent_prompt
 from services.trace_manager import trace_manager
 
 logger = logging.getLogger(__name__)
 
 class ClientAgent:
     """
-    Simplified client-facing agent responsible for creative presentation.
-    Takes pre-formatted summaries from orchestrator and applies personality + Slack formatting.
+    Enhanced client-facing agent with sophisticated personality and contextual adaptations.
+    Takes clean synthesized output from orchestrator and applies:
+    - Dynamic personality based on context (DM vs channel, user role, confidence level)
+    - Elegant source link integration
+    - Contextual intelligence and tone adaptation
+    - Enhanced user experience with engaging follow-ups
     """
     
     def __init__(self):
         self.gemini_client = GeminiClient()
         
-    async def generate_response(self, state_stack: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    async def generate_response(self, orchestrator_output: Dict[str, Any], message_context: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         """
-        Generate a persona-based response using clean summaries from orchestrator.
+        Generate sophisticated persona-based response using orchestrator's clean output.
         
         Args:
-            state_stack: Simplified context state containing:
-                - query: Current user query
-                - user: User profile information
-                - context: Channel/DM context
-                - hybrid_history: Rolling long-term summary and token-managed live history
-                - orchestrator_findings: Pre-formatted summaries from orchestrator
+            orchestrator_output: Clean output from new orchestrator framework:
+                - synthesized_response: Comprehensive answer
+                - key_findings: Important points
+                - source_links: Formatted links with titles/URLs
+                - confidence_level: high/medium/low
+                - suggested_followups: Intelligent suggestions
+                - execution_summary: Process metadata
+            message_context: User and channel context for personalization
             
         Returns:
-            Dictionary containing response text and suggestions, or None on failure
+            Dictionary containing enhanced response text and suggestions
         """
         try:
             start_time = time.time()
-            logger.info("Client Agent generating creative response from orchestrator summaries...")
+            logger.info("Enhanced Client Agent generating contextual response...")
             
-            # Get trace manager for LangSmith integration 
-            trace_id = state_stack.get("trace_id")
-            if trace_id:
-                client_trace_id = await trace_manager.log_agent_operation(
-                    agent_name="client_agent",
-                    operation="response_generation",
-                    input_data=state_stack.get("query", "")[:100]
-                )
-            else:
-                client_trace_id = None
+            # Extract orchestrator intelligence
+            base_response = orchestrator_output.get("synthesized_response", "")
+            key_findings = orchestrator_output.get("key_findings", [])
+            source_links = orchestrator_output.get("source_links", [])
+            confidence_level = orchestrator_output.get("confidence_level", "medium")
+            orchestrator_suggestions = orchestrator_output.get("suggested_followups", [])
+            execution_summary = orchestrator_output.get("execution_summary", {})
             
-            # Generate creative response using clean orchestrator summaries
-            response_text = await self._generate_creative_response(state_stack)
+            # Analyze context for personality adaptation
+            context_analysis = self._analyze_context(message_context, confidence_level, execution_summary)
             
-            if not response_text or self._contains_raw_json(response_text):
-                logger.warning("Client agent generated empty or JSON-contaminated response")
-                response_text = "I'm having trouble crafting a response right now. Could you try asking again?"
-            
-            # Post-process for better Slack formatting
-            formatted_response = self._post_process_response(response_text, state_stack)
-            
-            # Generate contextual suggestions
-            suggestions = await self._generate_suggestions(state_stack)
-            
-            total_time = time.time() - start_time
-            logger.info(f"Client Agent generated response in {total_time:.2f}s")
-            
-            final_result = {
-                "text": formatted_response,
-                "suggestions": suggestions
-            }
-            
-            # Complete client agent trace
-            if client_trace_id:
-                await trace_manager.complete_agent_operation(
-                    trace_id=client_trace_id,
-                    output_data=formatted_response[:200],
-                    success=True,
-                    duration=total_time,
-                    metadata={"suggestions_count": len(suggestions)}
-                )
-            
-            return final_result
-            
-        except Exception as e:
-            logger.error(f"CRITICAL ERROR in Client Agent: {e}")
-            # Complete client agent trace with error
-            if 'client_trace_id' in locals() and client_trace_id:
-                try:
-                    await trace_manager.complete_agent_operation(
-                        trace_id=client_trace_id,
-                        output_data=f"Error: {str(e)}",
-                        success=False,
-                        duration=time.time() - start_time if 'start_time' in locals() else 0,
-                        metadata={"error_type": type(e).__name__}
-                    )
-                except:
-                    pass  # Don't let trace logging errors break the system
-            return None
-    
-    async def _generate_creative_response(self, state_stack: Dict[str, Any]) -> str:
-        """
-        Generate creative response using clean orchestrator summaries.
-        Focus on personality, tone, and Slack formatting.
-        """
-        system_prompt = self._get_personality_system_prompt()
-        user_prompt = self._format_clean_context(state_stack)
-        
-        # Use Gemini Flash for fast creative response generation
-        response = await self.gemini_client.generate_response(
-            system_prompt,
-            user_prompt,
-            model=self.gemini_client.flash_model,  # Client uses Flash for speed
-            max_tokens=1500,
-            temperature=0.8  # Higher temperature for more creative responses
-        )
-        
-        return response if response else ""
-    
-    def _get_personality_system_prompt(self) -> str:
-        """
-        Get the personality-based system prompt for the client agent.
-        """
-        from utils.prompt_loader import get_client_agent_prompt
-        return get_client_agent_prompt()
-    
-    def _format_clean_context(self, state_stack: Dict[str, Any]) -> str:
-        """
-        Format clean context from orchestrator summaries for creative response generation.
-        Much simpler than the old 250+ line function - orchestrator did the heavy lifting.
-        """
-        # Debug check to ensure state_stack is a dictionary
-        if not isinstance(state_stack, dict):
-            logger.error(f"CRITICAL: state_stack is not a dict, it's a {type(state_stack)}: {str(state_stack)[:200]}")
-            return f"Error: Invalid state data format"
-            
-        # Additional debugging for each key access
-        logger.debug(f"State stack keys: {list(state_stack.keys())}")
-        
-        # Safe access with detailed error checking
-        def safe_get(key, default=None, expected_type=None):
-            try:
-                value = state_stack.get(key, default)
-                if expected_type and value is not None and not isinstance(value, expected_type):
-                    logger.error(f"CRITICAL: {key} expected {expected_type.__name__} but got {type(value).__name__}: {str(value)[:100]}")
-                    return default
-                return value
-            except Exception as e:
-                logger.error(f"Error accessing state_stack[{key}]: {e}")
-                return default
-            
-        context_parts = []
-        
-        # User query
-        query = safe_get("query", "", str)
-        context_parts.append(f"USER QUERY: {query}")
-        context_parts.append("")
-        
-        # User information for personalization
-        user = safe_get("user", {}, dict)
-        first_name = user.get("first_name", "") if isinstance(user, dict) else ""
-        title = user.get("title", "") if isinstance(user, dict) else ""
-        if first_name:
-            context_parts.append(f"USER: {first_name}" + (f" ({title})" if title else ""))
-            context_parts.append("")
-        
-        # Channel context
-        context = safe_get("context", {}, dict)
-        is_dm = context.get("is_dm", False) if isinstance(context, dict) else False
-        channel = context.get("channel", "") if isinstance(context, dict) else ""
-        if is_dm:
-            context_parts.append("CONTEXT: Direct message conversation")
-        elif channel:
-            context_parts.append(f"CONTEXT: Channel #{channel}")
-        context_parts.append("")
-        
-        # Hybrid conversation history (new memory system)
-        hybrid_history = safe_get("hybrid_history", {}, dict)
-        if hybrid_history and isinstance(hybrid_history, dict):
-            # Add summarized history if it exists
-            summarized_history = hybrid_history.get("summarized_history", "")
-            if summarized_history:
-                context_parts.append("CONVERSATION HISTORY SUMMARY:")
-                context_parts.append(f"Previous exchanges ({hybrid_history.get('summarized_message_count', 0)} messages): {summarized_history}")
-                context_parts.append("")
-            
-            # Add live conversation history
-            live_history = hybrid_history.get("live_history", "")
-            if live_history:
-                context_parts.append("RECENT CONVERSATION:")
-                context_parts.append(live_history)
-                context_parts.append("")
-        
-        # Orchestrator findings (pre-formatted summaries)
-        findings = safe_get("orchestrator_findings", {}, dict)
-        
-        if isinstance(findings, dict):
-            analysis = findings.get("analysis", "")
-            if analysis:
-                context_parts.append("QUERY ANALYSIS:")
-                context_parts.append(analysis)
-                context_parts.append("")
-            
-            # Pre-formatted search summaries from orchestrator
-            search_summary = findings.get("search_summary", "")
-            if search_summary:
-                context_parts.append("KNOWLEDGE BASE FINDINGS:")
-                context_parts.append(search_summary)
-                context_parts.append("")
-        
-            web_summary = findings.get("web_summary", "")
-            if web_summary:
-                context_parts.append("WEB RESEARCH FINDINGS:")
-                context_parts.append(web_summary)
-                context_parts.append("")
-            
-            atlassian_summary = findings.get("atlassian_summary", "")
-            if atlassian_summary:
-                context_parts.append("PROJECT INFORMATION:")
-                context_parts.append(atlassian_summary)
-                context_parts.append("")
-            
-            meeting_summary = findings.get("meeting_summary", "")
-            if meeting_summary:
-                context_parts.append("MEETING ACTIONS:")
-                context_parts.append(meeting_summary)
-                context_parts.append("")
-        
-        return "\n".join(context_parts)
-    
-    def _post_process_response(self, response: str, state_stack: Dict[str, Any]) -> str:
-        """
-        Post-process the generated response for better Slack formatting.
-        """
-        # Clean up any potential formatting issues
-        response = response.strip()
-        
-        # Ensure proper Slack formatting (use *text* for bold, _text_ for italic)
-        # Gemini sometimes uses **text** which doesn't work in Slack
-        response = response.replace("**", "*")
-        
-        # Remove any residual JSON fragments
-        if "{" in response and "}" in response:
-            lines = response.split("\n")
-            clean_lines = []
-            for line in lines:
-                if not (line.strip().startswith("{") or line.strip().startswith("}")):
-                    clean_lines.append(line)
-            response = "\n".join(clean_lines)
-        
-        return response
-    
-    async def _generate_suggestions(self, state_stack: Dict[str, Any]) -> List[str]:
-        """
-        Generate truly contextual suggestions using LLM based on conversation and findings.
-        Uses Gemini Flash to create natural, relevant follow-up questions with robust fallback.
-        """
-        findings = state_stack.get("orchestrator_findings", {})
-        
-        try:
-            # Build context for LLM suggestion generation
-            query = state_stack.get("query", "")
-            user = state_stack.get("user", {})
-            
-            # Create focused prompt for suggestion generation
-            suggestion_prompt = self._build_suggestion_prompt(query, findings, user)
-            
-            # Use Gemini Flash for fast suggestion generation with timeout
-            response = await asyncio.wait_for(
-                self.gemini_client.generate_response(
-                    system_prompt="You are an expert at generating relevant follow-up questions. Generate 3-4 natural, contextual suggestions that help users explore topics deeper or take next steps. Return only the suggestions, one per line, without numbers or bullets.",
-                    user_prompt=suggestion_prompt,
-                    model=self.gemini_client.flash_model,
-                    max_tokens=200,
-                    temperature=0.9  # High temperature for creative suggestions
-                ),
-                timeout=10.0  # 10-second timeout to prevent hanging
+            # Apply sophisticated personality with contextual adaptations
+            enhanced_response = await self._apply_contextual_personality(
+                base_response, key_findings, source_links, context_analysis, message_context
             )
             
-            if response:
-                # Parse suggestions from LLM response
-                suggestion_lines = [
-                    line.strip() 
-                    for line in response.split("\n") 
-                    if line.strip() and not line.strip().startswith(("1.", "2.", "3.", "4.", "-", "•"))
-                ]
-                
-                # Clean up suggestions and limit to 4
-                suggestions = []
-                for suggestion in suggestion_lines[:4]:
-                    # Remove any numbering or bullets that might have slipped through
-                    clean_suggestion = suggestion.strip().lstrip("1234567890.-•").strip()
-                    if clean_suggestion and len(clean_suggestion) > 10:  # Ensure meaningful suggestions
-                        suggestions.append(clean_suggestion)
-                
-                if suggestions:
-                    logger.info(f"Generated {len(suggestions)} LLM-powered suggestions")
-                    return suggestions
+            # Generate enhanced follow-up suggestions
+            enhanced_suggestions = await self._generate_enhanced_suggestions(
+                orchestrator_suggestions, context_analysis, message_context
+            )
             
-            # Fallback to intelligent static suggestions if LLM fails
-            logger.info("Using intelligent fallback suggestions")
-            return self._generate_fallback_suggestions(findings)
+            # Add elegant source integration if sources exist
+            if source_links:
+                enhanced_response = self._integrate_sources_elegantly(enhanced_response, source_links, context_analysis)
             
-        except asyncio.TimeoutError:
-            logger.warning("LLM suggestion generation timed out, using fallback")
-            return self._generate_fallback_suggestions(findings)
+            total_time = time.time() - start_time
+            logger.info(f"Enhanced Client Agent generated contextual response in {total_time:.2f}s")
+            
+            return {
+                "text": enhanced_response,
+                "suggestions": enhanced_suggestions,
+                "personality_context": context_analysis,
+                "confidence_communicated": confidence_level
+            }
+            
         except Exception as e:
-            logger.error(f"Error generating LLM suggestions: {e}")
-            return self._generate_fallback_suggestions(findings)
+            logger.error(f"Error in Enhanced Client Agent: {e}")
+            return await self._create_fallback_response(orchestrator_output, message_context)
     
-    def _build_suggestion_prompt(self, query: str, findings: Dict[str, Any], user: Dict[str, Any]) -> str:
+    def _analyze_context(self, message_context: Dict[str, Any], confidence_level: str, execution_summary: Dict[str, Any]) -> Dict[str, Any]:
         """
-        Build focused prompt for LLM suggestion generation.
+        Analyze context to determine personality adaptations needed.
         """
+        user = message_context.get("user", {})
+        context = message_context.get("context", {})
+        
+        # Determine communication style based on context
+        is_dm = context.get("is_dm", False)
+        user_title = user.get("title", "").lower()
+        user_department = user.get("department", "").lower()
+        steps_completed = execution_summary.get("steps_completed", 0)
+        
+        # Role analysis for tone adaptation
+        is_technical_role = any(role in user_title for role in ["engineer", "developer", "architect", "technical"])
+        is_design_role = any(role in user_title for role in ["design", "ux", "ui", "product"])
+        is_management_role = any(role in user_title for role in ["manager", "director", "lead", "head"])
+        
+        # Confidence and complexity analysis
+        is_high_confidence = confidence_level == "high"
+        is_complex_query = steps_completed > 3
+        
+        return {
+            "communication_style": "casual_direct" if is_dm else "professional_engaging",
+            "expertise_level": "technical" if is_technical_role else "design" if is_design_role else "business",
+            "authority_level": "peer" if not is_management_role else "leadership",
+            "confidence_tone": "confident" if is_high_confidence else "thoughtful" if confidence_level == "medium" else "exploratory",
+            "complexity_handled": "sophisticated" if is_complex_query else "straightforward",
+            "personality_elements": {
+                "use_design_references": is_design_role or "design" in user_department,
+                "technical_depth": is_technical_role,
+                "construct_mentions": is_dm and confidence_level == "high",  # Only in DMs when confident
+                "humor_level": "subtle" if not is_management_role else "minimal"
+            }
+        }
+    
+    async def _apply_contextual_personality(self, base_response: str, key_findings: List[str], 
+                                          source_links: List[Dict], context_analysis: Dict[str, Any], 
+                                          message_context: Dict[str, Any]) -> str:
+        """
+        Apply sophisticated personality with contextual adaptations.
+        """
+        try:
+            # Build personality adaptation prompt
+            personality_prompt = self._build_personality_prompt(base_response, key_findings, context_analysis, message_context)
+            
+            # Get dynamic system prompt based on context
+            system_prompt = self._get_contextual_system_prompt(context_analysis)
+            
+            # Generate personality-enhanced response
+            enhanced_response = await asyncio.wait_for(
+                self.gemini_client.generate_response(
+                    system_prompt,
+                    personality_prompt,
+                    model=self.gemini_client.flash_model,
+                    max_tokens=1200,
+                    temperature=0.85  # Higher temperature for more personality
+                ),
+                timeout=12.0
+            )
+            
+            if enhanced_response and not self._contains_inappropriate_content(enhanced_response):
+                return self._post_process_personality_response(enhanced_response, context_analysis)
+            else:
+                # Fallback to base response with minimal enhancement
+                return self._apply_minimal_personality(base_response, context_analysis, message_context)
+                
+        except Exception as e:
+            logger.warning(f"Personality enhancement failed: {e}, using fallback")
+            return self._apply_minimal_personality(base_response, context_analysis, message_context)
+    
+    def _build_personality_prompt(self, base_response: str, key_findings: List[str], 
+                                context_analysis: Dict[str, Any], message_context: Dict[str, Any]) -> str:
+        """
+        Build sophisticated personality adaptation prompt.
+        """
+        user = message_context.get("user", {})
+        context = message_context.get("context", {})
+        
         prompt_parts = []
         
-        prompt_parts.append(f"User asked: \"{query}\"")
+        # Base content to enhance
+        prompt_parts.append("ENHANCE THIS RESPONSE WITH YOUR PERSONALITY:")
+        prompt_parts.append(f'"{base_response}"')
         prompt_parts.append("")
         
-        # Include user context for personalization
-        user_title = user.get("title", "")
-        if user_title:
-            prompt_parts.append(f"User role: {user_title}")
-            prompt_parts.append("")
+        # Context for personality adaptation
+        prompt_parts.append("CONTEXT FOR PERSONALITY:")
+        if user.get("first_name"):
+            prompt_parts.append(f"User: {user['first_name']} ({user.get('title', 'User')})")
         
-        # Include findings context
-        analysis = findings.get("analysis", "")
-        if analysis:
-            prompt_parts.append(f"Query analysis: {analysis}")
-            prompt_parts.append("")
+        if context.get("is_dm"):
+            prompt_parts.append("Setting: Direct message (more casual)")
+        else:
+            prompt_parts.append(f"Setting: #{context.get('channel_name', 'channel')} (public)")
         
-        tools_used = findings.get("tools_used", [])
-        if tools_used:
-            prompt_parts.append(f"Information sources used: {', '.join(tools_used)}")
-            prompt_parts.append("")
-        
-        # Include summary of what was found
-        summaries = []
-        if findings.get("search_summary"):
-            summaries.append("internal knowledge")
-        if findings.get("web_summary"):
-            summaries.append("web research")
-        if findings.get("atlassian_summary"):
-            summaries.append("project information")
-        if findings.get("meeting_summary"):
-            summaries.append("meeting actions")
-        
-        if summaries:
-            prompt_parts.append(f"Found information from: {', '.join(summaries)}")
-            prompt_parts.append("")
-        
-        prompt_parts.append("Generate 3-4 natural follow-up questions that would help the user:")
-        prompt_parts.append("- Explore the topic deeper")
-        prompt_parts.append("- Take actionable next steps")
-        prompt_parts.append("- Discover related information")
-        prompt_parts.append("- Apply the knowledge practically")
+        prompt_parts.append(f"Communication style: {context_analysis['communication_style']}")
+        prompt_parts.append(f"Confidence level: {context_analysis['confidence_tone']}")
         prompt_parts.append("")
-        prompt_parts.append("Make suggestions specific to this conversation context.")
+        
+        # Key findings to potentially reference
+        if key_findings:
+            prompt_parts.append("KEY POINTS TO POTENTIALLY HIGHLIGHT:")
+            for finding in key_findings:
+                prompt_parts.append(f"• {finding}")
+            prompt_parts.append("")
+        
+        # Personality guidance based on context
+        personality_elements = context_analysis.get("personality_elements", {})
+        
+        if personality_elements.get("use_design_references"):
+            prompt_parts.append("PERSONALITY NOTE: User has design background - you can reference design principles or art history if relevant")
+        
+        if personality_elements.get("technical_depth"):
+            prompt_parts.append("PERSONALITY NOTE: User is technical - you can be more specific and use technical terminology")
+        
+        if personality_elements.get("construct_mentions") and context.get("is_dm"):
+            prompt_parts.append("PERSONALITY NOTE: This is a DM and you're confident - you could mention your experiences in the Construct if naturally relevant")
+        
+        prompt_parts.append("")
+        prompt_parts.append("ENHANCEMENT GOALS:")
+        prompt_parts.append("- Add your distinctive personality and voice")
+        prompt_parts.append("- Adapt tone based on context and user")
+        prompt_parts.append("- Keep the core information intact")
+        prompt_parts.append("- Use Slack formatting (*bold*, `code`, • bullets)")
+        prompt_parts.append("- Be engaging but not overly verbose")
         
         return "\n".join(prompt_parts)
     
-    def _generate_fallback_suggestions(self, findings: Dict[str, Any]) -> List[str]:
+    def _get_contextual_system_prompt(self, context_analysis: Dict[str, Any]) -> str:
         """
-        Generate intelligent fallback suggestions when LLM fails.
+        Get dynamic system prompt based on context analysis.
         """
-        tools_used = findings.get("tools_used", [])
-        suggestions = []
+        base_prompt = get_client_agent_prompt()
         
-        # Smart suggestions based on what tools were used
-        if "atlassian_search" in tools_used:
-            suggestions.extend([
-                "Search for related Jira issues",
-                "Find more Confluence documentation",
-                "Create a new Jira ticket"
-            ])
+        # Add contextual adaptations
+        adaptations = []
         
-        if "vector_search" in tools_used:
-            suggestions.extend([
-                "Ask about related topics",
-                "Get more technical details",
-                "Search with different keywords"
-            ])
+        communication_style = context_analysis.get("communication_style", "professional_engaging")
+        if communication_style == "casual_direct":
+            adaptations.append("This is a DM conversation - be more casual and direct.")
         
-        if "perplexity_search" in tools_used:
-            suggestions.extend([
-                "Get latest industry updates",
-                "Search for recent news",
-                "Find current best practices"
-            ])
+        confidence_tone = context_analysis.get("confidence_tone", "thoughtful")
+        if confidence_tone == "confident":
+            adaptations.append("You have high confidence in this information - be assertive and definitive.")
+        elif confidence_tone == "exploratory":
+            adaptations.append("You have limited information - be more exploratory and suggest next steps.")
         
-        # Limit to 3-4 suggestions
-        return suggestions[:4] if suggestions else [
-            "Tell me more about this topic",
-            "How does this relate to our project?",
-            "What are the next steps?"
-        ]
+        expertise_level = context_analysis.get("expertise_level", "business")
+        if expertise_level == "technical":
+            adaptations.append("User is technical - you can use more precise terminology and technical depth.")
+        elif expertise_level == "design":
+            adaptations.append("User has design background - you can reference design principles and patterns.")
+        
+        if adaptations:
+            adapted_prompt = base_prompt + "\n\nCONTEXTUAL ADAPTATIONS FOR THIS RESPONSE:\n" + "\n".join(f"- {adaptation}" for adaptation in adaptations)
+            return adapted_prompt
+        
+        return base_prompt
     
-    def _contains_raw_json(self, text: str) -> bool:
+    def _apply_minimal_personality(self, base_response: str, context_analysis: Dict[str, Any], message_context: Dict[str, Any]) -> str:
         """
-        Check if response contains raw JSON fragments instead of natural language.
+        Apply minimal personality enhancements when LLM enhancement fails.
         """
-        if not text:
+        user = message_context.get("user", {})
+        confidence_tone = context_analysis.get("confidence_tone", "thoughtful")
+        
+        # Add confidence-based framing
+        if confidence_tone == "confident":
+            if user.get("first_name"):
+                enhanced = f"*{user['first_name']}*, here's what I can tell you:\n\n{base_response}"
+            else:
+                enhanced = f"Here's what I can tell you:\n\n{base_response}"
+        elif confidence_tone == "exploratory":
+            enhanced = f"Based on what I found, {base_response}\n\nI'd suggest checking with the team for the most current details."
+        else:
+            enhanced = base_response
+        
+        # Ensure Slack formatting
+        enhanced = enhanced.replace("**", "*")
+        
+        return enhanced
+    
+    def _integrate_sources_elegantly(self, response: str, source_links: List[Dict], context_analysis: Dict[str, Any]) -> str:
+        """
+        Elegantly integrate source links into organized, sectioned presentation.
+        """
+        if not source_links:
+            return response
+        
+        # Enhanced source categorization with descriptive names
+        source_sections = {
+            "documentation": {"title": "📚 *Documentation*", "sources": []},
+            "project_tickets": {"title": "🎫 *Project Tickets*", "sources": []},
+            "external_resources": {"title": "🌐 *External Resources*", "sources": []},
+            "team_discussions": {"title": "💬 *Team Discussions*", "sources": []}
+        }
+        
+        # Categorize sources into appropriate sections
+        for link in source_links:
+            source_type = link.get("type", "web").lower()
+            title = link.get("title", "Resource")
+            url = link.get("url", "")
+            
+            if not url:
+                continue
+                
+            # Enhanced categorization logic
+            if source_type in ["confluence", "documentation", "docs"]:
+                source_sections["documentation"]["sources"].append(f"• <{url}|{title}>")
+            elif source_type in ["jira", "ticket", "issue"]:
+                source_sections["project_tickets"]["sources"].append(f"• <{url}|{title}>")
+            elif source_type in ["slack", "team", "discussion"]:
+                source_sections["team_discussions"]["sources"].append(f"• <{url}|{title}>")
+            else:  # web, external, etc.
+                source_sections["external_resources"]["sources"].append(f"• <{url}|{title}>")
+        
+        # Build elegant source presentation
+        source_parts = [response, ""]
+        
+        # Confidence-based header framing
+        confidence_tone = context_analysis.get("confidence_tone", "thoughtful")
+        if confidence_tone == "confident":
+            # No additional header needed - sections speak for themselves
+            pass
+        elif confidence_tone == "exploratory":
+            source_parts.append("*Worth exploring:*")
+            source_parts.append("")
+        elif confidence_tone == "thoughtful":
+            source_parts.append("*Additional resources:*")
+            source_parts.append("")
+        else:  # low confidence
+            source_parts.append("*Might be helpful:*")
+            source_parts.append("")
+        
+        # Add populated sections with elegant formatting
+        sections_added = 0
+        for section_key, section_data in source_sections.items():
+            if section_data["sources"] and sections_added < 3:  # Limit to 3 sections for readability
+                source_parts.append(section_data["title"])
+                
+                # Add sources with proper bullet formatting
+                for source in section_data["sources"][:4]:  # Max 4 sources per section
+                    source_parts.append(source)
+                
+                source_parts.append("")  # Add spacing between sections
+                sections_added += 1
+        
+        # Remove trailing empty line if present
+        if source_parts and source_parts[-1] == "":
+            source_parts.pop()
+        
+        return "\n".join(source_parts)
+    
+    async def _generate_enhanced_suggestions(self, orchestrator_suggestions: List[str], 
+                                           context_analysis: Dict[str, Any], message_context: Dict[str, Any]) -> List[str]:
+        """
+        Generate enhanced follow-up suggestions building on orchestrator intelligence.
+        """
+        try:
+            # If orchestrator provided good suggestions, enhance them
+            if orchestrator_suggestions and len(orchestrator_suggestions) >= 2:
+                enhanced = await self._enhance_existing_suggestions(orchestrator_suggestions, context_analysis, message_context)
+                if enhanced:
+                    return enhanced
+            
+            # Generate new contextual suggestions
+            return await self._generate_contextual_suggestions(context_analysis, message_context)
+            
+        except Exception as e:
+            logger.warning(f"Enhanced suggestion generation failed: {e}")
+            return orchestrator_suggestions[:4] if orchestrator_suggestions else [
+                "Tell me more about this",
+                "How does this work in practice?",
+                "What are the next steps?"
+            ]
+    
+    async def _enhance_existing_suggestions(self, suggestions: List[str], context_analysis: Dict[str, Any], 
+                                          message_context: Dict[str, Any]) -> List[str]:
+        """
+        Enhance orchestrator's suggestions with personality and context.
+        """
+        try:
+            enhancement_prompt = f"""
+            Enhance these follow-up suggestions with personality and context:
+            
+            Original suggestions:
+            {chr(10).join(f'- {s}' for s in suggestions)}
+            
+            User context: {message_context.get('user', {}).get('title', 'User')}
+            Communication style: {context_analysis.get('communication_style', 'professional')}
+            
+            Make them more engaging and specific to this user. Keep the same intent but add personality.
+            Return 3-4 enhanced suggestions, one per line.
+            """
+            
+            response = await asyncio.wait_for(
+                self.gemini_client.generate_response(
+                    "You enhance follow-up suggestions with personality while keeping them helpful and specific.",
+                    enhancement_prompt,
+                    model=self.gemini_client.flash_model,
+                    max_tokens=300,
+                    temperature=0.9
+                ),
+                timeout=8.0
+            )
+            
+            if response:
+                enhanced_suggestions = [
+                    line.strip().lstrip("1234567890.-•").strip()
+                    for line in response.split("\n")
+                    if line.strip() and len(line.strip()) > 10
+                ]
+                return enhanced_suggestions[:4]
+            
+        except Exception as e:
+            logger.warning(f"Suggestion enhancement failed: {e}")
+        
+        return suggestions[:4]
+    
+    async def _generate_contextual_suggestions(self, context_analysis: Dict[str, Any], message_context: Dict[str, Any]) -> List[str]:
+        """
+        Generate contextual suggestions based on user profile and context.
+        """
+        user = message_context.get("user", {})
+        expertise_level = context_analysis.get("expertise_level", "business")
+        
+        # Role-based suggestions
+        if expertise_level == "technical":
+            return [
+                "Show me the implementation details",
+                "What are the technical requirements?",
+                "How do I integrate this with our system?",
+                "Are there any API considerations?"
+            ]
+        elif expertise_level == "design":
+            return [
+                "What are the design patterns here?",
+                "How does this impact user experience?",
+                "Show me visual examples",
+                "What about accessibility considerations?"
+            ]
+        else:
+            return [
+                "What's the business impact?",
+                "How do we get started?",
+                "What resources do we need?",
+                "What are the timeline considerations?"
+            ]
+    
+    def _post_process_personality_response(self, response: str, context_analysis: Dict[str, Any]) -> str:
+        """
+        Post-process personality-enhanced response for quality and formatting.
+        """
+        # Clean up formatting
+        response = response.strip()
+        response = response.replace("**", "*")  # Fix Slack formatting
+        
+        # Remove any JSON fragments that might have leaked through
+        if "{" in response and "}" in response:
+            lines = response.split("\n")
+            clean_lines = [line for line in lines if not (line.strip().startswith("{") or line.strip().startswith("}"))]
+            response = "\n".join(clean_lines)
+        
+        # Ensure appropriate length
+        if len(response) > 2000:  # Slack message limit consideration
+            # Truncate gracefully at sentence boundary
+            sentences = response.split(". ")
+            truncated = ""
+            for sentence in sentences:
+                if len(truncated + sentence + ". ") < 1900:
+                    truncated += sentence + ". "
+                else:
+                    break
+            response = truncated.rstrip() + "\n\n_Response truncated for readability._"
+        
+        return response
+    
+    def _contains_inappropriate_content(self, response: str) -> bool:
+        """
+        Check for inappropriate content that shouldn't be in responses.
+        """
+        if not response:
             return True
         
-        # Count JSON-like patterns
-        json_indicators = ["{", "}", '":', "[]", "null", "true", "false"]
-        json_count = sum(1 for indicator in json_indicators if indicator in text)
+        # Check for raw JSON contamination
+        json_indicators = ['":', '{"', '"}', "null", "true", "false"]
+        json_count = sum(1 for indicator in json_indicators if indicator in response)
         
-        # If more than 30% of the content looks like JSON, it's probably contaminated
-        return json_count > len(text.split()) * 0.3
+        # If too much JSON-like content, it's contaminated
+        if json_count > len(response.split()) * 0.3:
+            return True
+        
+        # Check for other inappropriate patterns
+        inappropriate_patterns = [
+            "I don't have information",
+            "I cannot provide",
+            "As an AI",
+            "I'm just an AI"
+        ]
+        
+        return any(pattern.lower() in response.lower() for pattern in inappropriate_patterns)
+    
+    async def _create_fallback_response(self, orchestrator_output: Dict[str, Any], message_context: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Create a graceful fallback response when enhancement fails.
+        """
+        base_response = orchestrator_output.get("synthesized_response", "I found some information but had trouble presenting it clearly.")
+        confidence_level = orchestrator_output.get("confidence_level", "low")
+        
+        user = message_context.get("user", {})
+        first_name = user.get("first_name", "")
+        
+        if confidence_level == "high" and first_name:
+            fallback_text = f"{first_name}, {base_response}"
+        else:
+            fallback_text = base_response
+        
+        return {
+            "text": fallback_text,
+            "suggestions": orchestrator_output.get("suggested_followups", ["Tell me more about this"])[:3],
+            "personality_context": {"fallback": True},
+            "confidence_communicated": confidence_level
+        }
