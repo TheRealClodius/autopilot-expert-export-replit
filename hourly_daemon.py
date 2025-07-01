@@ -18,11 +18,11 @@ async def run_embedding_task():
     try:
         print(f"[{datetime.now()}] Starting scheduled embedding task...")
         
-        # Import and run the embedding function directly
-        from workers.hourly_embedding_worker import run_hourly_embedding_check
+        # Import and run the smart embedding function directly
+        from run_smart_hourly_embedding import run_smart_hourly_embedding
         
-        # Execute the main embedding logic
-        result = await run_hourly_embedding_check()
+        # Execute the smart embedding logic (handles both first gen recovery and incremental)
+        result = await run_smart_hourly_embedding()
         
         print(f"[{datetime.now()}] Embedding task completed successfully")
         print(f"Channels checked: {result.get('channels_checked', 0)}")

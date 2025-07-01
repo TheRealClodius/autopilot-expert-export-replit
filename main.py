@@ -5495,6 +5495,94 @@ async def get_ingestion_status_summary():
             "message": "Failed to get ingestion status"
         }
 
+@app.get("/admin/test-smart-embedding-system")
+async def test_smart_embedding_system():
+    """
+    Test the smart embedding system that handles both first generation and incremental updates.
+    """
+    try:
+        from services.ingestion_state_manager import IngestionStateManager
+        
+        state_manager = IngestionStateManager()
+        status = state_manager.get_comprehensive_status()
+        
+        return {
+            "status": "success",
+            "comprehensive_status": status,
+            "system_explanation": {
+                "current_strategy": status["current_strategy"]["strategy"],
+                "reason": status["current_strategy"]["reason"],
+                "first_gen_complete": status["first_generation"]["is_complete"],
+                "missing_channels": len(status["missing_channels"]),
+                "hourly_daemon_behavior": "Will automatically run first generation recovery if incomplete, otherwise incremental updates"
+            },
+            "recommendations": status["recommendations"]
+        }
+        
+    except Exception as e:
+        logger.error(f"Error testing smart embedding system: {e}")
+        return {
+            "status": "error",
+            "error": str(e),
+            "message": "Failed to test smart embedding system"
+        }
+
+@app.get("/admin/run-smart-embedding-now")
+async def run_smart_embedding_now():
+    """
+    Manually trigger the smart embedding system immediately (same logic as hourly daemon).
+    """
+    try:
+        logger.info("Manually triggering smart embedding system...")
+        
+        # Run the smart embedding script
+        import subprocess
+        import sys
+        process = subprocess.run(
+            [sys.executable, "run_smart_hourly_embedding.py"],
+            capture_output=True,
+            text=True,
+            timeout=1800  # 30 minute timeout
+        )
+        
+        stdout = process.stdout
+        stderr = process.stderr
+        
+        if process.returncode == 0:
+            # Parse results from output
+            lines = stdout.split('\n') if stdout else []
+            result_lines = [line for line in lines if ('COMPLETE!' in line or 'PROGRESS' in line or 
+                           'UPDATE COMPLETE' in line or 'messages embedded' in line)]
+            
+            return {
+                "status": "success",
+                "message": "Smart embedding completed successfully",
+                "output": stdout,
+                "highlights": result_lines,
+                "return_code": process.returncode
+            }
+        else:
+            return {
+                "status": "error",
+                "message": "Smart embedding failed",
+                "error": stderr,
+                "output": stdout,
+                "return_code": process.returncode
+            }
+            
+    except subprocess.TimeoutExpired:
+        return {
+            "status": "timeout",
+            "message": "Smart embedding timed out after 30 minutes"
+        }
+    except Exception as e:
+        logger.error(f"Error running smart embedding: {e}")
+        return {
+            "status": "error",
+            "error": str(e),
+            "message": "Failed to run smart embedding system"
+        }
+
 # Server startup configuration for Cloud Run deployment
 if __name__ == "__main__":
     # Force Redis environment variables to empty to prevent connection attempts
