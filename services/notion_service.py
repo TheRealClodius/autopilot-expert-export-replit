@@ -11,11 +11,11 @@ import logging
 
 try:
     from notion_client import Client
-    from notion_client.errors import APIError
+    from notion_client.errors import APIResponseError
     NOTION_AVAILABLE = True
 except ImportError:
     Client = None
-    APIError = Exception
+    APIResponseError = Exception
     NOTION_AVAILABLE = False
 
 from config import settings
@@ -58,7 +58,7 @@ class NotionService:
             response = self.client.databases.query(database_id=self.database_id, page_size=1)
             logger.info("Notion connection verified successfully")
             return True
-        except APIError as e:
+        except APIResponseError as e:
             logger.error(f"Notion API error during verification: {e}")
             return False
         except Exception as e:
