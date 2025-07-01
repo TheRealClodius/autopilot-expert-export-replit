@@ -22,7 +22,7 @@ logger = logging.getLogger(__name__)
 class PromptLoader:
     """Loads and manages system prompts from YAML configuration file with intelligent caching."""
     
-    def __init__(self, prompts_file: str = "prompts.yaml"):
+    def __init__(self, prompts_file: str = "configs/prompts.yaml"):
         self.prompts_file = Path(prompts_file)
         self._prompts = {}
         self._cache = {}
