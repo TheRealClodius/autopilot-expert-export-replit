@@ -10,8 +10,9 @@ import os
 from datetime import datetime, timedelta
 import traceback
 
-# Add current directory to Python path
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+# Add project root directory to Python path
+project_root = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '..')
+sys.path.insert(0, project_root)
 
 async def run_embedding_task():
     """Run the hourly embedding check task."""

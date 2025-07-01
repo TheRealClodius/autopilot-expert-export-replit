@@ -48,7 +48,7 @@ author = "agent"
 
 [[workflows.workflow.tasks]]
 task = "shell.exec"
-args = "python3 hourly_daemon.py"
+args = "python3 scripts/daemons/hourly_daemon.py"
 
 [[ports]]
 localPort = 5000
