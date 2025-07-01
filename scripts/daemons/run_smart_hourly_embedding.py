@@ -104,7 +104,7 @@ async def run_smart_hourly_embedding():
                             total_messages_embedded += embedded_count
                             
                             # Update first generation state
-                            latest_ts = max(msg.timestamp for msg in processed_messages) if processed_messages else "0"
+                            latest_ts = max(msg["ts"] for msg in processed_messages) if processed_messages else "0"
                             state_manager.update_first_generation_progress(
                                 channel["id"], 
                                 channel["name"],
