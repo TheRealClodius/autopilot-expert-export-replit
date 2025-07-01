@@ -81,7 +81,27 @@ The application is designed for containerized deployment with the following comp
 
 The system uses environment variables for configuration management and supports both development and production environments.
 
+## Development Philosophy
+
+**IMPORTANT RULE: PROMPT-DRIVEN AGENT DEVELOPMENT**
+- Focus on enabling agent intelligence through sophisticated prompts rather than rigid Python functions
+- Prefer flexible LLM reasoning over hardcoded logic wherever possible
+- Use prompts.yaml as the primary configuration for agent behavior and decision-making
+- Implement prompt-driven frameworks that allow agents to adapt and reason contextually
+- Minimize rigid procedural constraints in favor of intelligent reasoning patterns
+
 ## Recent Changes
+
+✅ **July 1, 2025 - ENHANCED ORCHESTRATOR: 5-STEP REASONING FRAMEWORK WITH LEGACY COMPATIBILITY (PRODUCTION READY)**
+- **5-Step Reasoning Framework**: Implemented sophisticated Analyze → Plan → Execute → Observe → Synthesize framework for enhanced intelligence
+- **Recursive Observation Pattern**: Added dynamic replanning capabilities with quality assessment after every tool response
+- **Tool Synergy Enhancement**: Enhanced parallel execution opportunities (Atlassian + Perplexity for comprehensive searches)
+- **Execution Step Tracking**: Intelligent execution state management for future todo tool integration
+- **100% Legacy Compatibility**: Preserved all legacy methods (_analyze_query_and_plan, _execute_plan, _build_state_stack) with internal routing to new framework
+- **prompts.yaml Integration**: Enhanced with sophisticated reasoning framework and tool guidance instead of hardcoded Python logic
+- **Production Safety**: Dual architecture with new intelligence + legacy fallbacks, comprehensive error handling, zero breaking changes
+- **Prompt-Driven Intelligence**: Following new development philosophy - enabling agent through prompts rather than rigid functions
+- **Architecture Status**: All services running correctly (FastAPI, Celery Worker, Celery Beat), all integrations preserved, system ready for production
 
 ✅ **July 1, 2025 - CRITICAL CELERY SERVICES FIXED: HOURLY EMBEDDING AUTOMATION RESTORED (PRODUCTION READY)**
 - **Root Cause Identified**: Celery worker and beat scheduler were not running, preventing scheduled hourly embedding tasks from executing
