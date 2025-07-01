@@ -34,6 +34,10 @@ class NotionService:
             logger.warning("Notion credentials not configured - dashboard features disabled")
             self.client = None
             self.enabled = False
+        elif not NOTION_AVAILABLE:
+            logger.warning("notion-client library not available - dashboard features disabled")
+            self.client = None
+            self.enabled = False
         else:
             try:
                 self.client = Client(auth=self.integration_secret)

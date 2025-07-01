@@ -5062,6 +5062,206 @@ async def test_vector_search_refused():
             "error": str(e)
         }
 
+# Notion Dashboard Admin Endpoints
+
+@app.get("/admin/notion-dashboard-status")
+async def notion_dashboard_status():
+    """Admin endpoint to check Notion dashboard connection and configuration"""
+    try:
+        from services.notion_service import NotionService
+        
+        notion_service = NotionService()
+        
+        if not notion_service.enabled:
+            return {
+                "status": "disabled",
+                "message": "Notion credentials not configured",
+                "configuration": {
+                    "integration_secret_configured": bool(settings.NOTION_INTEGRATION_SECRET),
+                    "database_id_configured": bool(settings.NOTION_DATABASE_ID)
+                }
+            }
+        
+        # Test connection
+        connection_ok = await notion_service.verify_connection()
+        
+        if connection_ok:
+            # Get dashboard stats
+            stats = await notion_service.get_dashboard_stats()
+            
+            return {
+                "status": "connected",
+                "connection": "successful",
+                "database_schema": "verified", 
+                "dashboard_stats": stats
+            }
+        else:
+            return {
+                "status": "connection_failed",
+                "message": "Failed to connect to Notion API or access database"
+            }
+            
+    except Exception as e:
+        logger.error(f"Error checking Notion dashboard status: {e}")
+        return {
+            "status": "error",
+            "error": str(e)
+        }
+
+@app.post("/admin/notion-setup-database")
+async def notion_setup_database():
+    """Admin endpoint to setup the Notion database schema for embedding monitoring"""
+    try:
+        from services.notion_service import NotionService
+        
+        notion_service = NotionService()
+        
+        if not notion_service.enabled:
+            return {
+                "status": "error",
+                "message": "Notion credentials not configured"
+            }
+        
+        # Setup database schema
+        schema_setup = await notion_service.setup_database_schema()
+        
+        if schema_setup:
+            return {
+                "status": "success",
+                "message": "Database schema configured successfully",
+                "schema_features": [
+                    "Run ID tracking",
+                    "Status monitoring (Success/Failed/No New Messages)",
+                    "Channel statistics",
+                    "Performance metrics",
+                    "Error logging",
+                    "Trigger type tracking"
+                ]
+            }
+        else:
+            return {
+                "status": "error", 
+                "message": "Failed to setup database schema"
+            }
+            
+    except Exception as e:
+        logger.error(f"Error setting up Notion database: {e}")
+        return {
+            "status": "error",
+            "error": str(e)
+        }
+
+@app.post("/admin/notion-trigger-embedding")
+async def notion_trigger_embedding():
+    """Admin endpoint to manually trigger embedding check and log to Notion"""
+    try:
+        from workers.hourly_embedding_worker import run_hourly_embedding_check
+        
+        logger.info("Manual embedding trigger initiated from Notion dashboard")
+        
+        # Run the embedding check
+        result = await run_hourly_embedding_check()
+        
+        return {
+            "status": "success",
+            "trigger_type": "Manual via Notion Dashboard",
+            "embedding_result": result,
+            "logged_to_notion": True
+        }
+        
+    except Exception as e:
+        logger.error(f"Error in manual Notion embedding trigger: {e}")
+        return {
+            "status": "error",
+            "error": str(e)
+        }
+
+@app.get("/admin/notion-recent-runs")
+async def notion_recent_runs(limit: int = 10):
+    """Admin endpoint to get recent embedding runs from Notion database"""
+    try:
+        from services.notion_service import NotionService
+        
+        notion_service = NotionService()
+        
+        if not notion_service.enabled:
+            return {
+                "status": "error",
+                "message": "Notion service not enabled"
+            }
+        
+        recent_runs = await notion_service.get_recent_runs(limit=limit)
+        
+        return {
+            "status": "success",
+            "recent_runs": recent_runs,
+            "count": len(recent_runs),
+            "limit": limit
+        }
+        
+    except Exception as e:
+        logger.error(f"Error getting recent runs from Notion: {e}")
+        return {
+            "status": "error",
+            "error": str(e)
+        }
+
+@app.get("/admin/notion-dashboard-summary") 
+async def notion_dashboard_summary():
+    """Admin endpoint to get comprehensive dashboard summary for Notion integration"""
+    try:
+        from services.notion_service import NotionService
+        from workers.hourly_embedding_worker import HourlyEmbeddingTask
+        
+        notion_service = NotionService()
+        task = HourlyEmbeddingTask()
+        
+        # Get Notion service status
+        notion_status = {
+            "enabled": notion_service.enabled,
+            "connection": "unknown"
+        }
+        
+        if notion_service.enabled:
+            connection_ok = await notion_service.verify_connection()
+            notion_status["connection"] = "connected" if connection_ok else "failed"
+        
+        # Get hourly embedding state
+        state = task.load_state()
+        
+        # Get dashboard stats if available
+        dashboard_stats = {}
+        if notion_service.enabled:
+            dashboard_stats = await notion_service.get_dashboard_stats()
+        
+        return {
+            "status": "success",
+            "notion_integration": notion_status,
+            "embedding_pipeline": {
+                "channels_monitored": len(task.channels),
+                "channels": [ch["name"] for ch in task.channels],
+                "state_file_exists": bool(state),
+                "last_check_times": {
+                    ch["name"]: state.get(ch["id"], {}).get("last_check_ts", "Never")
+                    for ch in task.channels
+                }
+            },
+            "dashboard_stats": dashboard_stats,
+            "admin_endpoints": [
+                "/admin/notion-dashboard-status",
+                "/admin/notion-setup-database", 
+                "/admin/notion-trigger-embedding",
+                "/admin/notion-recent-runs"
+            ]
+        }
+        
+    except Exception as e:
+        logger.error(f"Error getting Notion dashboard summary: {e}")
+        return {
+            "status": "error",
+            "error": str(e)
+        }
+
 # Server startup configuration for Cloud Run deployment
 if __name__ == "__main__":
     # Force Redis environment variables to empty to prevent connection attempts

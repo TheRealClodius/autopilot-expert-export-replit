@@ -286,6 +286,44 @@ def hourly_embedding_check(self):
         results["duration_seconds"] = duration.total_seconds()
         results["end_time"] = end_time.isoformat()
         
+        # Determine overall status
+        if results["errors"]:
+            overall_status = "Failed" if len(results["errors"]) == len(results["channel_results"]) else "Partial Success"
+        elif results["channels_with_new_messages"] > 0:
+            overall_status = "Success"
+        else:
+            overall_status = "No New Messages"
+        
+        # Log to Notion dashboard
+        try:
+            notion_service = NotionService()
+            if notion_service.enabled:
+                notion_data = {
+                    "status": overall_status,
+                    "channels_checked": results["channels_checked"],
+                    "new_messages_found": sum(1 for r in results["channel_results"] if r.get("new_messages_found", False)),
+                    "messages_embedded": results["total_messages_embedded"],
+                    "duration_seconds": results["duration_seconds"],
+                    "trigger_type": "Hourly Auto",
+                    "channel_details": results["channel_results"],
+                    "execution_details": {
+                        "start_time": results["check_time"],
+                        "end_time": results["end_time"],
+                        "channels_processed": results["channels_checked"],
+                        "total_embedded": results["total_messages_embedded"]
+                    }
+                }
+                
+                if results["errors"]:
+                    notion_data["errors"] = "; ".join(results["errors"])
+                
+                await notion_service.log_embedding_run(notion_data)
+                logger.info("Embedding run logged to Notion dashboard")
+            else:
+                logger.warning("Notion service not enabled - skipping dashboard logging")
+        except Exception as e:
+            logger.error(f"Failed to log to Notion dashboard: {e}")
+        
         if results["channels_with_new_messages"] > 0:
             logger.info(f"Hourly check complete: {results['total_messages_embedded']} messages embedded from {results['channels_with_new_messages']} channels")
         else:
