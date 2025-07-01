@@ -56,6 +56,11 @@ class ClientAgent:
             orchestrator_suggestions = orchestrator_output.get("suggested_followups", [])
             execution_summary = orchestrator_output.get("execution_summary", {})
             
+            # Check if we have sufficient content for enhancement
+            if not base_response or len(base_response.strip()) < 10:
+                logger.warning(f"Base response too short ({len(base_response)} chars), using fallback")
+                return await self._create_fallback_response(orchestrator_output, message_context)
+            
             # Analyze context for personality adaptation
             context_analysis = self._analyze_context(message_context, confidence_level, execution_summary)
             
@@ -494,20 +499,41 @@ class ClientAgent:
         """
         Create a graceful fallback response when enhancement fails.
         """
-        base_response = orchestrator_output.get("synthesized_response", "I found some information but had trouble presenting it clearly.")
+        base_response = orchestrator_output.get("synthesized_response", "")
         confidence_level = orchestrator_output.get("confidence_level", "low")
         
         user = message_context.get("user", {})
         first_name = user.get("first_name", "")
+        context = message_context.get("context", {})
         
-        if confidence_level == "high" and first_name:
-            fallback_text = f"{first_name}, {base_response}"
+        # Create a helpful fallback based on context
+        if not base_response or len(base_response.strip()) < 10:
+            # Create a contextual greeting/response based on the query
+            query = message_context.get("query", "").lower()
+            
+            if any(word in query for word in ["hello", "hi", "hey", "test", "mention"]):
+                fallback_text = f"Hi{' ' + first_name if first_name else ''}! I'm your Autopilot assistant. I can help you with project information, documentation searches, and automation guidance. What would you like to know about?"
+            else:
+                fallback_text = f"I'm processing your request about '{message_context.get('query', 'your question')[:50]}...' but encountered some technical difficulties. Could you try rephrasing your question or be more specific about what you're looking for?"
         else:
-            fallback_text = base_response
+            # Use the base response if it exists
+            if confidence_level == "high" and first_name:
+                fallback_text = f"{first_name}, {base_response}"
+            else:
+                fallback_text = base_response
+        
+        # Provide helpful suggestions based on context
+        default_suggestions = [
+            "What can Autopilot help me with?",
+            "Search for project documentation",
+            "Find recent team discussions"
+        ]
+        
+        suggestions = orchestrator_output.get("suggested_followups", default_suggestions)[:3]
         
         return {
             "text": fallback_text,
-            "suggestions": orchestrator_output.get("suggested_followups", ["Tell me more about this"])[:3],
-            "personality_context": {"fallback": True},
+            "suggestions": suggestions,
+            "personality_context": {"fallback": True, "context_aware": True},
             "confidence_communicated": confidence_level
         }
