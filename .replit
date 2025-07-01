@@ -18,15 +18,15 @@ args = "FastAPI Server"
 
 [[workflows.workflow.tasks]]
 task = "workflow.run"
-args = "Celery Worker"
-
-[[workflows.workflow.tasks]]
-task = "workflow.run"
-args = "Celery Beat"
-
-[[workflows.workflow.tasks]]
-task = "workflow.run"
 args = "Redis Server"
+
+[[workflows.workflow.tasks]]
+task = "workflow.run"
+args = "Celery Worker Redis"
+
+[[workflows.workflow.tasks]]
+task = "workflow.run"
+args = "Celery Beat Redis"
 
 [[workflows.workflow]]
 name = "FastAPI Server"
@@ -38,22 +38,6 @@ args = "python main.py"
 waitForPort = 5000
 
 [[workflows.workflow]]
-name = "Celery Worker"
-author = "agent"
-
-[[workflows.workflow.tasks]]
-task = "shell.exec"
-args = "REDIS_URL=redis://localhost:6379/0 celery -A celery_app worker --loglevel=info --queues=default,ingestion,summarization,processing,priority"
-
-[[workflows.workflow]]
-name = "Celery Beat"
-author = "agent"
-
-[[workflows.workflow.tasks]]
-task = "shell.exec"
-args = "REDIS_URL=redis://localhost:6379/0 celery -A celery_app beat --loglevel=info"
-
-[[workflows.workflow]]
 name = "Redis Server"
 author = "agent"
 
@@ -61,6 +45,22 @@ author = "agent"
 task = "shell.exec"
 args = "redis-server --port 6379"
 waitForPort = 6379
+
+[[workflows.workflow]]
+name = "Celery Worker Redis"
+author = "agent"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "REDIS_URL=redis://localhost:6379/0 celery -A celery_app worker --loglevel=info --queues=default,ingestion,summarization,processing,priority"
+
+[[workflows.workflow]]
+name = "Celery Beat Redis"
+author = "agent"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "REDIS_URL=redis://localhost:6379/0 celery -A celery_app beat --loglevel=info"
 
 [[ports]]
 localPort = 5000
