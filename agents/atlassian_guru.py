@@ -68,32 +68,12 @@ class AtlassianToolbelt:
                 logger.warning(f"MCP server health check failed: {health_response.status_code}")
                 return False
             
-            # Initialize MCP session
-            init_request = {
-                "jsonrpc": "2.0",
-                "id": 1,
-                "method": "initialize",
-                "params": {
-                    "protocolVersion": "2024-11-05",
-                    "capabilities": {
-                        "tools": {}
-                    },
-                    "clientInfo": {
-                        "name": "atlassian-guru",
-                        "version": "1.0.0"
-                    }
-                }
-            }
+            logger.info("MCP server health check passed, skipping initialize method (not supported)")
             
-            response = await self.http_client.post(f"{self.mcp_server_url}/mcp", json=init_request)
-            if response.status_code != 200:
-                logger.error(f"MCP initialization failed: {response.status_code} - {response.text}")
-                return False
-            
-            # Discover available tools
+            # Discover available tools directly (skip initialize since this server doesn't support it)
             tools_request = {
                 "jsonrpc": "2.0",
-                "id": 2,
+                "id": 1,
                 "method": "tools/list",
                 "params": {}
             }
@@ -104,6 +84,10 @@ class AtlassianToolbelt:
                 if "result" in tools_data and "tools" in tools_data["result"]:
                     self.available_tools = tools_data["result"]["tools"]
                     logger.info(f"Discovered {len(self.available_tools)} tools from MCP server")
+                    
+                    # Log available Atlassian tools
+                    atlassian_tools = [t for t in self.available_tools if any(keyword in t.get('name', '').lower() for keyword in ['jira', 'confluence', 'atlassian'])]
+                    logger.info(f"Found {len(atlassian_tools)} Atlassian tools: {[t.get('name') for t in atlassian_tools]}")
                     
                     # Get dynamic prompt if available
                     await self._fetch_dynamic_prompt()
