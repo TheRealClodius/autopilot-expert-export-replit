@@ -160,11 +160,7 @@ class NotionService:
                 }
             }
             
-            # Add errors if present
-            if run_data.get("errors"):
-                properties["Errors"] = {
-                    "rich_text": [{"text": {"content": str(run_data["errors"])}}]
-                }
+            # Note: Skip Errors field - not present in database schema
             
             # Create page in database
             response = self.client.pages.create(

@@ -243,8 +243,7 @@ async def run_smart_hourly_embedding():
             "status": status,
             "channels_checked": channels_processed,
             "messages_embedded": total_messages_embedded,
-            "duration_seconds": int(duration),
-            "errors": f"Strategy: {strategy['strategy']}. " + ("; ".join(errors) if errors else "No errors")
+            "duration_seconds": int(duration)
         }
         
         page_id = await notion_service.log_embedding_run(run_data)
