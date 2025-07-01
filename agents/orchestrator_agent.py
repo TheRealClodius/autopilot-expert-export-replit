@@ -18,7 +18,7 @@ from tools.perplexity_search import PerplexitySearchTool
 from tools.outlook_meeting import OutlookMeetingTool
 # AtlassianTool replaced by AtlassianToolbelt
 from agents.atlassian_guru import AtlassianToolbelt
-from agents.client_agent_enhanced import ClientAgent
+from agents.client_agent import ClientAgent
 from services.memory_service import MemoryService
 from services.token_manager import TokenManager
 from services.entity_store import EntityStore
@@ -129,6 +129,7 @@ class OrchestratorAgent:
                 logger.info(f"Orchestrator completed 5-step process in {total_time:.2f}s with {len(self.current_execution_steps)} steps")
                 
 <<<<<<< HEAD
+<<<<<<< HEAD
                 # Convert new clean format to legacy format for compatibility
                 return await self._convert_clean_output_to_legacy_format(final_clean_output, message)
 =======
@@ -138,6 +139,9 @@ class OrchestratorAgent:
                     return final_response
                 
                 # Fallback to legacy format conversion for compatibility
+=======
+                # Convert new clean format to legacy format for compatibility
+>>>>>>> cc5457a (Restored to 'd182b24802ffab7213cf442331f2d182acee7568')
                 return self._convert_clean_output_to_legacy_format(final_clean_output, message)
 >>>>>>> 5ce81f8 (Integrate refined responses and contextual awareness for enhanced user interactions)
             
@@ -379,6 +383,7 @@ class OrchestratorAgent:
     # ============================================================================
 
 <<<<<<< HEAD
+<<<<<<< HEAD
     async def _convert_clean_output_to_legacy_format(self, clean_output: Dict[str, Any], message: ProcessedMessage) -> Dict[str, Any]:
 =======
     async def _use_enhanced_client_agent_new(self, clean_output: Dict[str, Any], message: ProcessedMessage) -> Optional[Dict[str, Any]]:
@@ -429,6 +434,8 @@ class OrchestratorAgent:
             logger.error(f"Error using enhanced client agent: {e}")
             return None
 
+=======
+>>>>>>> cc5457a (Restored to 'd182b24802ffab7213cf442331f2d182acee7568')
     def _convert_clean_output_to_legacy_format(self, clean_output: Dict[str, Any], message: ProcessedMessage) -> Dict[str, Any]:
 >>>>>>> 5ce81f8 (Integrate refined responses and contextual awareness for enhanced user interactions)
         """NEW: Convert new clean output format to legacy format for compatibility"""
