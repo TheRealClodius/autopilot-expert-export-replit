@@ -59,12 +59,12 @@ class OrchestratorAgent:
     async def discover_and_update_tools(self) -> List[Dict[str, Any]]:
         """Discover available tools from MCP server and update tool list"""
         try:
-            tools = await self.atlassian_tool.discover_available_tools()
-            self.discovered_tools = tools
+            capabilities = await self.atlassian_guru.get_capabilities()
+            self.discovered_tools = capabilities.get("available_tools", [])
             logger.info(
-                f"Updated tool list with {len(tools)} total tools, {len(self.atlassian_tool.available_tools)} Atlassian tools"
+                f"Updated tool list with {len(self.discovered_tools)} total tools from AtlassianToolbelt"
             )
-            return tools
+            return self.discovered_tools
         except Exception as e:
             logger.warning(f"Failed to discover tools: {e}")
             return []
@@ -1015,8 +1015,8 @@ Current Query: "{message.text}"
             # Direct call to Atlassian tool using working pattern
             import time
             start_time = time.time()
-            result = await self.atlassian_tool.execute_mcp_tool(
-                mcp_tool, arguments)
+            result = await self.atlassian_guru.execute_task(
+                f"Execute {mcp_tool} with arguments: {arguments}")
             duration_ms = (time.time() - start_time) * 1000
 
             # Log completed MCP operation to LangSmith
