@@ -92,6 +92,21 @@ The system uses environment variables for configuration management and supports 
 
 ## Recent Changes
 
+✅ **July 1, 2025 - 1-YEAR MESSAGE FILTER FOR INITIAL EMBEDDING IMPLEMENTED: SCOPED HISTORICAL DATA INGESTION (PRODUCTION READY)**
+- **Enhanced Age Filtering**: Added max_age_days parameter (default: 365 days) to enhanced_slack_connector.py for controlled historical data scope
+- **Smart Date Limitation**: System automatically caps start_date to 1-year maximum, preventing excessive historical data processing during initial embedding
+- **Intelligent Default Behavior**: Default extraction now uses 1-year lookback instead of unlimited history, making initial embedding manageable
+- **Scope Management**: Initial embedding processes last 365 days of messages only, while hourly updates continue processing all new messages
+- **Production Script**: Created run_initial_historical_embedding.py with proper 1-year filtering and comprehensive logging
+- **Admin Integration**: Added /admin/initial-historical-embedding endpoint for triggering bulk historical embedding with 1-year scope
+- **Test Validation**: Created test_one_year_filter.py confirming proper date filtering, age limits, and start date capping functionality
+- **Performance Optimization**: 1-year limit significantly reduces API calls and processing time for initial embedding while maintaining comprehensive recent data coverage
+- **Architecture Separation**: Clear distinction between initial bulk embedding (1-year scope) and ongoing hourly updates (all new messages)
+- **User Impact**: Manageable initial embedding process that focuses on recent relevant conversations while avoiding overwhelming historical data processing
+- **Files Created**: run_initial_historical_embedding.py (bulk processing), test_one_year_filter.py (validation testing)
+- **Files Enhanced**: services/enhanced_slack_connector.py (age filtering), main.py (admin endpoint)
+- **Production Status**: 1-year message filter operational and tested - ready for scoped initial historical embedding with proper age limits
+
 ✅ **July 1, 2025 - ENHANCED SLACK DATA EXTRACTION SYSTEM: COMPLETE THREAD RELATIONSHIPS & METADATA (PRODUCTION READY)**
 - **Enhanced Thread Nesting**: Implemented sophisticated thread relationship extraction with proper threadID → messageID connections using enhanced_slack_connector.py
 - **Rich Metadata Extraction**: Added comprehensive user info extraction (names, emails), channel metadata (purpose, settings), and proper timestamp handling

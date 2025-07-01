@@ -5274,6 +5274,66 @@ async def notion_dashboard_summary():
             "error": str(e)
         }
 
+@app.post("/admin/initial-historical-embedding")
+async def initial_historical_embedding():
+    """Admin endpoint to trigger initial historical embedding with 1-year limit"""
+    try:
+        logger.info("Admin triggered initial historical embedding with 1-year limit")
+        
+        # Import the function from our script
+        import subprocess
+        import sys
+        
+        # Run the initial embedding script
+        process = subprocess.Popen(
+            [sys.executable, "run_initial_historical_embedding.py"],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True
+        )
+        
+        stdout, stderr = process.communicate(timeout=1800)  # 30-minute timeout
+        
+        if process.returncode == 0:
+            # Parse the output to extract success metrics
+            lines = stdout.strip().split('\n')
+            success_line = [line for line in lines if line.startswith('✅ SUCCESS:')]
+            
+            return {
+                "status": "success",
+                "message": "Initial historical embedding completed successfully",
+                "output": stdout,
+                "details": success_line[0] if success_line else "Embedding completed",
+                "script_execution": {
+                    "return_code": process.returncode,
+                    "duration": "See output for details"
+                }
+            }
+        else:
+            return {
+                "status": "error",
+                "message": "Initial historical embedding failed",
+                "error": stderr,
+                "output": stdout,
+                "script_execution": {
+                    "return_code": process.returncode
+                }
+            }
+            
+    except subprocess.TimeoutExpired:
+        return {
+            "status": "timeout",
+            "message": "Initial embedding process timed out after 30 minutes",
+            "note": "This is normal for large amounts of historical data. The process may still be running in the background."
+        }
+    except Exception as e:
+        logger.error(f"Error in initial historical embedding: {e}")
+        return {
+            "status": "error",
+            "error": str(e),
+            "message": "Failed to start initial historical embedding process"
+        }
+
 # Server startup configuration for Cloud Run deployment
 if __name__ == "__main__":
     # Force Redis environment variables to empty to prevent connection attempts
