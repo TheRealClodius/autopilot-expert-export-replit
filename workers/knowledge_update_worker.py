@@ -12,10 +12,10 @@ from celery import Celery
 from celery.schedules import crontab
 
 from config import settings
-from services.slack_connector import SlackConnector
-from services.data_processor import DataProcessor
-from services.embedding_service import EmbeddingService
-from services.memory_service import MemoryService
+from services.external_apis.slack_connector import SlackConnector
+from services.processing.data_processor import DataProcessor
+from services.data.embedding_service import EmbeddingService
+from services.core.memory_service import MemoryService
 from celery_app import celery_app
 
 logger = logging.getLogger(__name__)

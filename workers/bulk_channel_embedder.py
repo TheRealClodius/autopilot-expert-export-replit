@@ -16,8 +16,8 @@ from slack_sdk.errors import SlackApiError
 from celery import Task
 
 from config import settings
-from services.embedding_service import EmbeddingService
-from services.data_processor import DataProcessor
+from services.data.embedding_service import EmbeddingService
+from services.processing.data_processor import DataProcessor
 from models.schemas import ProcessedMessage
 from celery_app import celery_app
 

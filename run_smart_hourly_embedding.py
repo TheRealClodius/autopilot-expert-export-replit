@@ -337,7 +337,7 @@ async def _patient_incremental_check(channel, last_ts, oldest_ts, data_processor
                 logger.info(f"Patient retry {retry_count}/{max_retries}, waiting {wait_time}s")
                 await asyncio.sleep(wait_time)
             
-            from services.enhanced_slack_connector import EnhancedSlackConnector
+            from services.external_apis.enhanced_slack_connector import EnhancedSlackConnector
             connector = EnhancedSlackConnector()
             
             response = await connector.client.conversations_history(

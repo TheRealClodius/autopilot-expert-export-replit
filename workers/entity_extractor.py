@@ -12,8 +12,8 @@ from datetime import datetime
 from celery import Task
 from celery_app import celery_app
 from config import settings
-from services.memory_service import MemoryService
-from services.entity_store import EntityStore, Entity
+from services.core.memory_service import MemoryService
+from services.data.entity_store import EntityStore, Entity
 
 # Import Gemini for enhanced entity extraction
 try:

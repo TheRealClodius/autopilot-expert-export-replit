@@ -190,7 +190,7 @@ class SlackGateway:
                 # Track thread participation if this was a threaded message
                 if thread_ts and self.bot_user_id:
                     try:
-                        from services.memory_service import MemoryService
+                        from services.core.memory_service import MemoryService
                         memory_service = MemoryService()
                         await memory_service.track_thread_participation(channel_id, thread_ts, self.bot_user_id)
                         logger.debug(f"Tracked bot participation in thread {thread_ts}")
@@ -422,7 +422,7 @@ class SlackGateway:
         """Check if the bot has participated in this thread"""
         try:
             # First check memory service for cached thread participation
-            from services.memory_service import MemoryService
+            from services.core.memory_service import MemoryService
             memory_service = MemoryService()
             
             thread_key = f"thread_participation:{channel_id}:{thread_ts}"

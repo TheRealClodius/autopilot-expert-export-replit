@@ -7,7 +7,7 @@ import logging
 import time
 from typing import List, Dict, Any, Optional
 from config import settings
-from services.trace_manager import trace_manager
+from services.core.trace_manager import trace_manager
 
 logger = logging.getLogger(__name__)
 

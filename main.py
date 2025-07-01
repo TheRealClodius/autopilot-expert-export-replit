@@ -380,7 +380,7 @@ async def process_slack_message(event_data: SlackEvent):
             
             if progress_updater:
                 # Import progress tracker locally to avoid circular imports
-                from services.progress_tracker import ProgressTracker
+                from services.processing.progress_tracker import ProgressTracker
                 
                 # Create progress tracker with Slack update callback
                 progress_tracker = ProgressTracker(update_callback=progress_updater)
@@ -499,8 +499,8 @@ async def trigger_manual_ingestion():
     """Admin endpoint to manually trigger data ingestion (bypasses Celery)"""
     try:
         # Direct ingestion without Celery dependency
-        from services.slack_connector import SlackConnector
-        from services.data_processor import DataProcessor
+        from services.external_apis.slack_connector import SlackConnector
+        from services.processing.data_processor import DataProcessor
         from datetime import datetime, timedelta
         
         logger.info("Starting direct Slack data ingestion...")
@@ -776,7 +776,7 @@ async def api_test():
     
     # Test 4: Redis Connection
     try:
-        from services.memory_service import MemoryService
+        from services.core.memory_service import MemoryService
         memory_service = MemoryService()
         
         # Test basic functionality
@@ -845,7 +845,7 @@ async def pinecone_status():
 async def ingest_test_document():
     """Admin endpoint to ingest the Scandinavian furniture test document"""
     try:
-        from services.document_ingestion import DocumentIngestionService
+        from services.processing.document_ingestion import DocumentIngestionService
         
         ingestion_service = DocumentIngestionService()
         
@@ -953,12 +953,12 @@ async def bulk_embedding_status(task_id: str):
 async def embedding_status():
     """Get current channel embedding status."""
     try:
-        from services.channel_embedding_scheduler import get_embedding_status
+        from services.processing.channel_embedding_scheduler import get_embedding_status
         
         status = get_embedding_status()
         
         # Add vector database stats
-        from services.embedding_service import EmbeddingService
+        from services.data.embedding_service import EmbeddingService
         embedding_service = EmbeddingService()
         
         try:
@@ -991,7 +991,7 @@ async def scheduled_embedding_update(
         force_full_refresh: Force full refresh for smart mode
     """
     try:
-        from services.channel_embedding_scheduler import (
+        from services.processing.channel_embedding_scheduler import (
             schedule_smart_update, 
             schedule_incremental_update, 
             schedule_full_refresh
@@ -1132,7 +1132,7 @@ async def reset_hourly_embedding_state():
 async def search_test_content(query: str = "Scandinavian design principles"):
     """Admin endpoint to search test content in Pinecone"""
     try:
-        from services.document_ingestion import DocumentIngestionService
+        from services.processing.document_ingestion import DocumentIngestionService
         
         ingestion_service = DocumentIngestionService()
         
@@ -1153,7 +1153,7 @@ async def search_test_content(query: str = "Scandinavian design principles"):
 async def cleanup_test_data():
     """Admin endpoint to clean up test data from Pinecone"""
     try:
-        from services.document_ingestion import DocumentIngestionService
+        from services.processing.document_ingestion import DocumentIngestionService
         
         ingestion_service = DocumentIngestionService()
         
@@ -1169,7 +1169,7 @@ async def cleanup_test_data():
 async def purge_vector_index():
     """Admin endpoint to completely purge all vectors from Pinecone index"""
     try:
-        from services.embedding_service import EmbeddingService
+        from services.data.embedding_service import EmbeddingService
         
         embedding_service = EmbeddingService()
         
@@ -1199,9 +1199,9 @@ async def ingest_channel_conversations(
         sample_size: Maximum number of messages to process for testing (default: 50)
     """
     try:
-        from services.slack_connector import SlackConnector
-        from services.data_processor import DataProcessor
-        from services.embedding_service import EmbeddingService
+        from services.external_apis.slack_connector import SlackConnector
+        from services.processing.data_processor import DataProcessor
+        from services.data.embedding_service import EmbeddingService
         from datetime import datetime, timedelta
         
         logger.info(f"Starting channel ingestion for {channel_id}")
@@ -1295,9 +1295,9 @@ async def purge_and_reingest_channel(
         sample_size: Maximum number of messages to process for testing (default: 50)
     """
     try:
-        from services.embedding_service import EmbeddingService
-        from services.slack_connector import SlackConnector
-        from services.data_processor import DataProcessor
+        from services.data.embedding_service import EmbeddingService
+        from services.external_apis.slack_connector import SlackConnector
+        from services.processing.data_processor import DataProcessor
         from datetime import datetime, timedelta
         
         logger.info("=== STARTING COMPLETE VECTOR STORAGE REBUILD ===")
@@ -1455,7 +1455,7 @@ async def orchestrator_test(query: str = "What's the latest update on the UiPath
     try:
         from agents.orchestrator_agent import OrchestratorAgent
         from models.schemas import ProcessedMessage
-        from services.memory_service import MemoryService
+        from services.core.memory_service import MemoryService
         from datetime import datetime
         
         # Initialize components
@@ -1697,7 +1697,7 @@ async def test_conversation_memory():
 async def channel_diagnostic():
     """Admin endpoint to diagnose channel access and permissions"""
     try:
-        from services.slack_connector import SlackConnector
+        from services.external_apis.slack_connector import SlackConnector
         
         slack_connector = SlackConnector()
         channels = settings.get_monitored_channels()
@@ -1762,7 +1762,7 @@ async def channel_diagnostic():
 async def list_workspace_channels():
     """Admin endpoint to list all accessible channels in the workspace"""
     try:
-        from services.slack_connector import SlackConnector
+        from services.external_apis.slack_connector import SlackConnector
         
         slack_connector = SlackConnector()
         
@@ -1837,7 +1837,7 @@ async def test_progress_events():
     from datetime import datetime
     
     try:
-        from services.progress_tracker import ProgressTracker, emit_thinking, emit_searching, emit_processing, emit_generating, emit_error, emit_warning, emit_retry, emit_reasoning, emit_considering, emit_analyzing
+        from services.processing.progress_tracker import ProgressTracker, emit_thinking, emit_searching, emit_processing, emit_generating, emit_error, emit_warning, emit_retry, emit_reasoning, emit_considering, emit_analyzing
         import asyncio
         
         # Create a list to capture progress updates
@@ -1906,7 +1906,7 @@ async def test_progress_events():
 async def test_perplexity_slack_integration():
     """Admin endpoint to test complete Perplexity Slack integration including progress tracking"""
     try:
-        from services.progress_tracker import ProgressTracker
+        from services.processing.progress_tracker import ProgressTracker
         import time
         
         # Capture Slack-style progress messages
@@ -2585,7 +2585,7 @@ async def test_outlook_meeting():
         from tools.outlook_meeting import OutlookMeetingTool
         from agents.orchestrator_agent import OrchestratorAgent
         from models.schemas import ProcessedMessage
-        from services.memory_service import MemoryService
+        from services.core.memory_service import MemoryService
         from datetime import datetime, timedelta
         import time
         
@@ -2809,7 +2809,7 @@ async def test_timing_metrics():
             timing_events.append((timestamp, message))
         
         # Initialize services for testing
-        from services.progress_tracker import ProgressTracker
+        from services.processing.progress_tracker import ProgressTracker
         from agents.orchestrator_agent import OrchestratorAgent
         
         # Create test message simulating user input
@@ -2911,7 +2911,7 @@ async def test_analysis_traces():
     try:
         from models.schemas import ProcessedMessage
         from datetime import datetime
-        from services.trace_manager import trace_manager
+        from services.core.trace_manager import trace_manager
         
         # Start a conversation trace for visibility
         conversation_id = await trace_manager.start_conversation_session(
@@ -2979,7 +2979,7 @@ async def test_tool_results_flow():
     try:
         from agents.orchestrator_agent import OrchestratorAgent
         from models.schemas import ProcessedMessage
-        from services.memory_service import MemoryService
+        from services.core.memory_service import MemoryService
         
         # Initialize components
         memory_service = MemoryService()
@@ -3344,7 +3344,7 @@ async def test_atlassian_integration():
     try:
         from agents.orchestrator_agent import OrchestratorAgent
         from models.schemas import ProcessedMessage
-        from services.memory_service import MemoryService
+        from services.core.memory_service import MemoryService
         
         # Initialize components
         memory_service = MemoryService()
@@ -3561,7 +3561,7 @@ async def test_streaming_reasoning(query: str = "How should I approach solving a
             logger.info(f"PROGRESS UPDATE: {message}")
         
         # Create progress tracker with mock updater
-        from services.progress_tracker import ProgressTracker, StreamingReasoningEmitter
+        from services.processing.progress_tracker import ProgressTracker, StreamingReasoningEmitter
         progress_tracker = ProgressTracker(update_callback=mock_slack_updater)
         
         # Create streaming reasoning emitter
@@ -4103,8 +4103,8 @@ async def test_hybrid_memory():
 async def test_precise_token_management():
     """Test the new precise token management system with tiktoken vs character-based estimation"""
     try:
-        from services.token_manager import TokenManager
-        from services.memory_service import MemoryService
+        from services.data.token_manager import TokenManager
+        from services.core.memory_service import MemoryService
         from agents.orchestrator_agent import OrchestratorAgent
         import uuid
         
@@ -4308,7 +4308,7 @@ async def test_precise_token_management():
 async def test_entity_extraction():
     """Test the new entity extraction and structured memory system"""
     try:
-        from services.entity_store import EntityStore, Entity
+        from services.data.entity_store import EntityStore, Entity
         from workers.entity_extractor import extract_entities_from_conversation
         
         memory_service = MemoryService()
@@ -4447,7 +4447,7 @@ async def test_entity_deduplication():
     try:
         # Import the worker task class for testing
         from workers.entity_extractor import EntityExtractionTask
-        from services.entity_store import Entity
+        from services.data.entity_store import Entity
         
         # Create a test task instance
         task = EntityExtractionTask()
@@ -4595,7 +4595,7 @@ async def test_gemini_json_retry():
         
         # Initialize entity extraction task
         from workers.entity_extractor import EntityExtractionTask
-        from services.entity_store import EntityStore
+        from services.data.entity_store import EntityStore
         
         # Use initialized memory service from global scope
         test_memory_service = globals().get('memory_service')
@@ -4742,8 +4742,8 @@ async def test_relevance_score_guidance():
     """Test that orchestrator properly uses entity relevance scores for decision making"""
     try:
         from agents.orchestrator_agent import OrchestratorAgent
-        from services.memory_service import MemoryService
-        from services.entity_store import EntityStore, Entity
+        from services.core.memory_service import MemoryService
+        from services.data.entity_store import EntityStore, Entity
         from models.schemas import ProcessedMessage
         import time
         
@@ -4958,7 +4958,7 @@ async def test_vector_search_refused():
     """Test why orchestrator might be refusing vector search"""
     try:
         from agents.orchestrator_agent import OrchestratorAgent
-        from services.memory_service import MemoryService
+        from services.core.memory_service import MemoryService
         from models.schemas import ProcessedMessage
         
         memory_service = MemoryService()
@@ -5079,7 +5079,7 @@ async def test_vector_search_refused():
 async def notion_dashboard_status():
     """Admin endpoint to check Notion dashboard connection and configuration"""
     try:
-        from services.notion_service import NotionService
+        from services.external_apis.notion_service import NotionService
         
         notion_service = NotionService()
         
@@ -5123,7 +5123,7 @@ async def notion_dashboard_status():
 async def notion_setup_database():
     """Admin endpoint to setup the Notion database schema for embedding monitoring"""
     try:
-        from services.notion_service import NotionService
+        from services.external_apis.notion_service import NotionService
         
         notion_service = NotionService()
         
@@ -5191,7 +5191,7 @@ async def notion_trigger_embedding():
 async def notion_recent_runs(limit: int = 10):
     """Admin endpoint to get recent embedding runs from Notion database"""
     try:
-        from services.notion_service import NotionService
+        from services.external_apis.notion_service import NotionService
         
         notion_service = NotionService()
         
@@ -5221,7 +5221,7 @@ async def notion_recent_runs(limit: int = 10):
 async def notion_dashboard_summary():
     """Admin endpoint to get comprehensive dashboard summary for Notion integration"""
     try:
-        from services.notion_service import NotionService
+        from services.external_apis.notion_service import NotionService
         from workers.hourly_embedding_worker import HourlyEmbeddingTask
         
         notion_service = NotionService()
@@ -5396,7 +5396,7 @@ async def check_slack_rate_limit_status():
     Check current Slack API rate limit status by making a minimal API call.
     """
     try:
-        from services.enhanced_slack_connector import EnhancedSlackConnector
+        from services.external_apis.enhanced_slack_connector import EnhancedSlackConnector
         connector = EnhancedSlackConnector()
         
         # Try a minimal API call to check rate limit status
@@ -5448,8 +5448,8 @@ async def get_ingestion_status_summary():
     Get comprehensive status of the ingestion pipeline and current vector index state.
     """
     try:
-        from services.embedding_service import EmbeddingService
-        from services.notion_service import NotionService
+        from services.data.embedding_service import EmbeddingService
+        from services.external_apis.notion_service import NotionService
         
         embedding_service = EmbeddingService()
         notion_service = NotionService()
@@ -5501,7 +5501,7 @@ async def test_smart_embedding_system():
     Test the smart embedding system that handles both first generation and incremental updates.
     """
     try:
-        from services.ingestion_state_manager import IngestionStateManager
+        from services.processing.ingestion_state_manager import IngestionStateManager
         
         state_manager = IngestionStateManager()
         status = state_manager.get_comprehensive_status()

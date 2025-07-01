@@ -12,7 +12,7 @@ from datetime import datetime
 from celery import Task
 from celery_app import celery_app
 from config import settings
-from services.memory_service import MemoryService
+from services.core.memory_service import MemoryService
 
 # Import Gemini for summarization
 try:
