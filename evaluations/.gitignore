@@ -1,0 +1,13 @@
+# Evaluation result files - generated during test runs
+test_results_*.json
+evaluation_results_*.json
+simple_test_result_*.json
+
+# Python cache files
+__pycache__/
+*.pyc
+*.pyo
+
+# Temporary files
+*.tmp
+*.temp 

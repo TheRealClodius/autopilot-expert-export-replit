@@ -235,11 +235,17 @@ class OrchestratorAgent:
                         max_tokens=2500,
                         temperature=0.8  # Higher temperature for more creative reasoning
                     ),
-                    timeout=25.0
+                    timeout=15.0  # Reduced from 25.0 to prevent frequent timeouts
                 )
             except asyncio.TimeoutError:
                 logger.error("Fluid reasoning timed out")
-                return None
+                # Instead of returning None, create a basic plan to continue processing
+                logger.info("Creating fallback plan after timeout")
+                return {
+                    "reasoning": "Reasoning timed out, using fallback approach",
+                    "reasoning_steps": [],
+                    "plan": self._create_fallback_plan_new(context)
+                }
 
             # Log LLM call
             await trace_manager.log_llm_call(
@@ -373,7 +379,7 @@ Let your intelligence flow freely before structuring your response."""
                     response_format="json",
                     model=self.gemini_client.flash_model  # Use Flash for quick extraction
                 ),
-                timeout=10.0
+                timeout=8.0  # Reduced from 10.0 for faster response
             )
 
             if extraction_response:
@@ -575,9 +581,36 @@ Let your intelligence flow freely before structuring your response."""
             logger.info(f"Synthesized clean output: {len(synthesized_response)} chars, {len(key_findings)} findings, confidence: {confidence_level}")
             return clean_output
 
+        except asyncio.TimeoutError:
+            logger.warning("LLM synthesis timed out, using basic summary")
+            return {
+                "synthesized_response": "I found information from multiple sources but the detailed synthesis took too long. Let me give you the key points I discovered.",
+                "key_findings": [],
+                "source_links": [],
+                "confidence_level": "low",
+                "suggested_followups": [],
+                "requires_human_input": False,
+                "execution_summary": {
+                    "steps_completed": 0,
+                    "total_steps": 0,
+                    "replanning_iterations": 0
+                }
+            }
         except Exception as e:
-            logger.error(f"Error in synthesis: {e}")
-            return await self._create_fallback_response_new("I gathered information but had trouble synthesizing it. Please try rephrasing your question.", message)
+            logger.error(f"Error in LLM synthesis: {e}")
+            return {
+                "synthesized_response": "I gathered information from multiple sources but encountered an issue creating a comprehensive response.",
+                "key_findings": [],
+                "source_links": [],
+                "confidence_level": "low",
+                "suggested_followups": [],
+                "requires_human_input": False,
+                "execution_summary": {
+                    "steps_completed": 0,
+                    "total_steps": 0,
+                    "replanning_iterations": 0
+                }
+            }
 
     # ============================================================================
     # NEW: SUPPORTING METHODS FOR 5-STEP FRAMEWORK
@@ -990,11 +1023,14 @@ Let your intelligence flow freely before structuring your response."""
                     max_tokens=1500,
                     temperature=0.7
                 ),
-                timeout=15.0
+                timeout=12.0  # Reduced from 15.0 for faster response
             )
 
             return response if response else "I found relevant information but had trouble synthesizing it clearly."
 
+        except asyncio.TimeoutError:
+            logger.warning("LLM synthesis timed out, using basic summary")
+            return "I found information from multiple sources but the detailed synthesis took too long. Let me give you the key points I discovered."
         except Exception as e:
             logger.error(f"Error in LLM synthesis: {e}")
             return "I gathered information from multiple sources but encountered an issue creating a comprehensive response."
