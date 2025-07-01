@@ -143,7 +143,7 @@ class ClientAgent:
                     personality_prompt,
                     model=self.gemini_client.flash_model,
                     max_tokens=1200,
-                    temperature=0.85  # Higher temperature for more personality
+                    temperature=1.0  # Higher temperature for more personality
                 ),
                 timeout=12.0
             )
