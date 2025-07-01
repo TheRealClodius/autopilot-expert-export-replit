@@ -128,22 +128,13 @@ class OrchestratorAgent:
                 total_time = time.time() - start_time
                 logger.info(f"Orchestrator completed 5-step process in {total_time:.2f}s with {len(self.current_execution_steps)} steps")
                 
-<<<<<<< HEAD
-<<<<<<< HEAD
-                # Convert new clean format to legacy format for compatibility
-                return await self._convert_clean_output_to_legacy_format(final_clean_output, message)
-=======
                 # Use enhanced client agent with clean output format
                 final_response = await self._use_enhanced_client_agent_new(final_clean_output, message)
                 if final_response:
                     return final_response
                 
                 # Fallback to legacy format conversion for compatibility
-=======
-                # Convert new clean format to legacy format for compatibility
->>>>>>> cc5457a (Restored to 'd182b24802ffab7213cf442331f2d182acee7568')
-                return self._convert_clean_output_to_legacy_format(final_clean_output, message)
->>>>>>> 5ce81f8 (Integrate refined responses and contextual awareness for enhanced user interactions)
+                return await self._convert_clean_output_to_legacy_format(final_clean_output, message)
             
             return await self._create_fallback_response_new("I couldn't generate a complete response. Please try again.", message)
 
@@ -434,10 +425,7 @@ class OrchestratorAgent:
             logger.error(f"Error using enhanced client agent: {e}")
             return None
 
-=======
->>>>>>> cc5457a (Restored to 'd182b24802ffab7213cf442331f2d182acee7568')
-    def _convert_clean_output_to_legacy_format(self, clean_output: Dict[str, Any], message: ProcessedMessage) -> Dict[str, Any]:
->>>>>>> 5ce81f8 (Integrate refined responses and contextual awareness for enhanced user interactions)
+    async def _convert_clean_output_to_legacy_format(self, clean_output: Dict[str, Any], message: ProcessedMessage) -> Dict[str, Any]:
         """NEW: Convert new clean output format to legacy format for compatibility"""
         
         # Enhanced: Also generate enhanced client agent response
