@@ -169,24 +169,38 @@ async def run_smart_hourly_embedding():
                         if human_messages:
                             logger.info(f"Found {len(human_messages)} new messages")
                             
-                            # Process and embed new messages
-                            processed_messages = await data_processor.process_slack_messages(human_messages)
+                            # For large batches, use patient processing
+                            if len(human_messages) > 50:
+                                logger.info(f"Large batch detected ({len(human_messages)} messages), using patient processing")
+                                embedded_count = await _process_large_batch_with_patience(
+                                    human_messages, data_processor, embedding_service, channel["name"]
+                                )
+                            else:
+                                # Standard processing for small batches
+                                processed_messages = await data_processor.process_slack_messages(human_messages)
+                                if processed_messages:
+                                    embedded_count = await embedding_service.embed_and_store_messages(processed_messages)
+                                else:
+                                    embedded_count = 0
                             
-                            if processed_messages:
-                                embedded_count = await embedding_service.embed_and_store_messages(processed_messages)
-                                total_messages_embedded += embedded_count
-                                
-                                # Update hourly state
-                                latest_ts = messages[0]["ts"] if messages else last_ts
-                                state_manager.update_hourly_state(channel["id"], latest_ts, embedded_count)
-                                
-                                logger.info(f"✓ Embedded {embedded_count} new messages")
+                            total_messages_embedded += embedded_count
+                            
+                            # Update hourly state
+                            latest_ts = messages[0]["ts"] if messages else last_ts
+                            state_manager.update_hourly_state(channel["id"], latest_ts, embedded_count)
+                            
+                            logger.info(f"✓ Embedded {embedded_count} new messages")
                         else:
                             logger.info("No new messages found")
                         
                     except SlackApiError as e:
                         if e.response["error"] == "ratelimited":
-                            logger.warning(f"Rate limited checking {channel['name']}, will retry next hour")
+                            # Patient retry for rate limits during incremental mode
+                            logger.info(f"Rate limited checking {channel['name']}, using patient retry...")
+                            embedded_count = await _patient_incremental_check(
+                                channel, last_ts, oldest_ts, data_processor, embedding_service, state_manager
+                            )
+                            total_messages_embedded += embedded_count
                         else:
                             logger.error(f"Slack API error for {channel['name']}: {e}")
                     
@@ -256,6 +270,125 @@ async def run_smart_hourly_embedding():
             "success": False,
             "error": str(e)
         }
+
+async def _process_large_batch_with_patience(messages, data_processor, embedding_service, channel_name):
+    """
+    Process large batches of messages with patient rate limit handling.
+    Breaks into smaller chunks and waits for rate limits to clear.
+    """
+    logger.info(f"Processing {len(messages)} messages in patient batches for {channel_name}")
+    
+    total_embedded = 0
+    batch_size = 25  # Conservative batch size for hourly processing
+    max_retries = 10  # More patient than first generation
+    
+    for i in range(0, len(messages), batch_size):
+        batch = messages[i:i + batch_size]
+        batch_num = (i // batch_size) + 1
+        total_batches = (len(messages) + batch_size - 1) // batch_size
+        
+        logger.info(f"Processing batch {batch_num}/{total_batches} ({len(batch)} messages)")
+        
+        retry_count = 0
+        while retry_count < max_retries:
+            try:
+                processed_messages = await data_processor.process_slack_messages(batch)
+                if processed_messages:
+                    embedded_count = await embedding_service.embed_and_store_messages(processed_messages)
+                    total_embedded += embedded_count
+                    logger.info(f"✓ Batch {batch_num}: Embedded {embedded_count} messages")
+                    break
+                else:
+                    logger.warning(f"No processed messages from batch {batch_num}")
+                    break
+                    
+            except Exception as e:
+                if "ratelimited" in str(e).lower():
+                    retry_count += 1
+                    wait_time = min(60 * retry_count, 300)  # 1min → 5min max
+                    logger.info(f"Rate limited on batch {batch_num}, waiting {wait_time}s (attempt {retry_count}/{max_retries})")
+                    await asyncio.sleep(wait_time)
+                    continue
+                else:
+                    logger.error(f"Error processing batch {batch_num}: {e}")
+                    break
+        
+        # Small delay between successful batches
+        if batch_num < total_batches:
+            await asyncio.sleep(2)
+    
+    logger.info(f"Large batch processing complete: {total_embedded}/{len(messages)} messages embedded")
+    return total_embedded
+
+async def _patient_incremental_check(channel, last_ts, oldest_ts, data_processor, embedding_service, state_manager):
+    """
+    Patient retry logic for incremental message checking when rate limited.
+    """
+    logger.info(f"Starting patient incremental check for {channel['name']}")
+    
+    max_retries = 5
+    retry_count = 0
+    
+    while retry_count < max_retries:
+        try:
+            # Try to get messages with exponential backoff
+            wait_time = min(30 * (2 ** retry_count), 300)  # 30s → 300s max
+            if retry_count > 0:
+                logger.info(f"Patient retry {retry_count}/{max_retries}, waiting {wait_time}s")
+                await asyncio.sleep(wait_time)
+            
+            from services.enhanced_slack_connector import EnhancedSlackConnector
+            connector = EnhancedSlackConnector()
+            
+            response = await connector.client.conversations_history(
+                channel=channel["id"],
+                oldest=max(last_ts, oldest_ts),
+                limit=100,
+                inclusive=False
+            )
+            
+            messages = response.get("messages", [])
+            human_messages = [
+                msg for msg in messages 
+                if not msg.get("bot_id") and msg.get("type") == "message" and msg.get("text")
+            ]
+            
+            if human_messages:
+                logger.info(f"Patient check found {len(human_messages)} messages after {retry_count} retries")
+                
+                # Use large batch processing if needed
+                if len(human_messages) > 50:
+                    embedded_count = await _process_large_batch_with_patience(
+                        human_messages, data_processor, embedding_service, channel["name"]
+                    )
+                else:
+                    processed_messages = await data_processor.process_slack_messages(human_messages)
+                    if processed_messages:
+                        embedded_count = await embedding_service.embed_and_store_messages(processed_messages)
+                    else:
+                        embedded_count = 0
+                
+                # Update state
+                latest_ts = messages[0]["ts"] if messages else last_ts
+                state_manager.update_hourly_state(channel["id"], latest_ts, embedded_count)
+                
+                return embedded_count
+            else:
+                logger.info(f"No new messages found after patient retry {retry_count}")
+                return 0
+                
+        except Exception as e:
+            if "ratelimited" in str(e).lower():
+                retry_count += 1
+                if retry_count >= max_retries:
+                    logger.warning(f"Patient incremental check failed after {max_retries} retries, will try next hour")
+                    return 0
+                continue
+            else:
+                logger.error(f"Non-rate-limit error during patient check: {e}")
+                return 0
+    
+    return 0
 
 if __name__ == "__main__":
     result = asyncio.run(run_smart_hourly_embedding())
