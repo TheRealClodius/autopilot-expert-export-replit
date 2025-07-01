@@ -143,7 +143,7 @@ class OrchestratorAgent:
             await trace_manager.complete_conversation_turn(success=False, error=str(e))
             if self.progress_tracker:
                 await emit_error(self.progress_tracker, "processing_error", "internal system issue")
-            return await self._create_fallback_response_new("I'm experiencing technical difficulties. Please try again later.", message)
+            return await self._create_fallback_response_new("I'm having trouble analyzing your request right now. Could you try rephrasing your question or ask me something else?", message)
 
     # ============================================================================
     # NEW: 5-STEP REASONING FRAMEWORK METHODS

@@ -444,7 +444,7 @@ async def process_slack_message(event_data: SlackEvent):
                 except Exception as progress_path_error:
                     logger.error(f"Error in progress tracking path: {progress_path_error}")
                     # Update the progress message with error instead of creating new message
-                    error_text = "I'm experiencing technical difficulties. Please try again later."
+                    error_text = "I'm having trouble processing your request right now. Please try rephrasing your question or ask me something else."
                     await progress_updater(error_text)
 
                     # Complete the LangSmith conversation session with error
@@ -488,7 +488,7 @@ async def process_slack_message(event_data: SlackEvent):
                 # Try to update thinking message if it exists, otherwise send new error
                 await slack_gateway.send_error_response(
                     channel_id,
-                    "I'm experiencing technical difficulties. Please try again later.",
+                    "I'm having trouble processing your request right now. Please try rephrasing your question or ask me something else.",
                     thread_ts
                 )
         except Exception as send_err:
