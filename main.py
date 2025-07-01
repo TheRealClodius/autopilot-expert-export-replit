@@ -24,14 +24,14 @@ from agents.slack_gateway import SlackGateway
 from agents.orchestrator_agent import OrchestratorAgent
 from config import settings
 from models.schemas import SlackEvent, SlackChallenge, ProcessedMessage
-from services.memory_service import MemoryService
-from services.trace_manager import trace_manager
-from services.prewarming_service import PrewarmingService
-from services.webhook_cache import WebhookCache
-from services.performance_optimizer import performance_optimizer
-from services.lazy_loader import lazy_loader
-from services.connection_pool import connection_pool
-from services.production_logger import production_logger
+from services.core.memory_service import MemoryService
+from services.core.trace_manager import trace_manager
+from services.performance.prewarming_service import PrewarmingService
+from services.core.webhook_cache import WebhookCache
+from services.performance.performance_optimizer import performance_optimizer
+from services.performance.lazy_loader import lazy_loader
+from services.performance.connection_pool import connection_pool
+from services.core.production_logger import production_logger
 
 # Import Celery only if configured
 try:
