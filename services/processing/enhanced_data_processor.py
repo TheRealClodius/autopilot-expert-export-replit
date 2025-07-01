@@ -9,7 +9,7 @@ from typing import List, Dict, Any, Optional
 import hashlib
 from dataclasses import asdict
 
-from services.enhanced_slack_connector import SlackMessage
+from services.external_apis.enhanced_slack_connector import SlackMessage
 
 logger = logging.getLogger(__name__)
 

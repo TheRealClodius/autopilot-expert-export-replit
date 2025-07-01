@@ -270,7 +270,7 @@ def cleanup_old_data(self):
     """Clean up old temporary data and logs"""
     try:
         import asyncio
-        from services.memory_service import MemoryService
+        from services.core.memory_service import MemoryService
         from datetime import datetime, timedelta
         
         logger.info("Starting cleanup of old data...")

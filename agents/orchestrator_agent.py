@@ -19,11 +19,11 @@ from tools.outlook_meeting import OutlookMeetingTool
 # AtlassianTool replaced by AtlassianToolbelt
 from agents.atlassian_guru import AtlassianToolbelt
 from agents.client_agent import ClientAgent
-from services.memory_service import MemoryService
-from services.token_manager import TokenManager
-from services.entity_store import EntityStore
-from services.progress_tracker import ProgressTracker, ProgressEventType, emit_thinking, emit_searching, emit_processing, emit_generating, emit_error, emit_warning, emit_retry, emit_reasoning, emit_considering, emit_analyzing, StreamingReasoningEmitter
-from services.trace_manager import trace_manager
+from services.core.memory_service import MemoryService
+from services.data.token_manager import TokenManager
+from services.data.entity_store import EntityStore
+from services.processing.progress_tracker import ProgressTracker, ProgressEventType, emit_thinking, emit_searching, emit_processing, emit_generating, emit_error, emit_warning, emit_retry, emit_reasoning, emit_considering, emit_analyzing, StreamingReasoningEmitter
+from services.core.trace_manager import trace_manager
 from models.schemas import ProcessedMessage
 
 logger = logging.getLogger(__name__)

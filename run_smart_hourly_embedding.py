@@ -10,11 +10,11 @@ from datetime import datetime, timedelta
 from typing import Dict, Any, List
 import json
 
-from services.ingestion_state_manager import IngestionStateManager
-from services.enhanced_slack_connector import EnhancedSlackConnector
-from services.enhanced_data_processor import EnhancedDataProcessor
-from services.embedding_service import EmbeddingService
-from services.notion_service import NotionService
+from services.processing.ingestion_state_manager import IngestionStateManager
+from services.external_apis.enhanced_slack_connector import EnhancedSlackConnector
+from services.processing.enhanced_data_processor import EnhancedDataProcessor
+from services.data.embedding_service import EmbeddingService
+from services.external_apis.notion_service import NotionService
 from slack_sdk.errors import SlackApiError
 
 # Configure logging

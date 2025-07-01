@@ -10,7 +10,7 @@ from slack_sdk.errors import SlackApiError
 
 from config import settings
 from models.schemas import SlackEvent, ProcessedMessage
-from services.trace_manager import trace_manager
+from services.core.trace_manager import trace_manager
 
 logger = logging.getLogger(__name__)
 
