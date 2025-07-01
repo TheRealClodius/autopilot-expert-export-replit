@@ -1006,6 +1006,117 @@ async def scheduled_embedding_update(
         logger.error(f"Scheduled embedding update failed: {e}")
         return {"status": "error", "error": str(e)}
 
+@app.post("/admin/hourly-embedding-check")
+async def run_hourly_embedding_check():
+    """
+    Manually trigger the hourly embedding check.
+    
+    This runs the same logic as the automated hourly task:
+    - Checks each channel for new messages since last run
+    - Embeds new messages if found
+    - Does nothing if no new messages
+    """
+    try:
+        from workers.hourly_embedding_worker import run_hourly_embedding_check
+        
+        logger.info("Starting manual hourly embedding check...")
+        result = await run_hourly_embedding_check()
+        
+        return {
+            "status": "success",
+            "manual_trigger": True,
+            "result": result
+        }
+        
+    except Exception as e:
+        logger.error(f"Manual hourly embedding check failed: {e}")
+        return {"status": "error", "error": str(e)}
+
+@app.get("/admin/hourly-embedding-status")
+async def get_hourly_embedding_status():
+    """
+    Get the status of hourly embedding checks including last run times and channel states.
+    """
+    try:
+        import json
+        import os
+        from datetime import datetime
+        
+        state_file = "hourly_embedding_state.json"
+        
+        # Load current state
+        if os.path.exists(state_file):
+            with open(state_file, 'r') as f:
+                state = json.load(f)
+        else:
+            state = {}
+        
+        # Get file modification time for last update
+        last_updated = None
+        if os.path.exists(state_file):
+            last_updated = datetime.fromtimestamp(os.path.getmtime(state_file)).isoformat()
+        
+        # Channel configurations
+        channels = [
+            {"id": "C087QKECFKQ", "name": "autopilot-design-patterns"},
+            {"id": "C08STCP2YUA", "name": "genai-designsys"}
+        ]
+        
+        channel_status = []
+        for channel in channels:
+            channel_id = channel["id"]
+            channel_state = state.get(channel_id, {})
+            
+            channel_status.append({
+                "channel_id": channel_id,
+                "channel_name": channel["name"],
+                "last_check_ts": channel_state.get("last_check_ts"),
+                "last_successful_check": channel_state.get("last_successful_check"),
+                "last_check_time": channel_state.get("last_check_time"),
+                "total_messages_embedded": channel_state.get("total_messages_embedded", 0)
+            })
+        
+        return {
+            "status": "success",
+            "state_file_exists": os.path.exists(state_file),
+            "state_last_updated": last_updated,
+            "channels": channel_status,
+            "raw_state": state
+        }
+        
+    except Exception as e:
+        logger.error(f"Error getting hourly embedding status: {e}")
+        return {"status": "error", "error": str(e)}
+
+@app.delete("/admin/reset-hourly-embedding-state")
+async def reset_hourly_embedding_state():
+    """
+    Reset the hourly embedding state file.
+    This will cause the next hourly check to process recent messages as if running for the first time.
+    """
+    try:
+        import os
+        
+        state_file = "hourly_embedding_state.json"
+        
+        if os.path.exists(state_file):
+            os.remove(state_file)
+            return {
+                "status": "success",
+                "message": "Hourly embedding state file deleted. Next run will start fresh.",
+                "state_file": state_file
+            }
+        else:
+            return {
+                "status": "success",
+                "message": "No state file existed to delete.",
+                "state_file": state_file
+            }
+        
+    except Exception as e:
+        logger.error(f"Error resetting hourly embedding state: {e}")
+        return {"status": "error", "error": str(e)}
+
 @app.get("/admin/search-test-content")
 async def search_test_content(query: str = "Scandinavian design principles"):
     """Admin endpoint to search test content in Pinecone"""

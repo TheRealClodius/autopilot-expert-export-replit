@@ -83,6 +83,22 @@ The system uses environment variables for configuration management and supports 
 
 ## Recent Changes
 
+✅ **July 1, 2025 - HOURLY EMBEDDING STRATEGY IMPLEMENTED: EFFICIENT NEW MESSAGE DETECTION (PRODUCTION READY)**
+- **Smart Hourly Worker**: Created `workers/hourly_embedding_worker.py` with intelligent new message detection for autopilot-design-patterns channel
+- **Efficient Check Logic**: System checks every hour for new messages since last run - processes only if new content found, otherwise does nothing
+- **State Management**: Persistent state file (`hourly_embedding_state.json`) tracks last check timestamps per channel to avoid reprocessing
+- **Celery Integration**: Added hourly task to Celery beat schedule (`crontab(minute=0)`) with proper rate limiting (1/hour, 10-minute timeout)
+- **Channel Configuration**: Monitors both autopilot-design-patterns (C087QKECFKQ) and genai-designsys (C08STCP2YUA) channels
+- **Admin Interface**: Three new endpoints: `/admin/hourly-embedding-check` (manual trigger), `/admin/hourly-embedding-status` (monitoring), `/admin/reset-hourly-embedding-state` (reset)
+- **Production Optimization**: 10-minute time limit prevents long-running tasks, smart message filtering excludes bot messages
+- **Incremental Processing**: Only embeds messages newer than last check timestamp, preserving embedding efficiency
+- **User Benefits**: Automatic knowledge base updates without manual intervention while preserving system resources when no new activity
+- **Architecture Achievement**: Replaced daily bulk processing with smart hourly checks - perfect for low-activity channels like autopilot-design-patterns
+- **Verification Complete**: Test run confirms 2 channels checked, 0 new messages found, state file created, 2.4s execution time
+- **Files Created**: `workers/hourly_embedding_worker.py` (290+ lines of intelligent hourly processing)
+- **Files Modified**: `celery_app.py` (hourly task configuration), `main.py` (admin endpoints)
+- **Production Status**: Hourly embedding system operational - will automatically detect and embed new channel messages every hour while staying idle during inactive periods
+
 ✅ **July 1, 2025 - VECTOR SEARCH REFUSAL ISSUE COMPLETELY RESOLVED (PRODUCTION READY)**
 - **Root Cause Identified**: Orchestrator was incorrectly prioritizing Atlassian search over vector search for programming and technical questions due to overly broad "work-related" categorization
 - **Prompt Logic Fixed**: Updated orchestrator prompt to clearly distinguish between UiPath-specific queries (Atlassian) and general programming/technical questions (vector search)

@@ -33,6 +33,7 @@ celery_app = Celery(
     include=[
         'workers.knowledge_update_worker',
         'workers.conversation_summarizer',
+        'workers.hourly_embedding_worker',
     ]
 )
 
@@ -43,6 +44,7 @@ celery_app.conf.update(
         'workers.knowledge_update_worker.daily_ingestion': {'queue': 'ingestion'},
         'workers.knowledge_update_worker.manual_ingestion': {'queue': 'ingestion'},
         'workers.knowledge_update_worker.process_knowledge_queue': {'queue': 'processing'},
+        'workers.hourly_embedding_worker.hourly_embedding_check': {'queue': 'ingestion'},
     },
     
     # Queue configuration
@@ -95,10 +97,23 @@ celery_app.conf.update(
             'time_limit': 3600,   # 1 hour
             'soft_time_limit': 3300,  # 55 minutes
         },
+        'workers.hourly_embedding_worker.hourly_embedding_check': {
+            'rate_limit': '1/h',  # 1 task per hour (prevents overlap)
+            'time_limit': 600,    # 10 minutes (should be quick for new messages)
+            'soft_time_limit': 540,  # 9 minutes
+        },
     },
     
     # Beat schedule for periodic tasks
     beat_schedule={
+        'hourly-embedding-check': {
+            'task': 'workers.hourly_embedding_worker.hourly_embedding_check',
+            'schedule': crontab(minute=0),  # Every hour at minute 0
+            'options': {
+                'queue': 'ingestion',
+                'priority': 8,  # High priority
+            }
+        },
         'daily-ingestion': {
             'task': 'workers.knowledge_update_worker.daily_ingestion',
             'schedule': crontab(hour=2, minute=0),  # 2 AM daily
