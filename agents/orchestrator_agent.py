@@ -373,10 +373,6 @@ class OrchestratorAgent:
     # NEW: SUPPORTING METHODS FOR 5-STEP FRAMEWORK
     # ============================================================================
 
-<<<<<<< HEAD
-<<<<<<< HEAD
-    async def _convert_clean_output_to_legacy_format(self, clean_output: Dict[str, Any], message: ProcessedMessage) -> Dict[str, Any]:
-=======
     async def _use_enhanced_client_agent_new(self, clean_output: Dict[str, Any], message: ProcessedMessage) -> Optional[Dict[str, Any]]:
         """NEW: Use enhanced client agent with clean output format from 5-step reasoning"""
         try:
