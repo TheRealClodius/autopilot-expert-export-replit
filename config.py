@@ -51,7 +51,7 @@ class Settings(BaseSettings):
     MCP_SERVER_URL: str = os.getenv("MCP_SERVER_URL", "http://localhost:8001")
     
     # Redis Configuration (DISABLED for deployment - using memory-only fallbacks)
-    REDIS_URL: str = ""  # Intentionally empty to force memory cache
+    REDIS_URL: str = os.getenv("REDIS_URL", "redis://localhost:6379/0")
     REDIS_PASSWORD: Optional[str] = None
     
     # Celery Configuration (DISABLED for deployment - using memory transport)
