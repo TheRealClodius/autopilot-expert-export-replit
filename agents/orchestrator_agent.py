@@ -110,9 +110,9 @@ class OrchestratorAgent:
             # Store conversation context
             await self._store_conversation_context(message)
 
-            # NEW: STEP 1-2: Analyze intent and create initial plan
+            # NEW: STEP 1-2: Analyze user intent with FLUID REASONING and create strategic tool selection plan.
             if self.progress_tracker:
-                await emit_reasoning(self.progress_tracker, "analyzing", "query intent and planning approach")
+                await emit_reasoning(self.progress_tracker, "fluid_reasoning", "thinking through your request naturally...")
             
             initial_plan = await self._step1_2_analyze_and_plan_new(message)
             if not initial_plan:
@@ -151,8 +151,8 @@ class OrchestratorAgent:
 
     async def _step1_2_analyze_and_plan_new(self, message: ProcessedMessage) -> Optional[Dict[str, Any]]:
         """
-        NEW: STEP 1-2: Analyze user intent and create strategic tool selection plan.
-        Uses prompts.yaml reasoning framework.
+        NEW: STEP 1-2: Analyze user intent with FLUID REASONING and create strategic tool selection plan.
+        Enhanced with real-time reasoning display via message editing.
         """
         try:
             # Build context for analysis
@@ -180,47 +180,257 @@ class OrchestratorAgent:
                 "relevant_entities": relevant_entities
             }
 
-            # Get system prompt with 5-step reasoning framework
-            system_prompt = await self._get_reasoning_system_prompt_new()
-            user_prompt = f"Context: {json.dumps(context, indent=2)}\n\nCurrent Query: \"{message.text}\"\n\nFollow the 5-step reasoning framework to create an execution plan."
+            # NEW: FLUID REASONING PHASE with message-editing display
+            if self.progress_tracker:
+                await emit_reasoning(self.progress_tracker, "fluid_reasoning", "thinking through your request naturally...")
 
-            # Get planning response from LLM
+            reasoning_response = await self._fluid_reasoning_with_display_new(context, message)
+            
+            if reasoning_response and reasoning_response.get("plan"):
+                # Initialize execution steps from plan
+                plan = reasoning_response["plan"]
+                self._initialize_execution_steps_new(plan)
+                plan["fluid_reasoning"] = reasoning_response.get("reasoning", "")
+                return plan
+
+            return None
+
+        except Exception as e:
+            logger.error(f"Error in fluid reasoning and planning: {e}")
+            return None
+
+    async def _fluid_reasoning_with_display_new(self, context: Dict[str, Any], message: ProcessedMessage) -> Optional[Dict[str, Any]]:
+        """
+        NEW: Conduct fluid reasoning with real-time message editing to show thinking process.
+        """
+        try:
+            # Phase 1: Free-form reasoning with streaming display
+            if self.progress_tracker:
+                await emit_reasoning(self.progress_tracker, "stream_of_consciousness", "💭 Thinking through your request...")
+
+            reasoning_stages = [
+                "💭 Understanding what you're really asking...",
+                "🎯 Considering the best approach...", 
+                "🔍 Thinking about which tools would be most effective...",
+                "⚡ Planning the optimal strategy...",
+                "📋 Structuring my execution plan..."
+            ]
+
+            # Get system prompt for fluid reasoning
+            fluid_prompt = self._get_fluid_reasoning_prompt_new()
+            user_prompt = f"Context: {json.dumps(context, indent=2)}\n\nQuery: \"{message.text}\"\n\nThink through this naturally and comprehensively."
+
+            # Create reasoning callback for message editing
+            reasoning_callback = self._create_reasoning_callback_new(reasoning_stages)
+
+            # Generate streaming response with real-time display
             llm_start = time.time()
             try:
-                response = await asyncio.wait_for(
-                    self.gemini_client.generate_response(
-                        system_prompt,
-                        user_prompt,
+                reasoning_result = await asyncio.wait_for(
+                    self.gemini_client.generate_streaming_response(
+                        system_prompt=fluid_prompt,
+                        user_prompt=user_prompt,
+                        reasoning_callback=reasoning_callback,
                         model=self.gemini_client.pro_model,
-                        max_tokens=2000,
-                        temperature=0.7
+                        max_tokens=2500,
+                        temperature=0.8  # Higher temperature for more creative reasoning
                     ),
-                    timeout=20.0
+                    timeout=25.0
                 )
             except asyncio.TimeoutError:
-                logger.error("LLM planning call timed out")
+                logger.error("Fluid reasoning timed out")
                 return None
 
             # Log LLM call
             await trace_manager.log_llm_call(
                 model=self.gemini_client.pro_model,
-                prompt=f"SYSTEM: {system_prompt[:200]}...\n\nUSER: {user_prompt[:200]}...",
-                response=response[:500] if response else "None",
+                prompt=f"FLUID REASONING: {user_prompt[:200]}...",
+                response=reasoning_result.get("text", "")[:500],
                 duration=time.time() - llm_start
             )
 
-            if response:
-                plan = self._parse_planning_response_new(response)
-                if plan:
-                    # Initialize execution steps from plan
-                    self._initialize_execution_steps_new(plan)
-                    return plan
+            # Phase 2: Extract structured plan from reasoning
+            if self.progress_tracker:
+                await emit_processing(self.progress_tracker, "plan_extraction", "🎯 Extracting execution plan from reasoning...")
 
-            return None
+            structured_plan = await self._extract_plan_from_reasoning_new(reasoning_result.get("text", ""), context)
+
+            return {
+                "reasoning": reasoning_result.get("text", ""),
+                "reasoning_steps": reasoning_result.get("reasoning_steps", []),
+                "plan": structured_plan
+            }
 
         except Exception as e:
-            logger.error(f"Error in step 1-2 analysis and planning: {e}")
+            logger.error(f"Error in fluid reasoning with display: {e}")
             return None
+
+    def _create_reasoning_callback_new(self, reasoning_stages: List[str]) -> callable:
+        """
+        NEW: Create callback for updating Slack message with reasoning progress.
+        """
+        stage_index = 0
+        accumulated_reasoning = ""
+        
+        async def reasoning_callback(chunk_text: str, chunk_metadata: dict):
+            nonlocal stage_index, accumulated_reasoning
+            
+            try:
+                accumulated_reasoning += chunk_text
+                
+                # Update message with current reasoning stage and a snippet of thinking
+                if self.progress_tracker:
+                    # Cycle through reasoning stages based on content
+                    if any(keyword in chunk_text.lower() for keyword in ["approach", "strategy", "plan"]):
+                        stage_index = min(stage_index + 1, len(reasoning_stages) - 1)
+                    
+                    # Extract meaningful snippet from recent reasoning
+                    recent_reasoning = accumulated_reasoning[-200:].strip()
+                    if recent_reasoning and not recent_reasoning.startswith('```'):
+                        # Clean up reasoning snippet for display
+                        snippet = recent_reasoning.split('\n')[-1][:80] + "..." if len(recent_reasoning) > 80 else recent_reasoning
+                        
+                        # Create message with current stage and reasoning snippet
+                        stage_message = reasoning_stages[stage_index] if stage_index < len(reasoning_stages) else "💡 Finalizing approach..."
+                        
+                        if len(snippet.strip()) > 10:  # Only show if we have meaningful content
+                            display_message = f"{stage_message}\n\n_\"{snippet}\"_"
+                        else:
+                            display_message = stage_message
+                        
+                        await emit_reasoning(self.progress_tracker, "live_reasoning", display_message)
+                    
+            except Exception as callback_error:
+                # Don't let callback errors interrupt reasoning
+                logger.debug(f"Reasoning callback error: {callback_error}")
+        
+        return reasoning_callback
+
+    def _get_fluid_reasoning_prompt_new(self) -> str:
+        """
+        NEW: Get enhanced prompt for fluid reasoning phase.
+        """
+        return """You are an advanced AI orchestrator with fluid intelligence. Think naturally and comprehensively about how to approach this query.
+
+ENGAGE IN FREE-FORM REASONING first. Think out loud about:
+
+- What is the user really asking for? What context clues help you understand their true intent?
+- What would be the most insightful and comprehensive approach?
+- How can you orchestrate tools for maximum effect?
+- What different angles should you explore?
+- Should you use tools in parallel for richer insights?
+- What tool combinations would create synergy?
+
+Consider these tools:
+- vector_search: Internal Slack conversations and team discussions
+- perplexity_search: Current web information and real-time data  
+- atlassian_search: Jira issues, Confluence pages, UiPath/Autopilot projects
+- outlook_meeting: Calendar and meeting management
+
+Think through your approach naturally, then at the end provide a structured JSON plan with:
+- reasoning_summary
+- complexity_level (simple|moderate|complex|research)  
+- tools_needed
+- execution_strategy
+- specific queries/actions for each tool
+
+Let your intelligence flow freely before structuring your response."""
+
+    async def _extract_plan_from_reasoning_new(self, reasoning_text: str, context: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        """
+        NEW: Extract structured execution plan from fluid reasoning text.
+        """
+        try:
+            if self.progress_tracker:
+                await emit_processing(self.progress_tracker, "plan_structuring", "🔧 Converting reasoning into execution plan...")
+
+            extraction_prompt = f"""
+            Based on this reasoning about the user's query, extract a structured execution plan.
+
+            Original Query: "{context['query']}"
+            
+            Reasoning: {reasoning_text}
+            
+            Extract and return ONLY a JSON plan with this structure:
+            {{
+                "reasoning_summary": "Brief summary of the thinking process",
+                "complexity_level": "simple|moderate|complex|research",
+                "analysis": "Key insights about user intent and approach",
+                "tools_needed": ["list of tools to use"],
+                "execution_strategy": "sequential|parallel|hybrid",
+                "vector_queries": ["search terms"] (if vector_search needed),
+                "perplexity_queries": ["web searches"] (if perplexity_search needed),
+                "atlassian_actions": [{{"task": "description"}}] (if atlassian_search needed),
+                "observation_plan": "What to assess in results",
+                "synthesis_approach": "How to combine findings"
+            }}
+            """
+
+            extraction_response = await asyncio.wait_for(
+                self.gemini_client.generate_structured_response(
+                    "You are an expert at extracting structured plans from reasoning text.",
+                    extraction_prompt,
+                    response_format="json",
+                    model=self.gemini_client.flash_model  # Use Flash for quick extraction
+                ),
+                timeout=10.0
+            )
+
+            if extraction_response:
+                try:
+                    plan = json.loads(extraction_response)
+                    logger.info(f"Extracted execution plan from fluid reasoning: {plan.get('reasoning_summary', 'No summary')}")
+                    return plan
+                except json.JSONDecodeError as e:
+                    logger.error(f"Failed to parse extracted plan JSON: {e}")
+                    return self._create_fallback_plan_new(context)
+            
+            return self._create_fallback_plan_new(context)
+
+        except Exception as e:
+            logger.error(f"Error extracting plan from reasoning: {e}")
+            return self._create_fallback_plan_new(context)
+
+    def _create_fallback_plan_new(self, context: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        NEW: Create a fallback plan when plan extraction fails.
+        """
+        query = context.get("query", "")
+        
+        # Simple heuristic-based planning as fallback
+        tools_needed = []
+        
+        # Check for keywords to determine tools
+        query_lower = query.lower()
+        
+        if any(keyword in query_lower for keyword in ["team", "discussion", "said", "conversation", "chat"]):
+            tools_needed.append("vector_search")
+        
+        if any(keyword in query_lower for keyword in ["current", "latest", "recent", "news", "update"]):
+            tools_needed.append("perplexity_search")
+        
+        if any(keyword in query_lower for keyword in ["uipath", "autopilot", "jira", "confluence", "project"]):
+            tools_needed.append("atlassian_search")
+        
+        if any(keyword in query_lower for keyword in ["meeting", "schedule", "calendar", "availability"]):
+            tools_needed.append("outlook_meeting")
+        
+        # Default to vector search if no specific indicators
+        if not tools_needed:
+            tools_needed = ["vector_search"]
+
+        return {
+            "reasoning_summary": "Fallback plan based on keyword analysis",
+            "complexity_level": "moderate",
+            "analysis": f"Analyzing query for keywords, selected tools: {', '.join(tools_needed)}",
+            "tools_needed": tools_needed,
+            "execution_strategy": "sequential",
+            "vector_queries": [query] if "vector_search" in tools_needed else [],
+            "perplexity_queries": [query] if "perplexity_search" in tools_needed else [],
+            "atlassian_actions": [{"task": f"Search for information about: {query}"}] if "atlassian_search" in tools_needed else [],
+            "observation_plan": "Check if results directly answer the user's question",
+            "synthesis_approach": "Combine all findings into a comprehensive response"
+        }
 
     async def _step3_4_5_execute_observe_synthesize_new(self, plan: Dict[str, Any], message: ProcessedMessage) -> Optional[Dict[str, Any]]:
         """

@@ -1,0 +1,5 @@
+2025-07-01 18:49:15,133 - __main__ - INFO - ==================================================
+2025-07-01 18:49:15,133 - __main__ - INFO - Hourly Embedding Check - Simple Runner
+2025-07-01 18:49:15,133 - __main__ - INFO - ==================================================
+2025-07-01 18:49:15,318 - __main__ - ERROR - ❌ FAILED: Hourly embedding check failed: Missing required environment variables: SLACK_BOT_TOKEN, GEMINI_API_KEY
+2025-07-01 18:49:15,319 - __main__ - ERROR - Hourly embedding check failed

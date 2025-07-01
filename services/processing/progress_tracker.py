@@ -1,491 +1,270 @@
 """
-Adaptive Progress Tracking Service
-
-Provides real-time progress updates for multi-agent operations with intelligent
-natural language formatting and error handling integration.
+Progress Tracker - Enhanced for fluid reasoning display.
+Manages real-time progress updates with sophisticated message editing for reasoning transparency.
 """
 
 import asyncio
 import logging
-from typing import Optional, Callable, Dict, Any, Union, Awaitable
-from datetime import datetime
+import time
+from typing import Optional, Callable, Dict, Any, List
 from enum import Enum
 
 logger = logging.getLogger(__name__)
 
-
 class ProgressEventType(Enum):
-    """Types of progress events that can be emitted"""
-    THINKING = "thinking"
-    REASONING = "reasoning"  # New: Real-time reasoning steps
-    CONSIDERING = "considering"  # New: Considering options
-    ANALYZING = "analyzing"  # New: Deep analysis
+    """Types of progress events for sophisticated tracking"""
+    ANALYZING = "analyzing"
+    REASONING = "reasoning"
+    FLUID_THINKING = "fluid_thinking"
+    LIVE_REASONING = "live_reasoning"
     SEARCHING = "searching"
     PROCESSING = "processing"
     GENERATING = "generating"
-    COMPLETING = "completing"
+    SYNTHESIZING = "synthesizing"
+    OBSERVING = "observing"
+    REPLANNING = "replanning"
     ERROR = "error"
     WARNING = "warning"
     RETRY = "retry"
-    SUCCESS = "success"
+    THINKING = "thinking"
+    CONSIDERING = "considering"
 
-
-class ProgressEvent:
-    """Represents a single progress event with context"""
+class ReasoningStageManager:
+    """Manages reasoning stage progression for smooth message editing"""
     
-    def __init__(
-        self,
-        event_type: ProgressEventType,
-        action: str,
-        context: Optional[str] = None,
-        details: Optional[Dict[str, Any]] = None,
-        timestamp: Optional[datetime] = None
-    ):
-        self.event_type = event_type
-        self.action = action
-        self.context = context
-        self.details = details or {}
-        self.timestamp = timestamp or datetime.now()
+    def __init__(self):
+        self.current_stage = 0
+        self.stage_history = []
+        self.reasoning_snippets = []
+        self.last_update_time = 0
+        self.min_update_interval = 1.0  # Minimum 1 second between updates
         
-    def to_natural_language(self) -> str:
-        """Convert progress event to natural language message"""
+    def should_update_message(self, force: bool = False) -> bool:
+        """Determine if message should be updated based on timing and content"""
+        current_time = time.time()
+        if force or (current_time - self.last_update_time) >= self.min_update_interval:
+            self.last_update_time = current_time
+            return True
+        return False
+    
+    def add_reasoning_snippet(self, snippet: str, stage_hint: str = None):
+        """Add reasoning snippet and potentially advance stage"""
+        self.reasoning_snippets.append({
+            "text": snippet,
+            "timestamp": time.time(),
+            "stage_hint": stage_hint
+        })
         
-        # Contextual and explicit action phrases (no emojis)
-        action_phrases = {
-            ProgressEventType.THINKING: {
-                "analyzing": "I am analyzing your request to understand what you need",
-                "planning": "I am planning the best approach to answer your question",
-                "understanding": "I am understanding the context and requirements",
-                "preparing": "I am preparing to gather the information you need"
-            },
-            ProgressEventType.REASONING: {
-                "step": "I am considering the next steps",
-                "evaluating": "I am evaluating different approaches",
-                "weighing": "I am weighing the available options",
-                "determining": "I am determining the best course of action",
-                "thinking": "I am thinking through this systematically",
-                "streaming": "{context}",  # Direct streaming content from model
-                "direct_streaming": "{context}"  # Direct streaming content without template
-            },
-            ProgressEventType.CONSIDERING: {
-                "options": "I am considering various options",
-                "alternatives": "I am exploring alternative approaches", 
-                "factors": "I am considering multiple factors",
-                "implications": "I am considering the implications",
-                "requirements": "I am considering your specific requirements"
-            },
-            ProgressEventType.ANALYZING: {
-                "problem": "I am analyzing the problem in detail",
-                "context": "I am analyzing the context and background",
-                "complexity": "I am analyzing the complexity of this request",
-                "patterns": "I am analyzing patterns in the available information",
-                "relationships": "I am analyzing how different pieces fit together"
-            },
-            ProgressEventType.SEARCHING: {
-                "vector_search": "Searching through internal knowledge base",
-                "perplexity_search": "Searching the real-time web",
-                "document_search": "Looking through project documentation",
-                "memory_search": "Reviewing conversation history for context",
-                "knowledge_lookup": "Looking up relevant information in our knowledge base"
-            },
-            ProgressEventType.PROCESSING: {
-                "analyzing_results": "Analyzing the search results I found",
-                "filtering_results": "Filtering through search results for relevance",
-                "gathering_info": "Gathering and organizing relevant information",
-                "synthesizing": "Synthesizing information from multiple sources",
-                "compiling": "Compiling the most relevant findings"
-            },
-            ProgressEventType.GENERATING: {
-                "response_generation": "Crafting a comprehensive response based on my findings",
-                "answer_preparation": "Preparing your answer with the gathered information",
-                "formatting": "Formatting the response for clarity",
-                "finalizing": "Finalizing your response with all relevant details"
-            },
-            ProgressEventType.ERROR: {
-                "api_error": "Encountered an issue with external service",
-                "search_error": "Hit an issue while searching for information",
-                "processing_error": "Ran into difficulty processing the results",
-                "connection_error": "Experiencing connectivity issues",
-                "timeout_error": "Request took longer than expected"
-            },
-            ProgressEventType.WARNING: {
-                "limited_results": "Found limited results, expanding search scope",
-                "api_timeout": "Search is taking longer than expected",
-                "partial_failure": "Some sources unavailable, using available alternatives",
-                "fallback": "Primary method unavailable, switching to backup approach"
-            },
-            ProgressEventType.RETRY: {
-                "retry_search": "Retrying search with refined parameters",
-                "retry_api": "Retrying the request after a brief pause",
-                "retry_processing": "Attempting to process results again",
-                "retry_generation": "Regenerating response with alternative approach"
-            }
-        }
+        # Keep only recent snippets
+        if len(self.reasoning_snippets) > 10:
+            self.reasoning_snippets = self.reasoning_snippets[-5:]
+    
+    def get_current_display_message(self, base_message: str) -> str:
+        """Get the current message to display with reasoning context"""
+        if self.reasoning_snippets:
+            # Get the most recent meaningful snippet
+            recent_snippet = self.reasoning_snippets[-1]["text"]
+            if len(recent_snippet.strip()) > 15:  # Only show substantial content
+                return f"{base_message}\n\n_\"{recent_snippet[:120]}...\"_"
         
-        # Handle direct streaming content specially (bypass template system)
-        if (self.event_type == ProgressEventType.REASONING and 
-            self.action == "direct_streaming" and self.context):
-            return self.context  # Return direct content without additional formatting
-        
-        # Get base phrase
-        type_phrases = action_phrases.get(self.event_type, {})
-        base_phrase = type_phrases.get(self.action, self.action.replace("_", " ").title())
-        
-        # Build contextual and explicit message
-        if self.context:
-            if self.event_type == ProgressEventType.ERROR:
-                message = f"{base_phrase}: {self.context}"
-            elif self.event_type == ProgressEventType.WARNING:
-                message = f"{base_phrase} ({self.context})"
-            else:
-                # Create more explicit and contextual messages
-                if "search" in self.action.lower():
-                    if "perplexity" in self.action:
-                        message = f"Searching for information about {self.context} on the web"
-                    elif "vector" in self.action:
-                        message = f"Looking internally for information about {self.context}"
-                    else:
-                        message = f"{base_phrase} for {self.context}"
-                elif "analyzing" in self.action.lower():
-                    message = f"Analyzing {self.context}"
-                elif "processing" in self.action.lower() or "compiling" in self.action.lower():
-                    message = f"{base_phrase} about {self.context}"
-                else:
-                    message = f"{base_phrase} - {self.context}"
-        else:
-            message = base_phrase
-        
-        # Format with italic text for Slack (no emojis)
-        return f"_{message}_"
-
+        return base_message
 
 class ProgressTracker:
     """
-    Manages progress tracking with adaptive natural language formatting
-    and real-time update capabilities.
+    Enhanced Progress Tracker with fluid reasoning display capabilities.
+    Manages real-time progress updates with message editing for reasoning transparency.
     """
     
-    def __init__(self, update_callback: Optional[Union[Callable[[str], None], Callable[[str], Awaitable[None]]]] = None):
-        """
-        Initialize progress tracker.
-        
-        Args:
-            update_callback: Function to call when progress updates (e.g., Slack message update)
-        """
+    def __init__(self, update_callback: Optional[Callable] = None):
         self.update_callback = update_callback
-        self.events = []
-        self.last_update_time = None
-        self.update_debounce_seconds = 0.5  # Minimum time between updates
-        self.is_updating = False
+        self.current_message = ""
+        self.last_update_time = 0
+        self.event_history: List[Dict[str, Any]] = []
+        self.reasoning_manager = ReasoningStageManager()
+        self.is_in_reasoning_mode = False
         
-    async def emit_progress(
-        self,
-        event_type: ProgressEventType,
-        action: str,
-        context: Optional[str] = None,
-        details: Optional[Dict[str, Any]] = None
-    ) -> None:
-        """
-        Emit a progress event and trigger update if callback is set.
+    async def emit_progress(self, event_type: ProgressEventType, action: str, details: str = "", 
+                          reasoning_snippet: str = None, force_update: bool = False):
+        """Enhanced progress emission with reasoning snippet support"""
+        timestamp = datetime.now().isoformat()
         
-        Args:
-            event_type: Type of progress event
-            action: Specific action being performed
-            context: Additional context about the action
-            details: Optional detailed information
-        """
-        try:
-            # Create progress event
-            event = ProgressEvent(
-                event_type=event_type,
-                action=action,
-                context=context,
-                details=details
-            )
+        # Create event record
+        event = {
+            "timestamp": timestamp,
+            "event_type": event_type.value,
+            "action": action,
+            "details": details,
+            "reasoning_snippet": reasoning_snippet
+        }
+        
+        self.event_history.append(event)
+        logger.debug(f"Progress event: {event_type.value} - {action} - {details}")
+        
+        # Handle reasoning-specific display logic
+        if event_type == ProgressEventType.LIVE_REASONING:
+            self.is_in_reasoning_mode = True
+            if reasoning_snippet:
+                self.reasoning_manager.add_reasoning_snippet(reasoning_snippet, action)
             
-            # Store event
-            self.events.append(event)
+            # Use the enhanced message with reasoning context
+            display_message = self.reasoning_manager.get_current_display_message(details)
             
-            # Log the event
-            logger.info(f"Progress: {event.to_natural_language()}")
-            
-            # Trigger update if callback is available
-            if self.update_callback and not self.is_updating:
-                await self._trigger_update(event)
-                
-        except Exception as e:
-            logger.error(f"Error emitting progress event: {e}")
+            # Only update if enough time has passed or force update
+            if self.reasoning_manager.should_update_message(force_update):
+                await self._update_slack_message(display_message)
+        
+        elif event_type in [ProgressEventType.FLUID_THINKING, ProgressEventType.REASONING]:
+            self.is_in_reasoning_mode = True
+            await self._update_slack_message(details)
+        
+        else:
+            # Standard progress events
+            self.is_in_reasoning_mode = False
+            await self._update_slack_message(self._format_progress_message(event_type, action, details))
     
-    async def _trigger_update(self, event: ProgressEvent) -> None:
-        """Trigger progress update with debouncing"""
-        try:
-            # Check debounce timing
-            now = datetime.now()
-            if (self.last_update_time and 
-                (now - self.last_update_time).total_seconds() < self.update_debounce_seconds):
-                return
-            
-            self.is_updating = True
-            
-            # Call update callback with natural language message
-            message = event.to_natural_language()
-            
-            if self.update_callback:
+    def _format_progress_message(self, event_type: ProgressEventType, action: str, details: str) -> str:
+        """Format progress message based on event type"""
+        emoji_map = {
+            ProgressEventType.ANALYZING: "🔍",
+            ProgressEventType.REASONING: "💭",
+            ProgressEventType.SEARCHING: "🔎",
+            ProgressEventType.PROCESSING: "⚙️",
+            ProgressEventType.GENERATING: "✨",
+            ProgressEventType.SYNTHESIZING: "🧩",
+            ProgressEventType.OBSERVING: "👀",
+            ProgressEventType.REPLANNING: "🔄",
+            ProgressEventType.ERROR: "❌",
+            ProgressEventType.WARNING: "⚠️",
+            ProgressEventType.RETRY: "🔄",
+            ProgressEventType.THINKING: "💭",
+            ProgressEventType.CONSIDERING: "🤔"
+        }
+        
+        emoji = emoji_map.get(event_type, "⚡")
+        
+        if details:
+            return f"{emoji} {details}"
+        else:
+            return f"{emoji} {action.replace('_', ' ').title()}..."
+    
+    async def _update_slack_message(self, message: str):
+        """Update Slack message via callback"""
+        if self.update_callback and message != self.current_message:
+            try:
+                self.current_message = message
                 if asyncio.iscoroutinefunction(self.update_callback):
                     await self.update_callback(message)
                 else:
                     self.update_callback(message)
-                
-            self.last_update_time = now
-            
-        except Exception as e:
-            logger.error(f"Error triggering progress update: {e}")
-        finally:
-            self.is_updating = False
+            except Exception as e:
+                logger.warning(f"Failed to update Slack message: {e}")
     
-    def get_latest_event(self) -> Optional[ProgressEvent]:
-        """Get the most recent progress event"""
-        return self.events[-1] if self.events else None
-    
-    def get_event_history(self) -> list[ProgressEvent]:
-        """Get full event history"""
-        return self.events.copy()
-    
-    def clear_events(self) -> None:
-        """Clear event history"""
-        self.events.clear()
-        self.last_update_time = None
+    def get_reasoning_summary(self) -> Dict[str, Any]:
+        """Get summary of reasoning process for debugging/analysis"""
+        return {
+            "total_events": len(self.event_history),
+            "reasoning_events": len([e for e in self.event_history if "reasoning" in e["event_type"]]),
+            "reasoning_snippets": len(self.reasoning_manager.reasoning_snippets),
+            "current_stage": self.reasoning_manager.current_stage,
+            "in_reasoning_mode": self.is_in_reasoning_mode
+        }
 
-
-# Convenience functions for common progress patterns
-async def emit_thinking(tracker: ProgressTracker, action: str = "analyzing", context: Optional[str] = None):
-    """Emit thinking progress event"""
-    await tracker.emit_progress(ProgressEventType.THINKING, action, context)
-
-async def emit_searching(tracker: ProgressTracker, action: str = "vector_search", context: Optional[str] = None):
-    """Emit searching progress event"""
-    await tracker.emit_progress(ProgressEventType.SEARCHING, action, context)
-
-async def emit_processing(tracker: ProgressTracker, action: str = "analyzing_results", context: Optional[str] = None):
-    """Emit processing progress event"""
-    await tracker.emit_progress(ProgressEventType.PROCESSING, action, context)
-
-async def emit_generating(tracker: ProgressTracker, action: str = "response_generation", context: Optional[str] = None):
-    """Emit generating progress event"""
-    await tracker.emit_progress(ProgressEventType.GENERATING, action, context)
-
-async def emit_error(tracker: ProgressTracker, action: str = "api_error", context: Optional[str] = None):
-    """Emit error progress event"""
-    await tracker.emit_progress(ProgressEventType.ERROR, action, context)
-
-async def emit_warning(tracker: ProgressTracker, action: str = "limited_results", context: Optional[str] = None):
-    """Emit warning progress event"""
-    await tracker.emit_progress(ProgressEventType.WARNING, action, context)
-
-async def emit_retry(tracker: ProgressTracker, action: str = "retry_api", context: Optional[str] = None):
-    """Emit retry progress event"""
-    await tracker.emit_progress(ProgressEventType.RETRY, action, context)
-
-# New reasoning-specific emitters for streaming AI thought process
-async def emit_reasoning(tracker: ProgressTracker, action: str = "step", context: Optional[str] = None):
-    """Emit reasoning progress event"""
-    await tracker.emit_progress(ProgressEventType.REASONING, action, context)
-
-async def emit_considering(tracker: ProgressTracker, action: str = "options", context: Optional[str] = None):
-    """Emit considering progress event"""
-    await tracker.emit_progress(ProgressEventType.CONSIDERING, action, context)
-
-async def emit_analyzing(tracker: ProgressTracker, action: str = "problem", context: Optional[str] = None):
-    """Emit analyzing progress event"""
-    await tracker.emit_progress(ProgressEventType.ANALYZING, action, context)
-
-async def emit_reasoning_step(tracker: ProgressTracker, reasoning_text: str):
-    """
-    Emit real-time reasoning step from streaming AI response
-    
-    Args:
-        tracker: Progress tracker instance
-        reasoning_text: Raw reasoning text from AI stream
-    """
-    # Extract the key concept from reasoning text for context
-    reasoning_snippet = reasoning_text.strip()[:50] + "..." if len(reasoning_text) > 50 else reasoning_text.strip()
-    
-    # Determine the type of reasoning based on content
-    lower_text = reasoning_text.lower()
-    
-    if any(word in lower_text for word in ["consider", "option", "alternative", "choice"]):
-        await emit_considering(tracker, "options", f"the best approach: {reasoning_snippet}")
-    elif any(word in lower_text for word in ["analyze", "examining", "looking at", "studying"]):
-        await emit_analyzing(tracker, "problem", f"the details: {reasoning_snippet}")
-    elif any(word in lower_text for word in ["step", "first", "next", "then", "because"]):
-        await emit_reasoning(tracker, "step", f"the logical sequence: {reasoning_snippet}")
-    else:
-        # Default to thinking for general reasoning
-        await emit_reasoning(tracker, "thinking", f"through this: {reasoning_snippet}")
-
+# Enhanced streaming reasoning emitter
 class StreamingReasoningEmitter:
-    """
-    Handles real-time reasoning step emission during AI streaming responses
-    """
+    """Specialized emitter for streaming reasoning display"""
     
     def __init__(self, progress_tracker: ProgressTracker):
-        self.tracker = progress_tracker
-        self.last_reasoning_time = None
-        self.reasoning_debounce_seconds = 1.0  # Limit reasoning updates to once per second
-    
-    async def emit_reasoning_chunk(self, chunk_text: str, chunk_metadata: Optional[Dict[str, Any]] = None):
-        """
-        Process and emit actual streaming content from Gemini model with intelligent filtering
+        self.progress_tracker = progress_tracker
+        self.accumulated_text = ""
+        self.stage_keywords = {
+            "understand": "💭 Understanding your request...",
+            "approach": "🎯 Considering the best approach...",
+            "tools": "🔧 Selecting optimal tools...",
+            "strategy": "⚡ Planning execution strategy...",
+            "synthesis": "🧩 Preparing to synthesize findings..."
+        }
+        self.current_stage_index = 0
         
-        Args:
-            chunk_text: Text chunk from streaming response (raw model output)
-            chunk_metadata: Optional metadata about the chunk
-        """
-        try:
-            # Clean up the chunk text for display
-            clean_text = chunk_text.strip()
-            if not clean_text:
-                return
-            
-            # Filter out technical artifacts that users shouldn't see
-            if self._should_filter_chunk(clean_text):
-                return
-                
-            # Apply debouncing to prevent message spam
-            now = datetime.now()
-            if (self.last_reasoning_time and 
-                (now - self.last_reasoning_time).total_seconds() < self.reasoning_debounce_seconds):
-                return
-            
-            # Create user-friendly reasoning summary if needed
-            user_friendly_text = self._make_user_friendly(clean_text)
-            
-            # Display the cleaned streaming content from the model
-            formatted_message = f"_{user_friendly_text}_"
-            
-            # Emit the reasoning content as progress with direct message
-            await self.tracker.emit_progress(
-                ProgressEventType.REASONING,
-                "direct_streaming",
-                formatted_message
+    async def emit_reasoning_chunk(self, chunk_text: str, metadata: Dict[str, Any] = None):
+        """Emit a chunk of reasoning with intelligent stage detection"""
+        self.accumulated_text += chunk_text
+        
+        # Detect stage transitions based on content
+        stage_detected = False
+        for keyword, stage_message in self.stage_keywords.items():
+            if keyword in chunk_text.lower() and not stage_detected:
+                await self.progress_tracker.emit_progress(
+                    ProgressEventType.LIVE_REASONING,
+                    "reasoning_stage",
+                    stage_message,
+                    reasoning_snippet=chunk_text,
+                    force_update=True
+                )
+                stage_detected = True
+                break
+        
+        # If no stage keyword, emit as live reasoning
+        if not stage_detected:
+            await self.progress_tracker.emit_progress(
+                ProgressEventType.LIVE_REASONING,
+                "live_thinking",
+                "💭 Thinking through your request...",
+                reasoning_snippet=chunk_text
             )
-            self.last_reasoning_time = now
-                
-        except Exception as e:
-            logger.error(f"Error emitting reasoning chunk: {e}")
-    
-    def _should_filter_chunk(self, text: str) -> bool:
-        """
-        Determine if a chunk should be filtered out (not shown to users)
-        
-        Args:
-            text: Text chunk to evaluate
-            
-        Returns:
-            bool: True if chunk should be filtered out
-        """
-        # Filter out technical artifacts
-        filters = [
-            # JSON-like structures
-            text.startswith('{') and text.endswith('}'),
-            text.startswith('[') and text.endswith(']'),
-            '{"' in text and '"}' in text,
-            
-            # Code-like patterns
-            text.startswith('```'),
-            '=' in text and len(text.split('=')) > 2,
-            
-            # Very short meaningless chunks
-            len(text) < 3,
-            
-            # Only punctuation or whitespace
-            all(c in '.,!?;: \t\n-_()[]{}' for c in text),
-            
-            # Technical keywords that aren't user-friendly
-            any(keyword in text.lower() for keyword in [
-                'json', 'api', 'error', 'debug', 'trace', 'function',
-                'variable', 'array', 'object', 'null', 'undefined'
-            ])
-        ]
-        
-        return any(filters)
-    
-    def _make_user_friendly(self, text: str) -> str:
-        """
-        Convert technical reasoning into user-friendly language
-        
-        Args:
-            text: Original text chunk
-            
-        Returns:
-            str: User-friendly version
-        """
-        # If it's already user-friendly, return as-is
-        if self._is_user_friendly_already(text):
-            return text
-        
-        # Create natural language reasoning summaries
-        lower_text = text.lower()
-        
-        # Map technical patterns to user-friendly descriptions
-        if any(word in lower_text for word in ['analyzing', 'analysis', 'examine']):
-            return "Analyzing your request"
-        elif any(word in lower_text for word in ['considering', 'thinking', 'pondering']):
-            return "Considering the best approach" 
-        elif any(word in lower_text for word in ['searching', 'looking', 'finding']):
-            return "Searching for relevant information"
-        elif any(word in lower_text for word in ['planning', 'preparing', 'organizing']):
-            return "Planning my response"
-        elif any(word in lower_text for word in ['understanding', 'interpreting', 'processing']):
-            return "Understanding your question"
-        elif any(word in lower_text for word in ['generating', 'creating', 'crafting']):
-            return "Crafting your answer"
-        else:
-            # For unclear technical content, provide a generic but useful message
-            return "Working on your request"
-    
-    def _is_user_friendly_already(self, text: str) -> bool:
-        """
-        Check if text is already user-friendly (natural language)
-        
-        Args:
-            text: Text to check
-            
-        Returns:
-            bool: True if already user-friendly
-        """
-        # Check for natural language patterns
-        natural_patterns = [
-            text.startswith(("I am", "I'm", "Let me", "I need to", "I will")),
-            any(word in text.lower() for word in [
-                "analyzing", "considering", "thinking", "working on",
-                "looking at", "examining", "planning", "preparing"
-            ]),
-            len(text.split()) >= 3,  # More than 2 words suggests natural language
-            not any(c in text for c in '{}[]"=<>()'),  # No technical characters
-        ]
-        
-        return any(natural_patterns)
-    
-    def _is_reasoning_content(self, text: str) -> bool:
-        """
-        Determine if text chunk contains reasoning content
-        
-        Args:
-            text: Text chunk to analyze
-            
-        Returns:
-            bool: True if appears to be reasoning content
-        """
-        if not text or len(text.strip()) < 10:
-            return False
-            
-        reasoning_indicators = [
-            "i am considering", "i am thinking", "i am analyzing", 
-            "let me think", "first, i", "next, i", "because",
-            "therefore", "however", "on the other hand",
-            "step 1", "step 2", "to begin with", "in conclusion"
-        ]
-        
-        lower_text = text.lower()
-        return any(indicator in lower_text for indicator in reasoning_indicators)
+
+# Convenience functions for enhanced progress tracking
+async def emit_fluid_reasoning(tracker: ProgressTracker, action: str, details: str, reasoning_snippet: str = None):
+    """Emit fluid reasoning progress with snippet"""
+    await tracker.emit_progress(ProgressEventType.FLUID_THINKING, action, details, reasoning_snippet)
+
+async def emit_live_reasoning(tracker: ProgressTracker, action: str, details: str, reasoning_snippet: str = None):
+    """Emit live reasoning progress with real-time snippet"""
+    await tracker.emit_progress(ProgressEventType.LIVE_REASONING, action, details, reasoning_snippet)
+
+async def emit_reasoning(tracker: ProgressTracker, action: str, details: str):
+    """Emit general reasoning progress"""
+    await tracker.emit_progress(ProgressEventType.REASONING, action, details)
+
+async def emit_searching(tracker: ProgressTracker, action: str, details: str):
+    """Emit search progress"""
+    await tracker.emit_progress(ProgressEventType.SEARCHING, action, details)
+
+async def emit_processing(tracker: ProgressTracker, action: str, details: str):
+    """Emit processing progress"""
+    await tracker.emit_progress(ProgressEventType.PROCESSING, action, details)
+
+async def emit_generating(tracker: ProgressTracker, action: str, details: str):
+    """Emit generation progress"""
+    await tracker.emit_progress(ProgressEventType.GENERATING, action, details)
+
+async def emit_synthesizing(tracker: ProgressTracker, action: str, details: str):
+    """Emit synthesis progress"""
+    await tracker.emit_progress(ProgressEventType.SYNTHESIZING, action, details)
+
+async def emit_observing(tracker: ProgressTracker, action: str, details: str):
+    """Emit observation progress"""
+    await tracker.emit_progress(ProgressEventType.OBSERVING, action, details)
+
+async def emit_error(tracker: ProgressTracker, action: str, details: str):
+    """Emit error progress"""
+    await tracker.emit_progress(ProgressEventType.ERROR, action, details)
+
+async def emit_warning(tracker: ProgressTracker, action: str, details: str):
+    """Emit warning progress"""
+    await tracker.emit_progress(ProgressEventType.WARNING, action, details)
+
+async def emit_retry(tracker: ProgressTracker, action: str, details: str):
+    """Emit retry progress"""
+    await tracker.emit_progress(ProgressEventType.RETRY, action, details)
+
+async def emit_thinking(tracker: ProgressTracker, action: str, details: str):
+    """Emit thinking progress"""
+    await tracker.emit_progress(ProgressEventType.THINKING, action, details)
+
+async def emit_considering(tracker: ProgressTracker, action: str, details: str):
+    """Emit considering progress"""
+    await tracker.emit_progress(ProgressEventType.CONSIDERING, action, details)
+
+async def emit_analyzing(tracker: ProgressTracker, action: str, details: str):
+    """Emit analysis progress"""
+    await tracker.emit_progress(ProgressEventType.ANALYZING, action, details)
