@@ -4752,6 +4752,85 @@ async def test_relevance_score_guidance():
         logger.error(f"Relevance score guidance test failed: {e}")
         return {"status": "error", "message": str(e)}
 
+@app.get("/admin/test-atlassian-toolbelt")
+async def test_atlassian_toolbelt():
+    """Admin endpoint to test Atlassian toolbelt functionality"""
+    try:
+        from agents.atlassian_guru import AtlassianToolbelt
+        
+        test_results = {
+            "initialization": False,
+            "health_check": False,
+            "capabilities": None,
+            "task_execution": None,
+            "error_details": []
+        }
+        
+        async with AtlassianToolbelt() as toolbelt:
+            test_results["initialization"] = True
+            
+            # Test health check with timeout
+            try:
+                health = await asyncio.wait_for(toolbelt.health_check(), timeout=10.0)
+                test_results["health_check"] = health
+            except asyncio.TimeoutError:
+                test_results["health_check"] = False
+                test_results["error_details"].append("Health check timed out (10s)")
+            
+            if not test_results["health_check"]:
+                return {"status": "health_check_failed", "test_results": test_results}
+            
+            # Test capabilities with timeout
+            try:
+                capabilities = await asyncio.wait_for(toolbelt.get_capabilities(), timeout=30.0)
+                test_results["capabilities"] = capabilities
+            except asyncio.TimeoutError:
+                test_results["error_details"].append("Capabilities discovery timed out (30s)")
+                return {"status": "timeout", "test_results": test_results}
+            
+            # Test simple task execution with timeout
+            task = "Get status of Atlassian configuration"
+            try:
+                result = await asyncio.wait_for(toolbelt.execute_task(task), timeout=45.0)
+                test_results["task_execution"] = {
+                    "task": task,
+                    "status": result.get("status"),
+                    "message": result.get("message"),
+                    "data_available": result.get("data") is not None,
+                    "execution_method": result.get("execution_method")
+                }
+            except asyncio.TimeoutError:
+                test_results["error_details"].append("Task execution timed out (45s)")
+                test_results["task_execution"] = {"status": "timeout"}
+            
+            overall_success = (
+                test_results["initialization"] and 
+                test_results["health_check"] and
+                test_results["capabilities"] and
+                test_results.get("task_execution", {}).get("status") == "success"
+            )
+            
+            return {
+                "status": "success" if overall_success else "partial_failure",
+                "atlassian_toolbelt_working": overall_success,
+                "test_results": test_results,
+                "summary": {
+                    "server_url": capabilities.get("server_url") if capabilities else None,
+                    "available_tools": len(capabilities.get("available_tools", [])) if capabilities else 0,
+                    "task_execution_status": test_results.get("task_execution", {}).get("status", "not_tested")
+                }
+            }
+        
+    except Exception as e:
+        logger.error(f"Error testing Atlassian toolbelt: {e}")
+        import traceback
+        traceback.print_exc()
+        return {
+            "status": "error",
+            "error": str(e),
+            "test_results": test_results
+        }
+
 # Server startup configuration for Cloud Run deployment
 if __name__ == "__main__":
     # Force Redis environment variables to empty to prevent connection attempts

@@ -29,9 +29,9 @@ class AtlassianToolbelt:
         self.dynamic_prompt = None
         self.available_tools = []
         
-        # Initialize HTTP client with connection pooling
+        # Initialize HTTP client with connection pooling and increased timeout
         self.http_client = httpx.AsyncClient(
-            timeout=60.0,
+            timeout=120.0,  # Increased timeout for slow MCP server
             follow_redirects=True,
             limits=httpx.Limits(max_connections=10, max_keepalive_connections=5)
         )
