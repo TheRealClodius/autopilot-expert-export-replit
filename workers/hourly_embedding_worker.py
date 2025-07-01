@@ -17,6 +17,7 @@ from config import settings
 from services.embedding_service import EmbeddingService
 from services.slack_connector import SlackConnector
 from services.data_processor import DataProcessor
+from services.notion_service import NotionService
 from models.schemas import ProcessedMessage
 from celery_app import celery_app
 

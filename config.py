@@ -77,6 +77,10 @@ class Settings(BaseSettings):
     LANGSMITH_PROJECT: str = os.getenv("LANGSMITH_PROJECT", "autopilot-expert-multi-agent")
     LANGSMITH_ENDPOINT: str = os.getenv("LANGSMITH_ENDPOINT", "https://api.smith.langchain.com")
     
+    # Notion Integration Configuration
+    NOTION_INTEGRATION_SECRET: str = os.getenv("NOTION_INTEGRATION_SECRET", "")
+    NOTION_DATABASE_ID: str = os.getenv("NOTION_DATABASE_ID", "")
+    
     # MCP Server Configuration
     MCP_SERVER_URL: str = os.getenv("MCP_SERVER_URL", 
         "https://remote-mcp-server-andreiclodius.replit.app" if os.getenv("REPLIT_DEPLOYMENT") 
