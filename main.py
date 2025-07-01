@@ -5334,6 +5334,167 @@ async def initial_historical_embedding():
             "message": "Failed to start initial historical embedding process"
         }
 
+@app.get("/admin/continue-first-gen-ingestion")
+async def continue_first_gen_ingestion():
+    """
+    Continue first generation ingestion with aggressive rate limit handling.
+    Will wait for rate limits to clear and continue until all messages are embedded.
+    """
+    try:
+        logger.info("Starting continued first generation ingestion...")
+        
+        # Run the continuation script with extended timeout
+        process = subprocess.run(
+            [sys.executable, "continue_first_gen_ingestion.py"],
+            capture_output=True,
+            text=True,
+            timeout=7200  # 2 hour timeout
+        )
+        
+        stdout = process.stdout
+        stderr = process.stderr
+        
+        if process.returncode == 0:
+            # Parse success from output
+            lines = stdout.split('\n') if stdout else []
+            success_line = [line for line in lines if '🎉 FIRST GENERATION INGESTION COMPLETED' in line]
+            
+            return {
+                "status": "success",
+                "message": "First generation ingestion completed successfully",
+                "output": stdout,
+                "details": success_line[0] if success_line else "Ingestion completed",
+                "next_step": "Hourly daemon will now maintain fresh data automatically"
+            }
+        else:
+            return {
+                "status": "error",
+                "message": "First generation ingestion failed",
+                "error": stderr,
+                "output": stdout,
+                "return_code": process.returncode,
+                "suggestion": "May need to retry after longer wait for rate limits"
+            }
+            
+    except subprocess.TimeoutExpired:
+        return {
+            "status": "timeout",
+            "message": "Ingestion timed out after 2 hours - Slack rate limits may be very aggressive",
+            "suggestion": "Try again later when rate limits reset"
+        }
+    except Exception as e:
+        logger.error(f"Error in continued first generation ingestion: {e}")
+        return {
+            "status": "error",
+            "error": str(e),
+            "message": "Failed to start continued ingestion process"
+        }
+
+@app.get("/admin/slack-rate-limit-status")
+async def check_slack_rate_limit_status():
+    """
+    Check current Slack API rate limit status by making a minimal API call.
+    """
+    try:
+        from services.enhanced_slack_connector import EnhancedSlackConnector
+        connector = EnhancedSlackConnector()
+        
+        # Try a minimal API call to check rate limit status
+        import time
+        start_time = time.time()
+        
+        try:
+            # Try to get bot info - minimal API call
+            response = await connector.client.auth_test()
+            end_time = time.time()
+            
+            return {
+                "status": "ok",
+                "rate_limited": False,
+                "response_time_ms": round((end_time - start_time) * 1000, 2),
+                "bot_id": response.get("user_id"),
+                "team": response.get("team"),
+                "message": "Slack API is accessible - ready for ingestion"
+            }
+            
+        except Exception as e:
+            error_msg = str(e).lower()
+            if "ratelimited" in error_msg or "rate_limit" in error_msg:
+                return {
+                    "status": "rate_limited",
+                    "rate_limited": True,
+                    "error": str(e),
+                    "message": "Slack API is rate limited - wait before starting ingestion",
+                    "suggestion": "Wait 10-30 minutes before attempting ingestion"
+                }
+            else:
+                return {
+                    "status": "error",
+                    "rate_limited": False,
+                    "error": str(e),
+                    "message": "Slack API error - check credentials and permissions"
+                }
+                
+    except Exception as e:
+        return {
+            "status": "error",
+            "error": str(e),
+            "message": "Failed to check Slack API status"
+        }
+
+@app.get("/admin/ingestion-status-summary")
+async def get_ingestion_status_summary():
+    """
+    Get comprehensive status of the ingestion pipeline and current vector index state.
+    """
+    try:
+        from services.embedding_service import EmbeddingService
+        from services.notion_service import NotionService
+        
+        embedding_service = EmbeddingService()
+        notion_service = NotionService()
+        
+        # Get current index stats
+        index_stats = await embedding_service.get_index_stats()
+        
+        # Get recent Notion runs if available
+        try:
+            recent_runs = await notion_service.get_recent_runs(limit=3)
+        except:
+            recent_runs = []
+        
+        # Check hourly daemon state
+        hourly_state = {}
+        try:
+            with open("hourly_embedding_state.json", "r") as f:
+                hourly_state = json.load(f)
+        except:
+            hourly_state = {"status": "No state file found"}
+        
+        return {
+            "status": "success",
+            "vector_index": {
+                "total_vectors": index_stats.get("total_vectors", 0),
+                "dimension": index_stats.get("dimension", 0),
+                "index_fullness": index_stats.get("index_fullness", 0.0),
+                "ready_for_search": index_stats.get("total_vectors", 0) > 0
+            },
+            "hourly_daemon": hourly_state,
+            "recent_notion_runs": recent_runs[:3] if recent_runs else [],
+            "recommendations": {
+                "next_action": "continue-first-gen-ingestion" if index_stats.get("total_vectors", 0) == 0 else "system_ready",
+                "message": "Vector index is empty - run first generation ingestion" if index_stats.get("total_vectors", 0) == 0 else "System is operational with embedded conversations"
+            }
+        }
+        
+    except Exception as e:
+        logger.error(f"Error getting ingestion status: {e}")
+        return {
+            "status": "error",
+            "error": str(e),
+            "message": "Failed to get ingestion status"
+        }
+
 # Server startup configuration for Cloud Run deployment
 if __name__ == "__main__":
     # Force Redis environment variables to empty to prevent connection attempts
