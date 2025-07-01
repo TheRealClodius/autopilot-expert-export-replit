@@ -153,7 +153,7 @@ async def run_smart_hourly_embedding():
                     oldest_ts = str((now - timedelta(hours=2)).timestamp())  # 2-hour window
                     
                     try:
-                        response = await connector.client.conversations_history(
+                        response = connector.client.conversations_history(
                             channel=channel["id"],
                             oldest=max(last_ts, oldest_ts),
                             limit=100,
