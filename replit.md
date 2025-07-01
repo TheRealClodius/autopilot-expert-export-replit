@@ -83,6 +83,20 @@ The system uses environment variables for configuration management and supports 
 
 ## Recent Changes
 
+✅ **July 1, 2025 - CRITICAL CELERY SERVICES FIXED: HOURLY EMBEDDING AUTOMATION RESTORED (PRODUCTION READY)**
+- **Root Cause Identified**: Celery worker and beat scheduler were not running, preventing scheduled hourly embedding tasks from executing
+- **Celery Worker Started**: Configured workflow to run Celery worker with all queues (default, ingestion, summarization, processing, priority)
+- **Celery Beat Scheduler Started**: Added workflow to run beat scheduler for automated task scheduling every hour at minute 0
+- **System Verification**: Manual tests confirm hourly embedding worker and Notion logging are both operational
+- **Automatic Scheduling Restored**: Hourly embedding checks will now run automatically at the top of each hour (00 minutes)
+- **Notion Integration Confirmed**: Each run properly logs to Notion dashboard with status and metrics
+- **Production Status**: Complete background task system operational - hourly Slack channel monitoring and embedding will resume automatically
+- **User Impact**: Notion dashboard will now receive regular updates every hour without manual intervention
+- **Services Running**: FastAPI Server + Celery Worker + Celery Beat Scheduler all operational simultaneously
+- **Files Modified**: Added workflow configurations for Celery services
+- **Architecture Achievement**: Restored full automation pipeline from scheduled task → embedding check → Notion logging
+- **Next Scheduled Run**: 1:00 PM UTC (13 minutes after fix implementation)
+
 ✅ **July 1, 2025 - NOTION DASHBOARD INTEGRATION FULLY OPERATIONAL: COMPREHENSIVE EMBEDDING PIPELINE MONITORING (PRODUCTION READY)**
 - **Complete Notion Service**: Built `services/notion_service.py` with full API integration for dashboard monitoring and control capabilities
 - **Automatic Run Logging**: Hourly embedding worker now automatically logs each run to Notion database with detailed metrics (status, channels processed, messages embedded, duration)
