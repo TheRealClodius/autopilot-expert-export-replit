@@ -52,7 +52,7 @@ author = "agent"
 
 [[workflows.workflow.tasks]]
 task = "shell.exec"
-args = "REDIS_URL=redis://localhost:6379/0 celery -A celery_app worker --loglevel=info --queues=default,ingestion,summarization,processing,priority"
+args = "./start_celery_worker.sh"
 
 [[workflows.workflow]]
 name = "Celery Beat Redis"
@@ -60,7 +60,7 @@ author = "agent"
 
 [[workflows.workflow.tasks]]
 task = "shell.exec"
-args = "REDIS_URL=redis://localhost:6379/0 celery -A celery_app beat --loglevel=info"
+args = "./start_celery_beat.sh"
 
 [[ports]]
 localPort = 5000
