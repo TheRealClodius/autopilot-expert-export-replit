@@ -18,7 +18,7 @@ from tools.perplexity_search import PerplexitySearchTool
 from tools.outlook_meeting import OutlookMeetingTool
 # AtlassianTool replaced by AtlassianToolbelt
 from agents.atlassian_guru import AtlassianToolbelt
-from agents.client_agent import ClientAgent
+from agents.client_agent_enhanced import ClientAgent
 from services.memory_service import MemoryService
 from services.token_manager import TokenManager
 from services.entity_store import EntityStore
@@ -128,8 +128,18 @@ class OrchestratorAgent:
                 total_time = time.time() - start_time
                 logger.info(f"Orchestrator completed 5-step process in {total_time:.2f}s with {len(self.current_execution_steps)} steps")
                 
+<<<<<<< HEAD
                 # Convert new clean format to legacy format for compatibility
                 return await self._convert_clean_output_to_legacy_format(final_clean_output, message)
+=======
+                # Use enhanced client agent with clean output format
+                final_response = await self._use_enhanced_client_agent_new(final_clean_output, message)
+                if final_response:
+                    return final_response
+                
+                # Fallback to legacy format conversion for compatibility
+                return self._convert_clean_output_to_legacy_format(final_clean_output, message)
+>>>>>>> 5ce81f8 (Integrate refined responses and contextual awareness for enhanced user interactions)
             
             return await self._create_fallback_response_new("I couldn't generate a complete response. Please try again.", message)
 
@@ -368,7 +378,59 @@ class OrchestratorAgent:
     # NEW: SUPPORTING METHODS FOR 5-STEP FRAMEWORK
     # ============================================================================
 
+<<<<<<< HEAD
     async def _convert_clean_output_to_legacy_format(self, clean_output: Dict[str, Any], message: ProcessedMessage) -> Dict[str, Any]:
+=======
+    async def _use_enhanced_client_agent_new(self, clean_output: Dict[str, Any], message: ProcessedMessage) -> Optional[Dict[str, Any]]:
+        """NEW: Use enhanced client agent with clean output format from 5-step reasoning"""
+        try:
+            logger.info("Using enhanced client agent with clean orchestrator output...")
+            
+            # Build user context for enhanced client agent
+            user_context = {
+                "query": message.text,
+                "user": {
+                    "first_name": message.user_first_name or "",
+                    "title": message.user_title or "",
+                    "department": message.user_department or ""
+                },
+                "channel_context": {
+                    "is_dm": message.is_dm,
+                    "channel_name": message.channel_name,
+                    "thread_ts": message.thread_ts
+                },
+                "conversation_history": "",  # Could be enhanced later
+                "trace_id": None  # Could be enhanced with proper trace ID
+            }
+            
+            # Initialize enhanced client agent
+            enhanced_client = ClientAgent()
+            
+            # Generate sophisticated response using new interface
+            enhanced_result = await enhanced_client.generate_response(clean_output, user_context)
+            
+            if enhanced_result:
+                # Convert enhanced response to legacy format for Slack Gateway compatibility
+                return {
+                    "channel_id": message.channel_id,
+                    "thread_ts": message.thread_ts or message.message_ts,
+                    "text": enhanced_result.get("text", ""),
+                    "timestamp": datetime.now().isoformat(),
+                    "suggestions": enhanced_result.get("suggestions", []),
+                    "confidence_level": enhanced_result.get("confidence_level", "medium"),
+                    "source_links": clean_output.get("source_links", []),
+                    "execution_summary": clean_output.get("execution_summary", {}),
+                    "enhanced_mode": True  # Flag to indicate enhanced processing
+                }
+            
+            return None
+            
+        except Exception as e:
+            logger.error(f"Error using enhanced client agent: {e}")
+            return None
+
+    def _convert_clean_output_to_legacy_format(self, clean_output: Dict[str, Any], message: ProcessedMessage) -> Dict[str, Any]:
+>>>>>>> 5ce81f8 (Integrate refined responses and contextual awareness for enhanced user interactions)
         """NEW: Convert new clean output format to legacy format for compatibility"""
         
         # Enhanced: Also generate enhanced client agent response
