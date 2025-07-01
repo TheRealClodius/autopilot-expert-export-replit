@@ -15,31 +15,41 @@ logger = logging.getLogger(__name__)
 # Determine broker URL with fallback for deployment
 def get_broker_url():
     """Get Celery broker URL with fallback for deployment environments"""
-    # Force Redis for local development
-    redis_url = 'redis://localhost:6379/0'
-    try:
-        import redis
-        r = redis.Redis(host='localhost', port=6379, db=0)
-        r.ping()
-        logger.info(f"Using local Redis broker: {redis_url}")
-        return redis_url
-    except Exception as e:
-        logger.warning(f"Redis not available ({e}), falling back to memory transport")
-        return 'memory://'
+    # Try to use Redis if available, fallback to memory for deployment
+    if settings.REDIS_URL and settings.REDIS_URL.strip():
+        logger.info(f"Using Redis broker: {settings.REDIS_URL}")
+        return settings.REDIS_URL
+    else:
+        # Try default Redis URL
+        try:
+            import redis
+            r = redis.Redis(host='localhost', port=6379, db=0)
+            r.ping()
+            redis_url = 'redis://localhost:6379/0'
+            logger.info(f"Using local Redis broker: {redis_url}")
+            return redis_url
+        except:
+            logger.info("Redis not available, using memory transport for deployment compatibility")
+            return 'memory://'
 
 def get_result_backend():
     """Get Celery result backend with fallback for deployment environments"""
-    # Force Redis for local development
-    redis_url = 'redis://localhost:6379/0'
-    try:
-        import redis
-        r = redis.Redis(host='localhost', port=6379, db=0)
-        r.ping()
-        logger.info(f"Using local Redis backend: {redis_url}")
-        return redis_url
-    except Exception as e:
-        logger.warning(f"Redis not available ({e}), falling back to memory backend")
-        return 'cache+memory://'
+    # Try to use Redis if available, fallback to memory for deployment
+    if settings.REDIS_URL and settings.REDIS_URL.strip():
+        logger.info(f"Using Redis backend: {settings.REDIS_URL}")
+        return settings.REDIS_URL
+    else:
+        # Try default Redis URL
+        try:
+            import redis
+            r = redis.Redis(host='localhost', port=6379, db=0)
+            r.ping()
+            redis_url = 'redis://localhost:6379/0'
+            logger.info(f"Using local Redis backend: {redis_url}")
+            return redis_url
+        except:
+            logger.info("Redis not available, using cache+memory backend for deployment compatibility")
+            return 'cache+memory://'
 
 # Create Celery application with deployment-safe configuration
 celery_app = Celery(
