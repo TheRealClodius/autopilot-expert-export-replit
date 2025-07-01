@@ -64,7 +64,8 @@ class EnhancedSlackConnector:
         channel_id: str,
         channel_name: str,
         max_messages: int = 1000,
-        start_date: Optional[datetime] = None
+        start_date: Optional[datetime] = None,
+        max_age_days: int = 365
     ) -> List[SlackMessage]:
         """
         Extract complete channel history with proper thread relationships.
@@ -73,7 +74,8 @@ class EnhancedSlackConnector:
             channel_id: Slack channel ID
             channel_name: Channel name for context
             max_messages: Maximum messages to extract (to handle rate limits)
-            start_date: Optional start date (defaults to 30 days ago)
+            start_date: Optional start date (defaults to 1 year ago for initial embedding)
+            max_age_days: Maximum age of messages to include (default: 365 days)
             
         Returns:
             List of SlackMessage objects with proper thread relationships
@@ -81,9 +83,16 @@ class EnhancedSlackConnector:
         try:
             logger.info(f"Starting complete extraction from channel {channel_name} ({channel_id})")
             
-            # Set default start date
+            # Set default start date with 1-year limit for initial embedding
             if start_date is None:
-                start_date = datetime.now() - timedelta(days=30)
+                start_date = datetime.now() - timedelta(days=max_age_days)
+                logger.info(f"Using 1-year lookback for initial embedding: {start_date.strftime('%Y-%m-%d')}")
+            
+            # Enforce maximum age limit
+            earliest_allowed = datetime.now() - timedelta(days=max_age_days)
+            if start_date < earliest_allowed:
+                start_date = earliest_allowed
+                logger.info(f"Applied 1-year age limit, adjusted start date to: {start_date.strftime('%Y-%m-%d')}")
             
             # Extract all messages first
             all_messages = await self._extract_messages_with_pagination(

@@ -118,13 +118,10 @@ async def log_fix_to_notion():
         
         run_data = {
             "status": "Data Structure Fixed",
-            "channels_tested": 2,
-            "messages_processed": "Testing Phase",
-            "start_time": datetime.now(),
-            "end_time": datetime.now(),
+            "channels_checked": 2,
+            "messages_embedded": 0,
             "duration_seconds": 0,
-            "error_message": None,
-            "notes": "Enhanced extraction system implemented with proper thread relationships, user metadata, and timestamp handling. Vector index purged for fresh ingestion."
+            "errors": "Enhanced extraction system implemented with proper thread relationships, user metadata, and timestamp handling. Vector index purged for fresh ingestion."
         }
         
         page_id = await notion_service.log_embedding_run(run_data)

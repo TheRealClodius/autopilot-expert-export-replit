@@ -5262,7 +5262,8 @@ async def notion_dashboard_summary():
                 "/admin/notion-dashboard-status",
                 "/admin/notion-setup-database", 
                 "/admin/notion-trigger-embedding",
-                "/admin/notion-recent-runs"
+                "/admin/notion-recent-runs",
+                "/admin/initial-historical-embedding"
             ]
         }
         
