@@ -12,7 +12,7 @@ from dataclasses import dataclass, asdict, field
 from copy import deepcopy
 
 from config import settings
-from services.memory_service import MemoryService
+from services.core.memory_service import MemoryService
 
 logger = logging.getLogger(__name__)
 

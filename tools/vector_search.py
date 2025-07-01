@@ -64,7 +64,7 @@ class VectorSearchTool:
             start_time = time.time()
             
             # Generate embedding for the query using our embedding service
-            from services.embedding_service import EmbeddingService
+            from services.data.embedding_service import EmbeddingService
             
             embedding_service = EmbeddingService()
             query_embedding = await embedding_service.embed_text(query)

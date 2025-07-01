@@ -10,7 +10,7 @@ from typing import Dict, Any, Optional, List
 
 from utils.gemini_client import GeminiClient
 from utils.prompt_loader import get_client_agent_prompt
-from services.trace_manager import trace_manager
+from services.core.trace_manager import trace_manager
 
 logger = logging.getLogger(__name__)
 

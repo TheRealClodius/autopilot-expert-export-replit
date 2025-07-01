@@ -10,7 +10,7 @@ import httpx
 from datetime import datetime, timedelta
 from typing import Dict, Any, List, Optional, Union
 from config import settings
-from services.trace_manager import trace_manager
+from services.core.trace_manager import trace_manager
 
 logger = logging.getLogger(__name__)
 
