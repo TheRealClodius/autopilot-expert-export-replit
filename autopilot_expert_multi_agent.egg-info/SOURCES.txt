@@ -10,6 +10,7 @@ autopilot_expert_multi_agent.egg-info/dependency_links.txt
 autopilot_expert_multi_agent.egg-info/requires.txt
 autopilot_expert_multi_agent.egg-info/top_level.txt
 models/schemas.py
+services/channel_embedding_scheduler.py
 services/connection_pool.py
 services/data_processor.py
 services/document_ingestion.py
@@ -22,6 +23,7 @@ services/prewarming_service.py
 services/production_logger.py
 services/progress_tracker.py
 services/slack_connector.py
+services/token_manager.py
 services/trace_manager.py
 services/trace_manager_old.py
 services/trace_manager_old_broken.py
@@ -31,6 +33,8 @@ tools/perplexity_search.py
 tools/vector_search.py
 utils/gemini_client.py
 utils/prompt_loader.py
+workers/bulk_channel_embedder.py
 workers/conversation_summarizer.py
 workers/entity_extractor.py
+workers/hourly_embedding_worker.py
 workers/knowledge_update_worker.py
