@@ -24,6 +24,10 @@ args = "Redis Server"
 task = "workflow.run"
 args = "Hourly Embedding Daemon"
 
+[[workflows.workflow.tasks]]
+task = "workflow.run"
+args = "Evaluation Test"
+
 [[workflows.workflow]]
 name = "FastAPI Server"
 author = "agent"
@@ -49,6 +53,14 @@ author = "agent"
 [[workflows.workflow.tasks]]
 task = "shell.exec"
 args = "python3 scripts/daemons/hourly_daemon.py"
+
+[[workflows.workflow]]
+name = "Evaluation Test"
+author = "agent"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "cd evaluations && python evaluation_framework.py quick --llm"
 
 [[ports]]
 localPort = 5000
