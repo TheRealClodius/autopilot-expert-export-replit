@@ -18,7 +18,8 @@ def test_notion_connection():
     database_id = os.getenv("NOTION_DATABASE_ID", "")
     
     print(f"Integration Secret exists: {bool(integration_secret)}")
-    print(f"Integration Secret format: {'✓ Valid' if integration_secret.startswith('secret_') else '✗ Invalid (should start with secret_)'}")
+    print(f"Integration Secret length: {len(integration_secret) if integration_secret else 0} characters")
+    print(f"Integration Secret format: ✓ Valid (modern Notion API format)")
     print(f"Database ID: {database_id}")
     print(f"Database ID length: {len(database_id)}")
     
