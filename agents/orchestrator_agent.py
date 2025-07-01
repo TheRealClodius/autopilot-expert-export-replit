@@ -318,8 +318,12 @@ class OrchestratorAgent:
                 relevant_entities  # Add structured entity context
             }
 
-            # Discover available tools from MCP server first
-            await self.discover_and_update_tools()
+            # Discover available tools from MCP server first (with timeout)
+            try:
+                await asyncio.wait_for(self.discover_and_update_tools(), timeout=5.0)
+            except asyncio.TimeoutError:
+                logger.warning("Tool discovery timed out, proceeding with default tools")
+                self.discovered_tools = []
 
             # Generate dynamic system prompt with actual available tools
             system_prompt = await self._generate_dynamic_system_prompt()

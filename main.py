@@ -4831,6 +4831,126 @@ async def test_atlassian_toolbelt():
             "test_results": test_results
         }
 
+@app.get("/admin/test-vector-search-refused")
+async def test_vector_search_refused():
+    """Test why orchestrator might be refusing vector search"""
+    try:
+        from agents.orchestrator_agent import OrchestratorAgent
+        from services.memory_service import MemoryService
+        from models.schemas import ProcessedMessage
+        
+        memory_service = MemoryService()
+        orchestrator = OrchestratorAgent(memory_service)
+        
+        # Test with a query that should use vector search
+        test_queries = [
+            "How do I learn Python programming?",  # Should use vector search
+            "Generic programming concepts",  # Should use vector search
+            "Tell me about design patterns in software",  # Should use vector search
+        ]
+        
+        results = []
+        
+        for query in test_queries:
+            # Create test message
+            test_message = ProcessedMessage(
+                channel_id="C087QKECFKQ",
+                user_id="U12345TEST",
+                text=query,
+                message_ts="1640995200.001500",
+                thread_ts=None,
+                user_name="test_user",
+                user_first_name="Test",
+                user_display_name="Test User", 
+                user_title="Software Engineer",
+                user_department="Engineering",
+                channel_name="general",
+                is_dm=False
+            )
+            
+            try:
+                # Set a shorter timeout to avoid long waits
+                execution_plan = await asyncio.wait_for(
+                    orchestrator._analyze_query_and_plan(test_message),
+                    timeout=15.0
+                )
+                
+                tools_needed = execution_plan.get("tools_needed", []) if execution_plan else []
+                vector_queries = execution_plan.get("vector_queries", []) if execution_plan else []
+                atlassian_actions = execution_plan.get("atlassian_actions", []) if execution_plan else []
+                analysis = execution_plan.get("analysis", "") if execution_plan else "No plan generated"
+                
+                results.append({
+                    "query": query,
+                    "execution_plan_generated": execution_plan is not None,
+                    "tools_needed": tools_needed,
+                    "vector_queries": vector_queries,
+                    "atlassian_actions": len(atlassian_actions),
+                    "analysis": analysis,
+                    "vector_search_selected": "vector_search" in tools_needed,
+                    "atlassian_search_selected": "atlassian_search" in tools_needed
+                })
+                
+            except asyncio.TimeoutError:
+                results.append({
+                    "query": query,
+                    "error": "Query analysis timed out",
+                    "execution_plan_generated": False,
+                    "tools_needed": [],
+                    "vector_queries": [],
+                    "atlassian_actions": 0,
+                    "vector_search_selected": False,
+                    "atlassian_search_selected": False
+                })
+            except Exception as e:
+                results.append({
+                    "query": query,
+                    "error": str(e),
+                    "execution_plan_generated": False,
+                    "tools_needed": [],
+                    "vector_queries": [],
+                    "atlassian_actions": 0,
+                    "vector_search_selected": False,
+                    "atlassian_search_selected": False
+                })
+        
+        # Test vector search tool directly
+        vector_tool_working = False
+        vector_test_results = []
+        try:
+            vector_results = await orchestrator.vector_tool.search("Python programming", top_k=3)
+            vector_tool_working = len(vector_results) > 0
+            vector_test_results = [
+                {
+                    "score": r.get("score", 0),
+                    "content": r.get("content", "")[:50] + "..."
+                } for r in vector_results[:2]
+            ]
+        except Exception as e:
+            vector_test_results = [{"error": str(e)}]
+        
+        return {
+            "status": "success",
+            "vector_tool_working": vector_tool_working,
+            "vector_test_results": vector_test_results,
+            "orchestrator_analysis": results,
+            "summary": {
+                "queries_tested": len(test_queries),
+                "execution_plans_generated": sum(1 for r in results if r.get("execution_plan_generated")),
+                "vector_search_selections": sum(1 for r in results if r.get("vector_search_selected")),
+                "atlassian_search_selections": sum(1 for r in results if r.get("atlassian_search_selected"))
+            }
+        }
+        
+    except Exception as e:
+        logger.error(f"Error testing vector search behavior: {e}")
+        import traceback
+        traceback.print_exc()
+        return {
+            "status": "error",
+            "error": str(e)
+        }
+
 # Server startup configuration for Cloud Run deployment
 if __name__ == "__main__":
     # Force Redis environment variables to empty to prevent connection attempts

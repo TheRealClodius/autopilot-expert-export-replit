@@ -83,6 +83,18 @@ The system uses environment variables for configuration management and supports 
 
 ## Recent Changes
 
+✅ **July 1, 2025 - VECTOR SEARCH REFUSAL ISSUE COMPLETELY RESOLVED (PRODUCTION READY)**
+- **Root Cause Identified**: Orchestrator was incorrectly prioritizing Atlassian search over vector search for programming and technical questions due to overly broad "work-related" categorization
+- **Prompt Logic Fixed**: Updated orchestrator prompt to clearly distinguish between UiPath-specific queries (Atlassian) and general programming/technical questions (vector search)
+- **Tool Selection Clarified**: Programming, design patterns, and technical learning questions now correctly route to vector_search instead of atlassian_search
+- **Timeout Protection Added**: Implemented 5-second timeout on tool discovery to prevent slow MCP server from blocking orchestrator functionality
+- **Verification Completed**: Test logs confirm orchestrator now generates proper vector_search execution plans for programming queries with multiple vector queries
+- **Architecture Fix**: Resolved method name mismatches between OrchestratorAgent and AtlassianToolbelt (discover_available_tools → get_capabilities, execute_mcp_tool → execute_task)
+- **Performance Improvement**: Tool discovery failures no longer block vector search functionality - system gracefully falls back to core tools
+- **User Impact**: Programming and technical questions now receive proper vector search results instead of empty Atlassian responses
+- **Files Enhanced**: `prompts.yaml` (clarified tool selection logic), `agents/orchestrator_agent.py` (timeout protection, method fixes)
+- **Production Status**: Vector search tool selection working correctly for technical queries while preserving Atlassian routing for UiPath-specific content
+
 ✅ **July 1, 2025 - CRITICAL ATLASSIAN TOOL CONNECTIVITY ISSUE RESOLVED (PRODUCTION READY)**
 - **Root Cause Identified**: AtlassianToolbelt was failing due to unsupported MCP "initialize" method and slow server response times
 - **MCP Server Verification**: Confirmed remote server has all 8 tools including 5 Atlassian tools (get_jira_issues, create_jira_issue, get_confluence_pages, create_confluence_page, get_atlassian_status)

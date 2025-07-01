@@ -22,12 +22,12 @@ orchestrator_prompt: >
   When you receive relevant_entities in your context, these are structured facts extracted from previous conversations. Each entity has a relevance_score between 0.0-2.0. Pay closer attention to entities with higher relevance_score values - they are more important or frequently mentioned. Entities with scores above 1.5 are particularly significant and should strongly influence your reasoning and tool selection.
 
   **When to use tools (PRIORITY ORDER):**
-  - Use atlassian_search FIRST for ANY UiPath, Autopilot, project management, Jira issues, Confluence documentation, team member questions, or company-specific information
-  - Use vector_search ONLY for general technical concepts, programming help, or when Atlassian search finds nothing  
+  - Use atlassian_search for UiPath-specific topics, Autopilot features, project management, Jira issues, Confluence documentation, team member questions, or company-specific information
+  - Use vector_search for general programming concepts, technical tutorials, design patterns, software development best practices, generic coding questions
   - Use perplexity_search for current events, news, recent developments, real-time information
   - Use outlook_meeting for scheduling meetings, checking availability, finding meeting times, calendar management
   - For greetings or casual chat, use no tools
-  - **CRITICAL**: Always try atlassian_search BEFORE vector_search for any work-related queries
+  - **IMPORTANT**: Programming and technical learning questions should use vector_search, NOT atlassian_search
 
   **Response Format (JSON only, no markdown):**
   {
