@@ -1,6 +1,7 @@
 """
 Orchestrator Agent - Main coordination agent that analyzes queries and creates execution plans.
 Uses Gemini 2.5 Pro for query analysis and tool orchestration.
+Follows 5-step reasoning framework with recursive observation and replanning.
 """
 
 import json
@@ -18,7 +19,6 @@ from tools.outlook_meeting import OutlookMeetingTool
 # AtlassianTool replaced by AtlassianToolbelt
 from agents.atlassian_guru import AtlassianToolbelt
 from agents.client_agent import ClientAgent
-from agents.observer_agent import ObserverAgent
 from services.memory_service import MemoryService
 from services.token_manager import TokenManager
 from services.entity_store import EntityStore
@@ -31,8 +31,16 @@ logger = logging.getLogger(__name__)
 
 class OrchestratorAgent:
     """
-    Main orchestrating agent that analyzes queries and coordinates tool usage.
-    Creates multi-step execution plans and manages the overall response flow.
+    Main orchestrating agent with both:
+    - Legacy methods (preserved for safety/compatibility)
+    - New 5-step reasoning framework (for enhanced intelligence)
+    
+    New Framework:
+    1. Analyze user intent
+    2. Select tools strategically  
+    3. Execute and observe critically
+    4. Replan dynamically if needed
+    5. Synthesize final clean output
     """
 
     def __init__(self,
@@ -44,263 +52,116 @@ class OrchestratorAgent:
         self.perplexity_tool = PerplexitySearchTool()
         self.outlook_tool = OutlookMeetingTool()
         self.trace_manager = trace_manager
-        self.atlassian_guru = AtlassianToolbelt(
-        )  # Specialized Atlassian agent replaces old atlassian_tool
+        self.atlassian_guru = AtlassianToolbelt()
         self.client_agent = ClientAgent()
-        self.observer_agent = ObserverAgent()
         self.memory_service = memory_service
-        self.token_manager = TokenManager(
-            model_name="gpt-4")  # Initialize precise token manager
-        self.entity_store = EntityStore(
-            memory_service)  # Add entity store for structured memory
+        self.token_manager = TokenManager(model_name="gpt-4")
+        self.entity_store = EntityStore(memory_service)
         self.progress_tracker = progress_tracker
-        self.discovered_tools = []  # Will be populated with actual MCP tools
+        self.discovered_tools = []
+        
+        # NEW: Execution state tracking for 5-step reasoning
+        self.current_execution_steps = []
+        self.replanning_count = 0
+        self.max_replanning_iterations = 3
+        
+        # LEGACY: Trace ID attribute for external compatibility
+        self._current_trace_id = None
 
     async def discover_and_update_tools(self) -> List[Dict[str, Any]]:
         """Discover available tools from MCP server and update tool list"""
         try:
             capabilities = await self.atlassian_guru.get_capabilities()
             self.discovered_tools = capabilities.get("available_tools", [])
-            logger.info(
-                f"Updated tool list with {len(self.discovered_tools)} total tools from AtlassianToolbelt"
-            )
+            logger.info(f"Updated tool list with {len(self.discovered_tools)} total tools from AtlassianToolbelt")
             return self.discovered_tools
         except Exception as e:
             logger.warning(f"Failed to discover tools: {e}")
             return []
 
-    async def _generate_dynamic_system_prompt(self) -> str:
-        """Generate system prompt using YAML template with dynamic tool injection"""
-
-        # Load base prompt from prompts.yaml
-        base_prompt = get_orchestrator_prompt()
-
-        # Generate dynamic Atlassian tools section
-        atlassian_tools_section = ""
-
-        if self.discovered_tools:
-            atlassian_tools = [
-                tool for tool in self.discovered_tools
-                if any(keyword in tool.get('name', '').lower()
-                       for keyword in ['jira', 'confluence', 'atlassian'])
-            ]
-
-            if atlassian_tools:
-                atlassian_tools_section = "\n  **Available Atlassian Tools from MCP server:**"
-                for tool in atlassian_tools:
-                    name = tool.get('name', 'unknown')
-                    description = tool.get('description',
-                                           'No description available')
-                    atlassian_tools_section += f"\n  - {name}: {description}"
-                atlassian_tools_section += "\n  **For Atlassian MCP tools, use exact tool names returned by the server.**"
-
-        # Inject the dynamic tools section into the placeholder
-        full_prompt = base_prompt.replace("{{atlassian_tools_section}}",
-                                          atlassian_tools_section)
-
-        logger.info(
-            f"Generated system prompt from YAML with {len(self.discovered_tools)} discovered tools"
-        )
-        return full_prompt
-
-    async def process_query(
-            self, message: ProcessedMessage) -> Optional[Dict[str, Any]]:
+    async def process_query(self, message: ProcessedMessage) -> Optional[Dict[str, Any]]:
         """
-        Process incoming query and generate response through multi-agent coordination.
+        UPDATED: Main entry point now uses 5-step reasoning framework with recursive observation.
         
-        Args:
-            message: Processed message from Slack Gateway
-            
-        Returns:
-            Response data for sending back to Slack
+        Returns legacy format for compatibility:
+        {
+            "channel_id": "...",
+            "thread_ts": "...", 
+            "text": "response text",
+            "timestamp": "...",
+            "suggestions": [...],
+            "confidence_level": "high|medium|low"
+        }
         """
-        import time
         start_time = time.time()
-
+        
+        # Reset execution state for new query
+        self.current_execution_steps = []
+        self.replanning_count = 0
+        
         try:
-            logger.info(
-                f"Orchestrator processing query: {message.text[:100]}...")
+            logger.info(f"Orchestrator starting 5-step reasoning for: {message.text[:100]}...")
 
-            # Emit initial reasoning progress instead of generic "analyzing"
+            # Emit initial reasoning progress
             if self.progress_tracker:
-                query_preview = message.text[:50] + "..." if len(
-                    message.text) > 50 else message.text
-                first_progress_time = time.time()
-                logger.info(
-                    f"⏱️  FIRST PROGRESS TRACE: About to emit reasoning progress at {first_progress_time:.3f}"
-                )
-                await emit_considering(
-                    self.progress_tracker, "requirements",
-                    f"how to best approach: {query_preview}")
-                post_progress_time = time.time()
-                progress_emit_duration = post_progress_time - first_progress_time
-                logger.info(
-                    f"⏱️  FIRST PROGRESS TRACE: Reasoning progress emitted at {post_progress_time:.3f} (emit took: {progress_emit_duration:.3f}s)"
-                )
+                query_preview = message.text[:50] + "..." if len(message.text) > 50 else message.text
+                await emit_considering(self.progress_tracker, "requirements", f"how to approach: {query_preview}")
 
-            # Store raw message in short-term memory (10 message sliding window)
-            # Use consistent thread identifier: for new mentions use message_ts, for thread replies use thread_ts
-            thread_identifier = message.thread_ts or message.message_ts
-            conversation_key = f"conv:{message.channel_id}:{thread_identifier}"
-            await self.memory_service.store_raw_message(conversation_key,
-                                                        message.dict(),
-                                                        max_messages=10)
+            # Store conversation context
+            await self._store_conversation_context(message)
 
-            # Also store current conversation context for compatibility
-            await self.memory_service.store_conversation_context(
-                conversation_key,
-                message.dict(),
-                ttl=86400  # 24 hours
-            )
-
-            plan_start = time.time()
-            # Emit reasoning progress instead of generic "planning"
+            # NEW: STEP 1-2: Analyze intent and create initial plan
             if self.progress_tracker:
-                await emit_reasoning(
-                    self.progress_tracker, "evaluating",
-                    "different approaches to solve this effectively")
+                await emit_reasoning(self.progress_tracker, "analyzing", "query intent and planning approach")
+            
+            initial_plan = await self._step1_2_analyze_and_plan_new(message)
+            if not initial_plan:
+                return await self._create_fallback_response_new("I'm having trouble understanding your request. Could you rephrase it?", message)
 
-            # Analyze query and create execution plan with tracing
-            execution_plan = await self._analyze_query_and_plan(message)
-            logger.info(f"Query analysis took {time.time() - plan_start:.2f}s")
-
-            # Log orchestrator analysis in LangSmith
-            await trace_manager.log_orchestrator_analysis(
-                query=message.text,
-                execution_plan=str(execution_plan),
-                duration=time.time() - plan_start)
-
-            if not execution_plan:
-                # Let the orchestrator plan freely without constraints
-                logger.warning(
-                    "Query analysis returned None, letting orchestrator handle freely"
-                )
-                # Don't force a minimal plan - let the system handle it naturally
-                execution_plan = {
-                    "analysis":
-                    f"Free-form analysis of query: '{message.text}'",
-                    "tools_needed":
-                    ["vector_search"],  # Let it use available tools
-                    "vector_queries": [message.text],  # Use the original query
-                    "context": {
-                        "intent":
-                        "open_query",
-                        "response_approach":
-                        "Use full AI capabilities and available knowledge"
-                    }
-                }
-
-            exec_start = time.time()
-            # Execute the plan (specific search progress will be emitted during actual execution)
-            gathered_information = await self._execute_plan(
-                execution_plan, message)
-            logger.info(f"Plan execution took {time.time() - exec_start:.2f}s")
-
-            response_start = time.time()
-            # Emit processing progress
-            if self.progress_tracker:
-                await emit_processing(self.progress_tracker,
-                                      "analyzing_results", "search results")
-
-            # Build comprehensive state stack for Client Agent
-            state_stack = await self._build_state_stack(
-                message, gathered_information, execution_plan)
-
-            # Emit final generation progress
-            if self.progress_tracker:
-                await emit_generating(
-                    self.progress_tracker, "response_generation",
-                    "comprehensive response based on findings")
-
-            # Generate final response through Client Agent with complete state
-            response = await self.client_agent.generate_response(state_stack)
-            logger.info(
-                f"Response generation took {time.time() - response_start:.2f}s"
-            )
-
-            if response:
-                # Handle both string and dict responses from Client Agent
-                if isinstance(response, dict):
-                    response_text = response.get("text", "")
-                    suggestions = response.get("suggestions", [])
-                else:
-                    response_text = response
-                    suggestions = []
-
-                # Trigger Observer Agent for learning (fire and forget - don't wait)
-                import asyncio
-                asyncio.create_task(
-                    self._trigger_observation(message, response_text,
-                                              gathered_information))
-
-                # Queue entity extraction from the conversation exchange (background task)
-                asyncio.create_task(
-                    self._queue_entity_extraction(message, response_text))
-
+            # NEW: STEP 3-4-5: Execute with recursive observation and replanning
+            final_clean_output = await self._step3_4_5_execute_observe_synthesize_new(initial_plan, message)
+            
+            if final_clean_output:
+                # Background tasks (fire and forget) - REMOVED observer_agent integration
+                asyncio.create_task(self._queue_entity_extraction(message, final_clean_output.get("synthesized_response", "")))
+                
                 total_time = time.time() - start_time
-                logger.info(f"Total processing time: {total_time:.2f}s")
-
-                # Note: Response will be logged when conversation completes
-
-                # Determine thread_ts for response
-                # If user mentioned bot in channel (not in existing thread), start new thread
-                # If user replied in existing thread, continue same thread
-                response_thread_ts = message.thread_ts or message.message_ts
-
-                result = {
-                    "channel_id": message.channel_id,
-                    "thread_ts": response_thread_ts,
-                    "text": response_text,
-                    "timestamp": datetime.now().isoformat()
-                }
-
-                # Add suggestions if they exist
-                if suggestions:
-                    result["suggestions"] = suggestions
-                    logger.info(
-                        f"Including {len(suggestions)} suggestions in response"
-                    )
-
-                return result
-
-            logger.warning("No response generated")
-            return None
+                logger.info(f"Orchestrator completed 5-step process in {total_time:.2f}s with {len(self.current_execution_steps)} steps")
+                
+                # Convert new clean format to legacy format for compatibility
+                return self._convert_clean_output_to_legacy_format(final_clean_output, message)
+            
+            return await self._create_fallback_response_new("I couldn't generate a complete response. Please try again.", message)
 
         except Exception as e:
-            logger.error(f"Error in orchestrator processing: {e}")
-            # Complete conversation turn with error
-            await trace_manager.complete_conversation_turn(success=False,
-                                                           error=str(e))
-            # Emit error progress if tracker is available
+            logger.error(f"Error in orchestrator 5-step process: {e}")
+            await trace_manager.complete_conversation_turn(success=False, error=str(e))
             if self.progress_tracker:
-                await emit_error(self.progress_tracker, "processing_error",
-                                 "internal system issue")
-            return None
+                await emit_error(self.progress_tracker, "processing_error", "internal system issue")
+            return await self._create_fallback_response_new("I'm experiencing technical difficulties. Please try again later.", message)
 
-    async def _analyze_query_and_plan(
-            self, message: ProcessedMessage) -> Optional[Dict[str, Any]]:
+    # ============================================================================
+    # NEW: 5-STEP REASONING FRAMEWORK METHODS
+    # ============================================================================
+
+    async def _step1_2_analyze_and_plan_new(self, message: ProcessedMessage) -> Optional[Dict[str, Any]]:
         """
-        Analyze the query using Gemini and create an execution plan.
-        
-        Args:
-            message: Processed message to analyze
-            
-        Returns:
-            Execution plan dictionary
+        NEW: STEP 1-2: Analyze user intent and create strategic tool selection plan.
+        Uses prompts.yaml reasoning framework.
         """
         try:
-            # Construct conversation key
+            # Build context for analysis
             conversation_key = f"conv:{message.channel_id}:{message.thread_ts or message.message_ts}"
+            hybrid_history = await self._construct_hybrid_history(conversation_key, message.text)
+            relevant_entities = await self._search_relevant_entities(message.text, conversation_key)
 
-            # Build hybrid memory system with rolling long-term summary and token-managed live history
-            hybrid_history = await self._construct_hybrid_history(
-                conversation_key, message.text)
+            # Discover available tools
+            try:
+                await asyncio.wait_for(self.discover_and_update_tools(), timeout=5.0)
+            except asyncio.TimeoutError:
+                logger.warning("Tool discovery timed out, proceeding with default tools")
 
-            # Search for relevant entities from structured memory
-            relevant_entities = await self._search_relevant_entities(
-                message.text, conversation_key)
-
-            # Prepare clean, optimized context for analysis
+            # Build analysis context
             context = {
                 "query": message.text,
                 "user_info": {
@@ -309,518 +170,963 @@ class OrchestratorAgent:
                     "title": message.user_title,
                     "department": message.user_department
                 },
-                "channel": {
-                    "name": message.channel_name,
-                    "is_dm": message.is_dm,
-                },
+                "channel": {"name": message.channel_name, "is_dm": message.is_dm},
                 "conversation_memory": hybrid_history,
-                "relevant_entities":
-                relevant_entities  # Add structured entity context
+                "relevant_entities": relevant_entities
             }
 
-            # Discover available tools from MCP server first (with timeout)
-            try:
-                await asyncio.wait_for(self.discover_and_update_tools(), timeout=5.0)
-            except asyncio.TimeoutError:
-                logger.warning("Tool discovery timed out, proceeding with default tools")
-                self.discovered_tools = []
+            # Get system prompt with 5-step reasoning framework
+            system_prompt = await self._get_reasoning_system_prompt_new()
+            user_prompt = f"Context: {json.dumps(context, indent=2)}\n\nCurrent Query: \"{message.text}\"\n\nFollow the 5-step reasoning framework to create an execution plan."
 
-            # Generate dynamic system prompt with actual available tools
-            system_prompt = await self._generate_dynamic_system_prompt()
-
-            user_prompt = f"""
-Context: {json.dumps(context, indent=2)}
-
-Create an execution plan to answer this query effectively.
-
-Current Query: "{message.text}"
-"""
-
-            # Track LLM call timing for LangSmith
+            # Get planning response from LLM
             llm_start = time.time()
-
-            # Add timeout protection for API call with streaming reasoning capture
             try:
-                # Set up real-time reasoning emission to Slack
-                reasoning_emitter = StreamingReasoningEmitter(
-                    self.progress_tracker) if self.progress_tracker else None
-
-                async def reasoning_callback(chunk_text: str,
-                                             chunk_metadata: dict):
-                    """Handle real-time reasoning chunks from Gemini streaming"""
-                    logger.info(f"🧠 REASONING CHUNK: {chunk_text[:500]}...")
-                    if reasoning_emitter:
-                        await reasoning_emitter.emit_reasoning_chunk(
-                            chunk_text, chunk_metadata)
-
-                # Use streaming to capture reasoning steps as they're generated
-                streaming_response = await asyncio.wait_for(
-                    self.gemini_client.generate_streaming_response(
+                response = await asyncio.wait_for(
+                    self.gemini_client.generate_response(
                         system_prompt,
                         user_prompt,
-                        model=self.gemini_client.
-                        pro_model,  # Orchestrator uses Pro model for complex planning
+                        model=self.gemini_client.pro_model,
                         max_tokens=2000,
-                        temperature=0.7,
-                        reasoning_callback=
-                        reasoning_callback  # Pass callback for real-time reasoning
+                        temperature=0.7
                     ),
-                    timeout=20.0  # 20 second timeout for streaming
+                    timeout=20.0
                 )
-
-                response = streaming_response.get(
-                    "text") if streaming_response else None
-                reasoning_steps = streaming_response.get(
-                    "reasoning_steps", []) if streaming_response else []
-
-                # Log reasoning steps if found
-                if reasoning_steps:
-                    logger.info(
-                        f"Captured {len(reasoning_steps)} reasoning steps from Gemini 2.5 Pro"
-                    )
-                    for i, step in enumerate(
-                            reasoning_steps[:3]):  # Log first 3 steps
-                        logger.debug(
-                            f"Reasoning step {i+1}: {step.get('text', '')[:100]}..."
-                        )
-                else:
-                    logger.debug(
-                        "No explicit reasoning steps detected in response")
-
             except asyncio.TimeoutError:
-                logger.error("Gemini API call timed out after 15 seconds")
-                if self.progress_tracker:
-                    await emit_warning(self.progress_tracker, "api_timeout",
-                                       "analysis taking longer than expected")
-                response = None
-                reasoning_steps = []
+                logger.error("LLM planning call timed out")
+                return None
 
-            # Log LLM call to LangSmith with reasoning steps
-            llm_duration = time.time() - llm_start
+            # Log LLM call
+            await trace_manager.log_llm_call(
+                model=self.gemini_client.pro_model,
+                prompt=f"SYSTEM: {system_prompt[:200]}...\n\nUSER: {user_prompt[:200]}...",
+                response=response[:500] if response else "None",
+                duration=time.time() - llm_start
+            )
+
             if response:
-                await trace_manager.log_llm_call(
-                    model=self.gemini_client.pro_model,
-                    prompt=f"SYSTEM: {system_prompt}\n\nUSER: {user_prompt}",
-                    response=
-                    f"REASONING: {reasoning_steps}\n\nRESPONSE: {response}"
-                    if reasoning_steps else response,
-                    duration=llm_duration)
+                plan = self._parse_planning_response_new(response)
+                if plan:
+                    # Initialize execution steps from plan
+                    self._initialize_execution_steps_new(plan)
+                    return plan
+
+            return None
+
+        except Exception as e:
+            logger.error(f"Error in step 1-2 analysis and planning: {e}")
+            return None
+
+    async def _step3_4_5_execute_observe_synthesize_new(self, plan: Dict[str, Any], message: ProcessedMessage) -> Optional[Dict[str, Any]]:
+        """
+        NEW: STEP 3-4-5: Execute tools, observe results critically, replan if needed, then synthesize.
+        Uses recursive observation pattern.
+        """
+        all_results = []
+        
+        try:
+            # STEP 3: Execute planned tools
+            if self.progress_tracker:
+                await emit_processing(self.progress_tracker, "executing_plan", "planned search strategy")
+            
+            execution_results = await self._execute_planned_tools_new(plan, message)
+            all_results.extend(execution_results)
+            
+            # STEP 4: Observe and decide if replanning is needed (RECURSIVE CALL)
+            needs_more = await self._step4_observe_and_replan_new(all_results, plan, message)
+            
+            if needs_more and self.replanning_count < self.max_replanning_iterations:
+                # Recursive call for additional tool execution
+                additional_results = await self._step3_4_5_execute_observe_synthesize_new(needs_more, message)
+                if additional_results and additional_results.get("raw_results"):
+                    # Merge additional results into our synthesis
+                    all_results.extend(additional_results.get("raw_results", []))
+            
+            # STEP 5: Synthesize final clean output
+            if self.progress_tracker:
+                await emit_generating(self.progress_tracker, "response_generation", "comprehensive response")
+            
+            final_output = await self._step5_synthesize_output_new(all_results, plan, message)
+            
+            # Add raw results for potential recursive calls
+            if final_output:
+                final_output["raw_results"] = all_results
+            
+            return final_output
+
+        except Exception as e:
+            logger.error(f"Error in execute-observe-synthesize cycle: {e}")
+            return None
+
+    async def _step4_observe_and_replan_new(self, results: List[Dict], original_plan: Dict, message: ProcessedMessage) -> Optional[Dict[str, Any]]:
+        """
+        NEW: STEP 4: Critically observe results and decide if replanning is needed.
+        This is where the recursive observation happens.
+        """
+        try:
+            self.replanning_count += 1
+            
+            # Quick quality check first
+            if not results or all(not r.get("success", True) for r in results):
+                logger.info("All tool results failed, attempting replanning")
+                return await self._create_replan_from_failures_new(results, original_plan, message)
+            
+            # Ask LLM to observe results and decide next steps
+            observation_response = await self._llm_observe_results_new(results, original_plan, message)
+            
+            if observation_response and observation_response.get("needs_more_tools"):
+                logger.info(f"LLM observation suggests more tools needed: {observation_response.get('reasoning', 'No reason given')}")
+                # Update execution steps
+                self._update_execution_steps_from_observation_new(observation_response)
+                return observation_response.get("new_plan")
+            
+            logger.info("LLM observation indicates results are sufficient for synthesis")
+            return None  # No more tools needed, proceed to synthesis
+
+        except Exception as e:
+            logger.error(f"Error in observation and replanning: {e}")
+            return None
+
+    async def _step5_synthesize_output_new(self, all_results: List[Dict], plan: Dict, message: ProcessedMessage) -> Dict[str, Any]:
+        """
+        NEW: STEP 5: Synthesize all results into clean output format for client agent.
+        """
+        try:
+            # Mark synthesis step as in progress
+            self._add_execution_step_new("synthesize_results", "Synthesizing all findings into final response", "in_progress")
+            
+            # Extract and categorize results by tool type
+            vector_results = [r for r in all_results if r.get("tool_type") == "vector_search"]
+            web_results = [r for r in all_results if r.get("tool_type") == "perplexity_search"]
+            atlassian_results = [r for r in all_results if r.get("tool_type") == "atlassian_search"]
+            meeting_results = [r for r in all_results if r.get("tool_type") == "outlook_meeting"]
+            
+            # Build comprehensive context for synthesis
+            synthesis_context = {
+                "original_query": message.text,
+                "user_context": {
+                    "first_name": message.user_first_name,
+                    "title": message.user_title,
+                    "department": message.user_department
+                },
+                "execution_plan": plan.get("analysis", ""),
+                "execution_steps": self.current_execution_steps,
+                "results_summary": {
+                    "vector_search": len(vector_results),
+                    "web_search": len(web_results), 
+                    "atlassian_search": len(atlassian_results),
+                    "meeting_actions": len(meeting_results)
+                },
+                "detailed_results": {
+                    "vector_findings": self._summarize_vector_results_new(vector_results),
+                    "web_findings": self._summarize_web_results_new(web_results),
+                    "project_findings": self._summarize_atlassian_results_new(atlassian_results),
+                    "meeting_outcomes": self._summarize_meeting_results_new(meeting_results)
+                }
+            }
+            
+            # Use LLM to synthesize clean final response
+            synthesized_response = await self._llm_synthesize_final_response_new(synthesis_context)
+            
+            # Extract key findings
+            key_findings = self._extract_key_findings_new(all_results, plan)
+            
+            # Generate source links
+            source_links = self._generate_source_links_new(all_results)
+            
+            # Assess confidence level
+            confidence_level = self._assess_confidence_level_new(all_results, plan)
+            
+            # Generate follow-up suggestions
+            suggested_followups = self._generate_followup_suggestions_new(synthesis_context)
+            
+            # Mark synthesis as completed
+            self._update_execution_step_new("synthesize_results", "completed", {"response_length": len(synthesized_response)})
+            
+            clean_output = {
+                "synthesized_response": synthesized_response,
+                "key_findings": key_findings,
+                "source_links": source_links,
+                "confidence_level": confidence_level,
+                "suggested_followups": suggested_followups,
+                "requires_human_input": False,
+                "execution_summary": {
+                    "steps_completed": len([s for s in self.current_execution_steps if s["status"] == "completed"]),
+                    "total_steps": len(self.current_execution_steps),
+                    "replanning_iterations": self.replanning_count
+                }
+            }
+            
+            logger.info(f"Synthesized clean output: {len(synthesized_response)} chars, {len(key_findings)} findings, confidence: {confidence_level}")
+            return clean_output
+
+        except Exception as e:
+            logger.error(f"Error in synthesis: {e}")
+            return await self._create_fallback_response_new("I gathered information but had trouble synthesizing it. Please try rephrasing your question.", message)
+
+    # ============================================================================
+    # NEW: SUPPORTING METHODS FOR 5-STEP FRAMEWORK
+    # ============================================================================
+
+    def _convert_clean_output_to_legacy_format(self, clean_output: Dict[str, Any], message: ProcessedMessage) -> Dict[str, Any]:
+        """NEW: Convert new clean output format to legacy format for compatibility"""
+        return {
+            "channel_id": message.channel_id,
+            "thread_ts": message.thread_ts or message.message_ts,
+            "text": clean_output.get("synthesized_response", ""),
+            "timestamp": datetime.now().isoformat(),
+            "suggestions": clean_output.get("suggested_followups", []),
+            "confidence_level": clean_output.get("confidence_level", "medium"),
+            "source_links": clean_output.get("source_links", []),
+            "execution_summary": clean_output.get("execution_summary", {})
+        }
+
+    async def _store_conversation_context(self, message: ProcessedMessage):
+        """Store conversation context in memory systems"""
+        try:
+            thread_identifier = message.thread_ts or message.message_ts
+            conversation_key = f"conv:{message.channel_id}:{thread_identifier}"
+            
+            # Store in sliding window memory
+            await self.memory_service.store_raw_message(conversation_key, message.dict(), max_messages=10)
+            
+            # Store conversation context
+            await self.memory_service.store_conversation_context(conversation_key, message.dict(), ttl=86400)
+            
+        except Exception as e:
+            logger.error(f"Error storing conversation context: {e}")
+
+    async def _get_reasoning_system_prompt_new(self) -> str:
+        """NEW: Get the 5-step reasoning system prompt from prompts.yaml"""
+        return get_orchestrator_prompt()
+
+    def _parse_planning_response_new(self, response: str) -> Optional[Dict[str, Any]]:
+        """NEW: Parse LLM planning response into execution plan"""
+        try:
+            # Clean response to extract JSON from markdown code blocks
+            cleaned_response = response.strip()
+            if cleaned_response.startswith('```json'):
+                start_index = cleaned_response.find('{')
+                end_index = cleaned_response.rfind('}') + 1
+                if start_index != -1 and end_index > start_index:
+                    cleaned_response = cleaned_response[start_index:end_index]
+            elif cleaned_response.startswith('```'):
+                lines = cleaned_response.split('\n')
+                cleaned_response = '\n'.join(lines[1:-1]) if len(lines) > 2 else cleaned_response
+
+            plan = json.loads(cleaned_response)
+            logger.info(f"Parsed execution plan: {plan.get('analysis', 'No analysis')[:100]}...")
+            return plan
+        except json.JSONDecodeError as e:
+            logger.error(f"Failed to parse planning response JSON: {e}")
+            logger.error(f"Raw response: {response[:500]}...")
+            return None
+
+    def _initialize_execution_steps_new(self, plan: Dict[str, Any]):
+        """NEW: Initialize execution steps from the planning phase"""
+        self.current_execution_steps = []
+        
+        # Add planned tool executions as steps
+        tools_needed = plan.get("tools_needed", [])
+        for i, tool in enumerate(tools_needed, 1):
+            self._add_execution_step_new(
+                f"execute_{tool}",
+                f"Execute {tool} with planned queries",
+                "pending"
+            )
+        
+        # Add synthesis step
+        self._add_execution_step_new("synthesize_results", "Synthesize all findings into final response", "pending")
+
+    def _add_execution_step_new(self, action_id: str, description: str, status: str, result: Dict = None):
+        """NEW: Add a new execution step"""
+        step = {
+            "step": len(self.current_execution_steps) + 1,
+            "action_id": action_id,
+            "action": description,
+            "status": status,  # pending, in_progress, completed, failed
+            "timestamp": datetime.now().isoformat(),
+            "result": result or {}
+        }
+        self.current_execution_steps.append(step)
+        logger.debug(f"Added execution step {step['step']}: {description} ({status})")
+
+    def _update_execution_step_new(self, action_id: str, status: str, result: Dict = None):
+        """NEW: Update an existing execution step"""
+        for step in self.current_execution_steps:
+            if step["action_id"] == action_id:
+                step["status"] = status
+                step["timestamp"] = datetime.now().isoformat()
+                if result:
+                    step["result"].update(result)
+                logger.debug(f"Updated execution step {step['step']}: {step['action']} → {status}")
+                break
+
+    def _update_execution_steps_from_observation_new(self, observation: Dict[str, Any]):
+        """NEW: Update execution steps based on observation response"""
+        try:
+            new_actions = observation.get("new_actions", [])
+            for action in new_actions:
+                self._add_execution_step_new(
+                    action.get("action_id", f"replan_{len(self.current_execution_steps)}"),
+                    action.get("description", "Additional action from replanning"),
+                    "pending"
+                )
+        except Exception as e:
+            logger.error(f"Error updating execution steps from observation: {e}")
+
+    async def _create_fallback_response_new(self, message: str, processed_message: ProcessedMessage) -> Dict[str, Any]:
+        """NEW: Create a fallback response in the legacy output format"""
+        return {
+            "channel_id": processed_message.channel_id,
+            "thread_ts": processed_message.thread_ts or processed_message.message_ts,
+            "text": message,
+            "timestamp": datetime.now().isoformat(),
+            "suggestions": ["Could you rephrase your question?", "What specific aspect would you like to know more about?"],
+            "confidence_level": "low",
+            "source_links": [],
+            "requires_human_input": True
+        }
+
+    async def _execute_planned_tools_new(self, plan: Dict[str, Any], message: ProcessedMessage) -> List[Dict[str, Any]]:
+        """NEW: Execute all planned tools and return results"""
+        results = []
+        tools_needed = plan.get("tools_needed", [])
+        
+        # Execute vector search
+        if "vector_search" in tools_needed:
+            vector_queries = plan.get("vector_queries", [])
+            for query in vector_queries:
+                self._update_execution_step_new(f"execute_vector_search", "in_progress")
+                try:
+                    if self.progress_tracker:
+                        await emit_searching(self.progress_tracker, "vector_search", query[:40] + "...")
+                    
+                    search_results = await self.vector_tool.search(query=query, top_k=5)
+                    results.append({
+                        "tool_type": "vector_search",
+                        "query": query,
+                        "results": search_results,
+                        "success": len(search_results) > 0
+                    })
+                    self._update_execution_step_new(f"execute_vector_search", "completed", {"results_count": len(search_results)})
+                except Exception as e:
+                    logger.error(f"Vector search error: {e}")
+                    results.append({"tool_type": "vector_search", "query": query, "error": str(e), "success": False})
+                    self._update_execution_step_new(f"execute_vector_search", "failed", {"error": str(e)})
+
+        # Execute perplexity search  
+        if "perplexity_search" in tools_needed:
+            perplexity_queries = plan.get("perplexity_queries", [])
+            for query in perplexity_queries:
+                self._update_execution_step_new(f"execute_perplexity_search", "in_progress")
+                try:
+                    if self.progress_tracker:
+                        await emit_searching(self.progress_tracker, "perplexity_search", query[:40] + "...")
+                    
+                    search_result = await self.perplexity_tool.search(query=query, max_tokens=1000)
+                    results.append({
+                        "tool_type": "perplexity_search",
+                        "query": query,
+                        "result": search_result,
+                        "success": bool(search_result and search_result.get("content"))
+                    })
+                    self._update_execution_step_new(f"execute_perplexity_search", "completed", {"has_content": bool(search_result and search_result.get("content"))})
+                except Exception as e:
+                    logger.error(f"Perplexity search error: {e}")
+                    results.append({"tool_type": "perplexity_search", "query": query, "error": str(e), "success": False})
+                    self._update_execution_step_new(f"execute_perplexity_search", "failed", {"error": str(e)})
+
+        # Execute Atlassian search
+        if "atlassian_search" in tools_needed:
+            atlassian_actions = plan.get("atlassian_actions", [])
+            for action in atlassian_actions:
+                self._update_execution_step_new(f"execute_atlassian_search", "in_progress")
+                try:
+                    if self.progress_tracker:
+                        await emit_processing(self.progress_tracker, "atlassian_search", "project information")
+                    
+                    task = action.get("task", "General Atlassian search")
+                    result = await self.atlassian_guru.execute_task(task)
+                    results.append({
+                        "tool_type": "atlassian_search",
+                        "task": task,
+                        "result": result,
+                        "success": result and result.get("status") == "success"
+                    })
+                    self._update_execution_step_new(f"execute_atlassian_search", "completed", {"status": result.get("status") if result else "no_result"})
+                except Exception as e:
+                    logger.error(f"Atlassian search error: {e}")
+                    results.append({"tool_type": "atlassian_search", "task": action.get("task", ""), "error": str(e), "success": False})
+                    self._update_execution_step_new(f"execute_atlassian_search", "failed", {"error": str(e)})
+
+        return results
+
+    async def _llm_observe_results_new(self, results: List[Dict], original_plan: Dict, message: ProcessedMessage) -> Optional[Dict[str, Any]]:
+        """NEW: Use LLM to observe results and decide if more tools are needed"""
+        try:
+            # Build observation context
+            observation_context = {
+                "original_query": message.text,
+                "original_plan": original_plan.get("analysis", ""),
+                "results_summary": {
+                    "total_results": len(results),
+                    "successful_tools": len([r for r in results if r.get("success", True)]),
+                    "failed_tools": len([r for r in results if not r.get("success", True)]),
+                    "tools_executed": list(set(r.get("tool_type", "unknown") for r in results))
+                },
+                "execution_steps_completed": len([s for s in self.current_execution_steps if s["status"] == "completed"])
+            }
+
+            # Simple observation prompt
+            observation_prompt = f"""
+            Original query: "{message.text}"
+            
+            Results obtained: {len(results)} tool executions
+            Successful: {observation_context['results_summary']['successful_tools']}
+            Failed: {observation_context['results_summary']['failed_tools']}
+            
+            Based on these results, do we have enough information to answer the user's question comprehensively?
+            
+            Respond with JSON:
+            {{
+                "needs_more_tools": true/false,
+                "reasoning": "Brief explanation of decision",
+                "new_plan": {{"tools_needed": ["tool"], "queries": ["new query"]}} or null
+            }}
+            """
+
+            response = await asyncio.wait_for(
+                self.gemini_client.generate_response(
+                    "You are an expert at evaluating search results. Assess if current results are sufficient to answer the user's query.",
+                    observation_prompt,
+                    model=self.gemini_client.flash_model,  # Use Flash for quick observation
+                    max_tokens=500,
+                    temperature=0.3
+                ),
+                timeout=10.0
+            )
 
             if response:
                 try:
-                    # Clean response to extract JSON from markdown code blocks
-                    cleaned_response = response.strip()
-                    if cleaned_response.startswith('```json'):
-                        # Extract JSON from markdown code block
-                        start_index = cleaned_response.find('{')
-                        end_index = cleaned_response.rfind('}') + 1
-                        if start_index != -1 and end_index > start_index:
-                            cleaned_response = cleaned_response[
-                                start_index:end_index]
-                    elif cleaned_response.startswith('```'):
-                        # Remove code block markers
-                        lines = cleaned_response.split('\n')
-                        cleaned_response = '\n'.join(lines[1:-1]) if len(
-                            lines) > 2 else cleaned_response
-
-                    plan = json.loads(cleaned_response)
-                    logger.info(
-                        f"Generated execution plan: {plan.get('analysis', 'No analysis')}"
-                    )
-                    return plan
-                except json.JSONDecodeError as e:
-                    logger.error(f"Failed to parse execution plan JSON: {e}")
-                    logger.error(f"Raw Gemini response: {response[:500]}...")
+                    # Parse observation response
+                    observation = json.loads(response.strip())
+                    return observation
+                except json.JSONDecodeError:
+                    logger.warning("Failed to parse observation response as JSON")
                     return None
-            else:
-                logger.error("Gemini API returned empty/None response")
-                return None
 
-        except Exception as e:
-            logger.error(f"Error analyzing query: {e}")
             return None
 
-    async def _execute_plan(self, plan: Dict[str, Any],
-                            message: ProcessedMessage) -> Dict[str, Any]:
-        """
-        Execute the generated plan by calling appropriate tools.
+        except Exception as e:
+            logger.error(f"Error in LLM observation: {e}")
+            return None
+
+    async def _create_replan_from_failures_new(self, failed_results: List[Dict], original_plan: Dict, message: ProcessedMessage) -> Optional[Dict[str, Any]]:
+        """NEW: Create a replan when all tools failed"""
+        # Simple fallback: try different tools or different queries
+        original_tools = original_plan.get("tools_needed", [])
         
-        Args:
-            plan: Execution plan from query analysis
-            message: Original processed message
-            
-        Returns:
-            Dictionary containing gathered information from vector search
-        """
-        gathered_info = {
-            "vector_results": [],
-            "perplexity_results": [],
-            "meeting_results": []
-        }
+        # If vector search failed, try perplexity
+        if "vector_search" in original_tools and "perplexity_search" not in original_tools:
+            return {
+                "tools_needed": ["perplexity_search"],
+                "perplexity_queries": [message.text],
+                "analysis": "Falling back to web search after internal search failed"
+            }
+        
+        # If perplexity failed, try atlassian
+        if "perplexity_search" in original_tools and "atlassian_search" not in original_tools:
+            return {
+                "tools_needed": ["atlassian_search"],
+                "atlassian_actions": [{"task": f"Search for information about: {message.text}"}],
+                "analysis": "Falling back to project search after web search failed"
+            }
+        
+        return None
 
+    async def _llm_synthesize_final_response_new(self, synthesis_context: Dict[str, Any]) -> str:
+        """NEW: Use LLM to synthesize all results into a comprehensive response"""
         try:
-            tools_needed = plan.get("tools_needed", [])
+            synthesis_prompt = f"""
+            Synthesize the following information into a comprehensive, helpful response:
+            
+            Original Query: "{synthesis_context['original_query']}"
+            User: {synthesis_context['user_context']['first_name']} ({synthesis_context['user_context']['title']})
+            
+            Search Results Summary:
+            - Vector search results: {synthesis_context['results_summary']['vector_search']} findings
+            - Web search results: {synthesis_context['results_summary']['web_search']} findings  
+            - Project information: {synthesis_context['results_summary']['atlassian_search']} findings
+            
+            Detailed Findings:
+            {synthesis_context['detailed_results']['vector_findings']}
+            {synthesis_context['detailed_results']['web_findings']}
+            {synthesis_context['detailed_results']['project_findings']}
+            
+            Create a comprehensive, helpful response that directly answers the user's question using the information found.
+            Be specific, actionable, and cite relevant sources naturally.
+            """
 
-            # Execute Perplexity search if needed
-            if "perplexity_search" in tools_needed:
-                perplexity_queries = plan.get("perplexity_queries", [])
-                if perplexity_queries:
-                    logger.info(
-                        f"Executing {len(perplexity_queries)} Perplexity searches"
-                    )
-                    for i, query in enumerate(perplexity_queries):
-                        # Emit specific search progress with clear context
-                        if self.progress_tracker:
-                            search_topic = query[:40] + "..." if len(
-                                query) > 40 else query
-                            await emit_searching(self.progress_tracker,
-                                                 "perplexity_search",
-                                                 search_topic)
-
-                        try:
-                            result = await self.perplexity_tool.search(
-                                query=query, max_tokens=1000, temperature=0.2)
-                            if result and result.get("content"):
-                                gathered_info["perplexity_results"].append({
-                                    "query":
-                                    query,
-                                    "content":
-                                    result["content"],
-                                    "citations":
-                                    result.get("citations", []),
-                                    "search_time":
-                                    result.get("search_time", 0),
-                                    "model_used":
-                                    result.get("model_used", "unknown")
-                                })
-                                # Emit success for found results
-                                if self.progress_tracker:
-                                    citations_count = len(
-                                        result.get("citations", []))
-                                    await emit_processing(
-                                        self.progress_tracker,
-                                        "analyzing_results",
-                                        f"web findings ({citations_count} sources)"
-                                    )
-                            elif self.progress_tracker:
-                                # Emit warning if no results found
-                                await emit_warning(
-                                    self.progress_tracker, "limited_results",
-                                    f"no web results for '{query[:20]}...'")
-                        except Exception as search_error:
-                            logger.error(
-                                f"Perplexity search error for query '{query}': {search_error}"
-                            )
-                            if self.progress_tracker:
-                                await emit_error(
-                                    self.progress_tracker, "search_error",
-                                    f"issue with web search query")
-                            # Continue with other queries even if one fails
-
-            # Execute vector search if needed
-            if "vector_search" in tools_needed:
-                vector_queries = plan.get("vector_queries", [])
-                if vector_queries:
-                    logger.info(
-                        f"Executing {len(vector_queries)} vector searches")
-                    for i, query in enumerate(vector_queries):
-                        # Emit specific search progress with clear context
-                        if self.progress_tracker:
-                            search_topic = query[:40] + "..." if len(
-                                query) > 40 else query
-                            await emit_searching(self.progress_tracker,
-                                                 "vector_search", search_topic)
-
-                        try:
-                            # Use generalized retry pattern for vector search
-                            vector_action = {
-                                "type": "search",
-                                "query": query,
-                                "top_k": 5,
-                                "filters": {}
-                            }
-                            result = await self._execute_tool_action(
-                                "vector_search", vector_action, message)
-
-                            if result and not result.get("error"):
-                                # Extract actual results from the wrapped response
-                                actual_results = result.get(
-                                    "results", []) if isinstance(
-                                        result, dict) else result
-                                if actual_results:
-                                    gathered_info["vector_results"].extend(
-                                        actual_results if isinstance(
-                                            actual_results, list
-                                        ) else [actual_results])
-                            elif self.progress_tracker:
-                                # Emit warning if no results found or HITL required
-                                if result.get("hitl_required"):
-                                    await emit_error(
-                                        self.progress_tracker, "hitl_required",
-                                        f"vector search requires human intervention"
-                                    )
-                                else:
-                                    await emit_warning(
-                                        self.progress_tracker,
-                                        "limited_results",
-                                        f"no matches for '{query[:20]}...'")
-                        except Exception as search_error:
-                            logger.error(
-                                f"Vector search error for query '{query}': {search_error}"
-                            )
-                            if self.progress_tracker:
-                                await emit_error(self.progress_tracker,
-                                                 "search_error",
-                                                 f"issue with search query")
-                            # Continue with other queries even if one fails
-
-            # Execute Outlook meeting actions if needed
-            if "outlook_meeting" in tools_needed:
-                meeting_actions = plan.get("meeting_actions", [])
-                if meeting_actions:
-                    logger.info(
-                        f"Executing {len(meeting_actions)} Outlook meeting actions"
-                    )
-                    gathered_info["meeting_results"] = []
-
-                    for action in meeting_actions:
-                        action_type = action.get("type")
-
-                        if self.progress_tracker:
-                            await emit_processing(
-                                self.progress_tracker, "meeting_action",
-                                f"processing {action_type} request")
-
-                        try:
-                            if action_type == "check_availability":
-                                result = await self.outlook_tool.check_availability(
-                                    email_addresses=action.get("emails", []),
-                                    start_time=action.get("start_time"),
-                                    end_time=action.get("end_time"),
-                                    timezone=action.get("timezone", "UTC"))
-                            elif action_type == "schedule_meeting":
-                                result = await self.outlook_tool.schedule_meeting(
-                                    subject=action.get("subject", "Meeting"),
-                                    attendee_emails=action.get(
-                                        "attendees", []),
-                                    start_time=action.get("start_time"),
-                                    end_time=action.get("end_time"),
-                                    body=action.get("body", ""),
-                                    location=action.get("location", ""),
-                                    timezone=action.get("timezone", "UTC"),
-                                    is_online_meeting=action.get(
-                                        "is_online", True))
-                            elif action_type == "find_meeting_times":
-                                result = await self.outlook_tool.find_meeting_times(
-                                    attendee_emails=action.get(
-                                        "attendees", []),
-                                    duration_minutes=action.get(
-                                        "duration", 60),
-                                    max_candidates=action.get(
-                                        "max_suggestions", 10),
-                                    start_date=action.get("start_date"),
-                                    end_date=action.get("end_date"),
-                                    timezone=action.get("timezone", "UTC"))
-                            elif action_type == "get_calendar":
-                                result = await self.outlook_tool.get_calendar_events(
-                                    start_date=action.get("start_date"),
-                                    end_date=action.get("end_date"),
-                                    timezone=action.get("timezone", "UTC"),
-                                    max_events=action.get("max_events", 20))
-                            else:
-                                logger.warning(
-                                    f"Unknown meeting action type: {action_type}"
-                                )
-                                continue
-
-                            if result and "error" not in result:
-                                gathered_info["meeting_results"].append({
-                                    "action_type":
-                                    action_type,
-                                    "result":
-                                    result,
-                                    "success":
-                                    True
-                                })
-                                if self.progress_tracker:
-                                    await emit_processing(
-                                        self.progress_tracker,
-                                        "analyzing_results",
-                                        f"meeting {action_type} completed")
-                            else:
-                                gathered_info["meeting_results"].append({
-                                    "action_type":
-                                    action_type,
-                                    "error":
-                                    result.get("error", "Unknown error")
-                                    if result else "No result",
-                                    "success":
-                                    False
-                                })
-                                if self.progress_tracker:
-                                    await emit_warning(
-                                        self.progress_tracker, "meeting_error",
-                                        f"{action_type} encountered an issue")
-
-                        except Exception as meeting_error:
-                            logger.error(
-                                f"Meeting action error for {action_type}: {meeting_error}"
-                            )
-                            gathered_info["meeting_results"].append({
-                                "action_type":
-                                action_type,
-                                "error":
-                                str(meeting_error),
-                                "success":
-                                False
-                            })
-                            if self.progress_tracker:
-                                await emit_error(self.progress_tracker,
-                                                 "meeting_error",
-                                                 f"issue with {action_type}")
-                            # Continue with other actions even if one fails
-
-            # Execute Atlassian tool if needed
-            if "atlassian_search" in tools_needed:
-                atlassian_actions = plan.get("atlassian_actions", [])
-                if atlassian_actions:
-                    logger.info(
-                        f"Executing {len(atlassian_actions)} Atlassian actions"
-                    )
-                    gathered_info["atlassian_results"] = []
-
-                    for action in atlassian_actions:
-                        # Handle both modern MCP format and legacy format
-                        action_type = action.get("mcp_tool") or action.get(
-                            "type")
-
-                        if self.progress_tracker:
-                            await emit_processing(
-                                self.progress_tracker, "atlassian_action",
-                                f"processing {action_type} request")
-
-                        try:
-                            # Direct MCP execution with intelligent retry for connection issues
-                            result = await asyncio.wait_for(
-                                self._execute_mcp_action_with_retry(action),
-                                timeout=60.0  # Direct MCP timeout
-                            )
-
-                            # Store result
-                            if result and not result.get("error"):
-                                gathered_info["atlassian_results"].append({
-                                    "action_type":
-                                    action_type,
-                                    "result":
-                                    result,
-                                    "success":
-                                    True
-                                })
-                                if self.progress_tracker:
-                                    await emit_processing(
-                                        self.progress_tracker,
-                                        "analyzing_results",
-                                        f"Atlassian {action_type} completed")
-                            else:
-                                gathered_info["atlassian_results"].append({
-                                    "action_type":
-                                    action_type,
-                                    "error":
-                                    result.get("error", "Unknown error")
-                                    if result else "No result",
-                                    "success":
-                                    False
-                                })
-                                if self.progress_tracker:
-                                    await emit_warning(
-                                        self.progress_tracker,
-                                        "atlassian_error",
-                                        f"{action_type} encountered an issue")
-
-                        except asyncio.TimeoutError:
-                            logger.warning(
-                                f"Atlassian {action_type} timed out after 90 seconds (deployment environment)"
-                            )
-                            gathered_info["atlassian_results"].append({
-                                "action_type":
-                                action_type,
-                                "error":
-                                "Request timed out in deployment environment. This may be due to slower network conditions.",
-                                "success":
-                                False,
-                                "timeout":
-                                True
-                            })
-                            if self.progress_tracker:
-                                await emit_warning(
-                                    self.progress_tracker, "atlassian_timeout",
-                                    f"{action_type} timed out - continuing with other sources"
-                                )
-
-                        except Exception as atlassian_error:
-                            logger.error(
-                                f"Atlassian action error for {action_type}: {atlassian_error}"
-                            )
-                            gathered_info["atlassian_results"].append({
-                                "action_type":
-                                action_type,
-                                "error":
-                                str(atlassian_error),
-                                "success":
-                                False
-                            })
-                            if self.progress_tracker:
-                                await emit_error(self.progress_tracker,
-                                                 "atlassian_error",
-                                                 f"issue with {action_type}")
-                            # Continue with other actions even if one fails
-
-            logger.info(
-                f"Gathered {len(gathered_info['vector_results'])} vector results, {len(gathered_info['perplexity_results'])} web results, and {len(gathered_info.get('atlassian_results', []))} Atlassian results"
+            response = await asyncio.wait_for(
+                self.gemini_client.generate_response(
+                    "You are an expert at synthesizing information from multiple sources into clear, helpful responses.",
+                    synthesis_prompt,
+                    model=self.gemini_client.pro_model,  # Use Pro for synthesis quality
+                    max_tokens=1500,
+                    temperature=0.7
+                ),
+                timeout=15.0
             )
-            return gathered_info
+
+            return response if response else "I found relevant information but had trouble synthesizing it clearly."
 
         except Exception as e:
-            logger.error(f"Error executing plan: {e}")
-            return gathered_info
+            logger.error(f"Error in LLM synthesis: {e}")
+            return "I gathered information from multiple sources but encountered an issue creating a comprehensive response."
 
-    async def _build_state_stack(
-            self, message: ProcessedMessage, gathered_information: Dict[str,
-                                                                        Any],
-            execution_plan: Dict[str, Any]) -> Dict[str, Any]:
-        """
-        Build simplified state stack for Client Agent with orchestrator-generated summaries.
-        Shifts data processing responsibility to orchestrator, making client agent focus on presentation.
+    def _summarize_vector_results_new(self, vector_results: List[Dict]) -> str:
+        """NEW: Summarize vector search results"""
+        if not vector_results:
+            return ""
         
-        Args:
-            message: Original processed message
-            gathered_information: Results from vector search and other tools
-            execution_plan: Orchestrator's execution plan with insights
-            
-        Returns:
-            Simplified state stack with pre-formatted summaries for client agent
+        summary_parts = []
+        for result in vector_results:
+            if result.get("success") and result.get("results"):
+                results = result["results"]
+                summary_parts.append(f"Found {len(results)} relevant documents for '{result['query']}'")
+                for i, doc in enumerate(results[:2], 1):  # Top 2 docs
+                    content = doc.get("content", "")[:100] + "..."
+                    summary_parts.append(f"  {i}. {content}")
+        
+        return "\n".join(summary_parts)
+
+    def _summarize_web_results_new(self, web_results: List[Dict]) -> str:
+        """NEW: Summarize perplexity web search results"""
+        if not web_results:
+            return ""
+        
+        summary_parts = []
+        for result in web_results:
+            if result.get("success") and result.get("result"):
+                web_result = result["result"]
+                content = web_result.get("content", "")[:150] + "..."
+                citations = len(web_result.get("citations", []))
+                summary_parts.append(f"Web search for '{result['query']}': {content} ({citations} sources)")
+        
+        return "\n".join(summary_parts)
+
+    def _summarize_atlassian_results_new(self, atlassian_results: List[Dict]) -> str:
+        """NEW: Summarize Atlassian search results"""
+        if not atlassian_results:
+            return ""
+        
+        summary_parts = []
+        for result in atlassian_results:
+            if result.get("success") and result.get("result"):
+                atlassian_result = result["result"]
+                message = atlassian_result.get("message", "")[:100] + "..."
+                summary_parts.append(f"Project search: {message}")
+        
+        return "\n".join(summary_parts)
+
+    def _summarize_meeting_results_new(self, meeting_results: List[Dict]) -> str:
+        """NEW: Summarize meeting action results"""
+        if not meeting_results:
+            return ""
+        
+        summary_parts = []
+        for result in meeting_results:
+            action_type = result.get("action_type", "unknown")
+            success = result.get("success", False)
+            status = "✓" if success else "✗"
+            summary_parts.append(f"{status} {action_type}")
+        
+        return "\n".join(summary_parts)
+
+    def _extract_key_findings_new(self, all_results: List[Dict], plan: Dict) -> List[str]:
+        """NEW: Extract key findings from all results"""
+        findings = []
+        
+        for result in all_results:
+            if result.get("success"):
+                tool_type = result.get("tool_type", "")
+                if tool_type == "vector_search" and result.get("results"):
+                    findings.append(f"Found {len(result['results'])} relevant documents in knowledge base")
+                elif tool_type == "perplexity_search" and result.get("result", {}).get("content"):
+                    findings.append("Located current web information on the topic")
+                elif tool_type == "atlassian_search" and result.get("result", {}).get("status") == "success":
+                    findings.append("Retrieved relevant project and documentation information")
+        
+        return findings[:5]  # Limit to top 5 findings
+
+    def _generate_source_links_new(self, all_results: List[Dict]) -> List[Dict[str, str]]:
+        """NEW: Generate source links from results"""
+        links = []
+        
+        for result in all_results:
+            if result.get("success"):
+                tool_type = result.get("tool_type", "")
+                
+                if tool_type == "perplexity_search" and result.get("result", {}).get("citations"):
+                    citations = result["result"]["citations"]
+                    for citation in citations[:3]:  # Top 3 citations
+                        if citation.get("url"):
+                            links.append({
+                                "title": citation.get("title", "Web Source"),
+                                "url": citation["url"],
+                                "type": "web"
+                            })
+                
+                elif tool_type == "atlassian_search" and result.get("result", {}).get("data"):
+                    # Extract Atlassian links if available in result data
+                    data = result["result"]["data"]
+                    if isinstance(data, list):
+                        for item in data[:2]:  # Top 2 items
+                            if isinstance(item, dict) and item.get("url"):
+                                links.append({
+                                    "title": item.get("title", "Project Resource"),
+                                    "url": item["url"],
+                                    "type": "confluence" if "confluence" in item["url"] else "jira"
+                                })
+        
+        return links[:5]  # Limit to 5 source links
+
+    def _assess_confidence_level_new(self, all_results: List[Dict], plan: Dict) -> str:
+        """NEW: Assess confidence level based on results quality"""
+        if not all_results:
+            return "low"
+        
+        successful_results = [r for r in all_results if r.get("success", True)]
+        success_rate = len(successful_results) / len(all_results) if all_results else 0
+        
+        # Check for substantial content
+        has_substantial_content = False
+        for result in successful_results:
+            if result.get("tool_type") == "vector_search" and len(result.get("results", [])) >= 2:
+                has_substantial_content = True
+            elif result.get("tool_type") == "perplexity_search" and result.get("result", {}).get("content"):
+                has_substantial_content = True
+            elif result.get("tool_type") == "atlassian_search" and result.get("result", {}).get("status") == "success":
+                has_substantial_content = True
+        
+        if success_rate >= 0.8 and has_substantial_content:
+            return "high"
+        elif success_rate >= 0.5 or has_substantial_content:
+            return "medium"
+        else:
+            return "low"
+
+    def _generate_followup_suggestions_new(self, synthesis_context: Dict[str, Any]) -> List[str]:
+        """NEW: Generate contextual follow-up suggestions"""
+        suggestions = []
+        
+        # Based on tools used
+        results_summary = synthesis_context.get("results_summary", {})
+        
+        if results_summary.get("vector_search", 0) > 0:
+            suggestions.append("Search for related topics in our knowledge base")
+        
+        if results_summary.get("web_search", 0) > 0:
+            suggestions.append("Get the latest updates on this topic")
+        
+        if results_summary.get("atlassian_search", 0) > 0:
+            suggestions.append("Check related project documentation")
+        
+        # Generic helpful suggestions
+        suggestions.extend([
+            "Ask for more specific details",
+            "Explore implementation steps"
+        ])
+        
+        return suggestions[:4]  # Limit to 4 suggestions
+
+    # Existing methods from original file (preserved)
+    async def _construct_hybrid_history(self, conversation_key: str, current_query: str) -> Dict[str, Any]:
+        """
+        Construct hybrid memory system with rolling long-term summary and precise token-managed live history.
+        """
+        MAX_LIVE_MESSAGES = 10
+        MAX_LIVE_TOKENS = 2000
+        PRESERVE_RECENT = 2
+
+        try:
+            recent_messages = await self.memory_service.get_recent_messages(conversation_key, limit=MAX_LIVE_MESSAGES)
+            summary_key = f"{conversation_key}:long_term_summary"
+            long_term_summary = await self.memory_service.get_conversation_context(summary_key) or {"summary": "", "message_count": 0}
+
+            if recent_messages:
+                messages_to_keep, messages_to_summarize, token_stats = self.token_manager.build_token_managed_history(
+                    recent_messages, MAX_LIVE_TOKENS, PRESERVE_RECENT)
+
+                if messages_to_summarize and len(messages_to_summarize) >= 2:
+                    raw_messages_to_summarize = [msg.original_message for msg in messages_to_summarize]
+                    await self._queue_abstractive_summarization(conversation_key, summary_key, raw_messages_to_summarize, long_term_summary.get("summary", ""))
+                    
+                    for msg in messages_to_summarize:
+                        if long_term_summary["summary"]:
+                            long_term_summary["summary"] += f"\n{msg.speaker}: {msg.text[:100]}..."
+                        else:
+                            long_term_summary["summary"] = f"{msg.speaker}: {msg.text[:100]}..."
+                    long_term_summary["message_count"] += len(messages_to_summarize)
+
+                live_history_text = self.token_manager.format_messages_for_context(messages_to_keep)
+                precise_token_count = token_stats["total_tokens"]
+                old_char_estimate = sum(len(f"{msg.speaker}: {msg.text}") // 4 for msg in messages_to_keep)
+                efficiency_stats = self.token_manager.get_token_efficiency_stats(old_char_estimate, precise_token_count)
+
+                return {
+                    "summarized_history": long_term_summary["summary"],
+                    "summarized_message_count": long_term_summary["message_count"],
+                    "live_history": live_history_text,
+                    "live_message_count": token_stats["kept_messages"],
+                    "precise_tokens": precise_token_count,
+                    "estimated_tokens": precise_token_count,
+                    "token_efficiency": efficiency_stats,
+                    "summarized_message_candidates": len(messages_to_summarize)
+                }
+            else:
+                query_tokens = self.token_manager.count_tokens(f"User: {current_query}")
+                return {
+                    "summarized_history": long_term_summary["summary"],
+                    "summarized_message_count": long_term_summary["message_count"],
+                    "live_history": f"User: {current_query}",
+                    "live_message_count": 1,
+                    "precise_tokens": query_tokens,
+                    "estimated_tokens": query_tokens,
+                    "token_efficiency": {"accuracy_percentage": 100, "is_more_efficient": True},
+                    "summarized_message_candidates": 0
+                }
+
+        except Exception as e:
+            logger.error(f"Error constructing hybrid history: {e}")
+            fallback_tokens = self.token_manager.count_tokens(f"User: {current_query}")
+            return {
+                "summarized_history": "", "summarized_message_count": 0,
+                "live_history": f"User: {current_query}", "live_message_count": 1,
+                "precise_tokens": fallback_tokens, "estimated_tokens": fallback_tokens,
+                "token_efficiency": {"accuracy_percentage": 100, "fallback": True},
+                "summarized_message_candidates": 0
+            }
+
+    async def _search_relevant_entities(self, query_text: str, conversation_key: str) -> Dict[str, Any]:
+        """Search for entities relevant to the current query"""
+        try:
+            query_keywords = self._extract_query_keywords(query_text)
+            if not query_keywords:
+                return {"entities": [], "search_performed": False}
+
+            matching_entities = await self.entity_store.search_entities(
+                query_keywords=query_keywords, conversation_key=conversation_key, limit=10)
+
+            formatted_entities = []
+            entity_summary = {}
+            for entity in matching_entities:
+                formatted_entity = {
+                    "key": entity.key, "type": entity.type, "value": entity.value,
+                    "context": entity.context, "relevance_score": entity.relevance_score,
+                    "mentioned_at": entity.mentioned_at
+                }
+                formatted_entities.append(formatted_entity)
+                entity_summary[entity.type] = entity_summary.get(entity.type, 0) + 1
+
+            return {
+                "entities": formatted_entities, "entity_summary": entity_summary,
+                "search_keywords": query_keywords, "search_performed": True,
+                "total_found": len(formatted_entities)
+            }
+        except Exception as e:
+            logger.error(f"Error searching relevant entities: {e}")
+            return {"entities": [], "search_performed": False, "error": str(e)}
+
+    def _extract_query_keywords(self, query_text: str) -> List[str]:
+        """Extract relevant keywords from query text for entity search"""
+        import re
+        keywords = []
+        text_lower = query_text.lower()
+        
+        # Extract JIRA patterns, project names, quotes, important words
+        jira_matches = re.findall(r'\b([A-Z]+-\d+)\b', query_text, re.IGNORECASE)
+        keywords.extend(jira_matches)
+        
+        project_matches = re.findall(r'\b([A-Z][a-z]+(?:\s+[A-Z][a-z]*)*)\b', query_text)
+        keywords.extend([match for match in project_matches if len(match) > 2])
+        
+        entity_keywords = ["ticket", "issue", "project", "deadline", "document", "template", "report", "meeting", "user", "owner", "assigned", "status"]
+        for keyword in entity_keywords:
+            if keyword in text_lower:
+                keywords.append(keyword)
+        
+        quoted_matches = re.findall(r'"([^"]+)"', query_text)
+        keywords.extend(quoted_matches)
+        
+        words = re.findall(r'\b[A-Za-z]{3,}\b', query_text)
+        important_words = [word for word in words if word.lower() not in {'the', 'and', 'for', 'are', 'was', 'were', 'been', 'have', 'has', 'had', 'will', 'would', 'could', 'should', 'can', 'what', 'when', 'where', 'why', 'how', 'who', 'which', 'this', 'that', 'with'}]
+        keywords.extend(important_words[:5])
+        
+        keywords = list(set([k.strip() for k in keywords if k.strip()]))
+        return keywords[:10]
+
+    async def _queue_entity_extraction(self, message: ProcessedMessage, bot_response: str):
+        """Queue background entity extraction from the conversation exchange"""
+        try:
+            from workers.entity_extractor import extract_entities_from_conversation
+            conversation_key = f"conv:{message.channel_id}:{message.thread_ts or message.message_ts}"
+            extraction_task = extract_entities_from_conversation.delay(
+                conversation_key=conversation_key, user_query=message.text, bot_response=bot_response,
+                user_name=message.user_name, additional_context={
+                    "channel_name": message.channel_name, "is_dm": message.is_dm,
+                    "user_title": message.user_title, "user_department": message.user_department,
+                    "timestamp": datetime.now().isoformat()
+                })
+            logger.info(f"Entity extraction task queued: {extraction_task.id} for conversation: {conversation_key}")
+        except Exception as e:
+            logger.error(f"Failed to queue entity extraction: {e}")
+
+    async def _queue_abstractive_summarization(self, conversation_key: str, summary_key: str, messages_to_archive: List[Dict[str, Any]], existing_summary: str):
+        """Queue abstractive summarization task for background processing"""
+        try:
+            from workers.conversation_summarizer import summarize_conversation_chunk
+            logger.info(f"Queuing abstractive summarization for {conversation_key} with {len(messages_to_archive)} messages")
+            summarization_result = summarize_conversation_chunk.delay(
+                conversation_key=conversation_key, messages_to_summarize=messages_to_archive, existing_summary=existing_summary)
+            logger.info(f"Abstractive summarization task queued: {summarization_result.id}")
+        except Exception as e:
+            logger.error(f"Failed to queue abstractive summarization: {e}")
+
+    # ============================================================================
+    # LEGACY METHODS (preserved for safety/compatibility)
+    # ============================================================================
+
+    async def _analyze_query_and_plan(self, message: ProcessedMessage) -> Optional[Dict[str, Any]]:
+        """
+        LEGACY: Original query analysis method - preserved for external compatibility.
+        Now uses new 5-step framework internally but returns legacy format.
         """
         try:
-            # Get hybrid conversation history
-            thread_identifier = message.thread_ts or message.message_ts
-            conversation_key = f"conv:{message.channel_id}:{thread_identifier}"
-            hybrid_history = await self._construct_hybrid_history(
-                conversation_key, message.text)
+            logger.info("LEGACY: Using _analyze_query_and_plan compatibility method")
+            
+            # Use new method internally
+            new_plan = await self._step1_2_analyze_and_plan_new(message)
+            
+            if new_plan:
+                # Convert new format to legacy format for compatibility
+                legacy_plan = {
+                    "analysis": new_plan.get("analysis", "Query analysis completed"),
+                    "intent": new_plan.get("analysis", "")[:100] + "...",  # Truncated analysis as intent
+                    "tools_needed": new_plan.get("tools_needed", []),
+                    "vector_queries": new_plan.get("vector_queries", []),
+                    "perplexity_queries": new_plan.get("perplexity_queries", []),
+                    "atlassian_actions": new_plan.get("atlassian_actions", []),
+                    "meeting_actions": new_plan.get("meeting_actions", []),
+                    "context": {
+                        "execution_approach": "5-step reasoning framework",
+                        "framework_version": "new",
+                        "original_plan_keys": list(new_plan.keys())
+                    }
+                }
+                logger.info("LEGACY: Successfully converted new plan to legacy format")
+                return legacy_plan
+            else:
+                logger.warning("LEGACY: New planning method returned None")
+                return None
+                
+        except Exception as e:
+            logger.error(f"LEGACY: Error in _analyze_query_and_plan compatibility method: {e}")
+            return None
 
-            # Generate orchestrator summaries for all search results (orchestrator does the heavy lifting)
-            search_summary = await self._summarize_search_results(
-                gathered_information.get("vector_results", []))
-            web_summary = await self._summarize_web_results(
-                gathered_information.get("perplexity_results", []))
-            meeting_summary = await self._summarize_meeting_results(
-                gathered_information.get("meeting_results", []))
-            atlassian_summary = await self._summarize_atlassian_results(
-                gathered_information.get("atlassian_results", []))
+    async def _execute_plan(self, execution_plan: Dict[str, Any], message: ProcessedMessage) -> Dict[str, Any]:
+        """
+        LEGACY: Original plan execution method - preserved for external compatibility.
+        Now uses new execution methods internally but returns legacy format.
+        """
+        try:
+            logger.info("LEGACY: Using _execute_plan compatibility method")
+            
+            # Use new execution method internally
+            tool_results = await self._execute_planned_tools_new(execution_plan, message)
+            
+            # Convert new results format to legacy format
+            legacy_results = {
+                "vector_results": [],
+                "perplexity_results": [],
+                "atlassian_results": [],
+                "meeting_results": [],
+                "execution_summary": {
+                    "total_tools_executed": len(tool_results),
+                    "successful_tools": len([r for r in tool_results if r.get("success", True)]),
+                    "failed_tools": len([r for r in tool_results if not r.get("success", True)]),
+                    "framework_version": "new"
+                }
+            }
+            
+            # Categorize results by tool type for legacy compatibility
+            for result in tool_results:
+                tool_type = result.get("tool_type", "unknown")
+                
+                if tool_type == "vector_search":
+                    legacy_results["vector_results"].append({
+                        "query": result.get("query", ""),
+                        "results": result.get("results", []),
+                        "success": result.get("success", False),
+                        "error": result.get("error", None)
+                    })
+                    
+                elif tool_type == "perplexity_search":
+                    legacy_results["perplexity_results"].append({
+                        "query": result.get("query", ""),
+                        "result": result.get("result", {}),
+                        "success": result.get("success", False),
+                        "error": result.get("error", None)
+                    })
+                    
+                elif tool_type == "atlassian_search":
+                    legacy_results["atlassian_results"].append({
+                        "task": result.get("task", ""),
+                        "result": result.get("result", {}),
+                        "success": result.get("success", False),
+                        "error": result.get("error", None)
+                    })
+                    
+                elif tool_type == "outlook_meeting":
+                    legacy_results["meeting_results"].append({
+                        "action_type": result.get("action_type", "unknown"),
+                        "result": result.get("result", {}),
+                        "success": result.get("success", False),
+                        "error": result.get("error", None)
+                    })
+            
+            logger.info(f"LEGACY: Successfully converted {len(tool_results)} tool results to legacy format")
+            return legacy_results
+            
+        except Exception as e:
+            logger.error(f"LEGACY: Error in _execute_plan compatibility method: {e}")
+            return {
+                "vector_results": [],
+                "perplexity_results": [],
+                "atlassian_results": [],
+                "meeting_results": [],
+                "execution_summary": {"error": str(e), "framework_version": "new"}
+            }
 
-            # Build simplified state stack for Client Agent (orchestrator does the heavy lifting)
+    async def _build_state_stack(self, message: ProcessedMessage, gathered_info: Dict[str, Any], execution_plan: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        LEGACY: Original state stack builder - preserved for external compatibility.
+        Creates a comprehensive state stack for the client agent using both legacy and new data.
+        """
+        try:
+            logger.info("LEGACY: Using _build_state_stack compatibility method")
+            
+            # Build conversation context using existing method
+            conversation_key = f"conv:{message.channel_id}:{message.thread_ts or message.message_ts}"
+            hybrid_history = await self._construct_hybrid_history(conversation_key, message.text)
+            relevant_entities = await self._search_relevant_entities(message.text, conversation_key)
+            
+            # Build legacy state stack format
             state_stack = {
                 "query": message.text,
                 "user": {
+                    "id": message.user_id,
                     "name": message.user_name,
                     "first_name": message.user_first_name,
                     "display_name": message.user_display_name,
@@ -828,980 +1134,138 @@ Current Query: "{message.text}"
                     "department": message.user_department
                 },
                 "context": {
-                    "channel": message.channel_name,
-                    "is_dm": message.is_dm,
-                },
-                "hybrid_history": hybrid_history,
-                "orchestrator_findings": {
-                    "analysis": execution_plan.get("analysis", ""),
-                    "tools_used": execution_plan.get("tools_needed", []),
-                    "search_summary": search_summary,
-                    "web_summary": web_summary,
-                    "meeting_summary": meeting_summary,
-                    "atlassian_summary": atlassian_summary
-                },
-                "response_thread_ts": message.thread_ts or message.message_ts,
-                "trace_id": self._get_current_trace_id()
-            }
-
-            logger.info(
-                f"Built simplified state stack with orchestrator summaries")
-            return state_stack
-
-        except Exception as e:
-            logger.error(f"Error building state stack: {e}")
-            # Return minimal state stack on error
-            return {
-                "query": message.text,
-                "user": {
-                    "name": message.user_name,
-                    "first_name": message.user_first_name
-                },
-                "context": {
-                    "channel": message.channel_name,
-                    "is_dm": message.is_dm
-                },
-                "hybrid_history": {
-                    "summarized_history": "",
-                    "summarized_message_count": 0,
-                    "live_history": f"User: {message.text}",
-                    "live_message_count": 1,
-                    "estimated_tokens": len(message.text) // 4
-                },
-                "orchestrator_findings": {
-                    "analysis": execution_plan.get("analysis", "Error occurred during analysis"),
-                    "tools_used": [],
-                    "search_summary": "",
-                    "web_summary": "",
-                    "meeting_summary": "",
-                    "atlassian_summary": ""
-                },
-                "response_thread_ts": message.thread_ts or message.message_ts,
-                "trace_id": self._get_current_trace_id()
-            }
-
-    def _get_current_trace_id(self) -> Optional[str]:
-        """Get current trace ID from global trace manager"""
-        try:
-            from services.trace_manager import trace_manager
-            current_id = trace_manager.current_trace_id
-            logger.info(
-                f"DEBUG: Orchestrator _get_current_trace_id returning: {current_id}"
-            )
-            return current_id
-        except Exception as e:
-            logger.error(f"ERROR: Failed to get trace ID: {e}")
-            return None
-
-    def _deduplicate_messages(
-            self, messages: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-        """
-        Remove duplicate messages based on text content and timestamp.
-        
-        Args:
-            messages: List of message dictionaries
-            
-        Returns:
-            Deduplicated list of messages
-        """
-        seen = set()
-        deduplicated = []
-
-        for msg in messages:
-            # Create a unique key from text and timestamp
-            key = (msg.get("text", ""), msg.get("timestamp", ""))
-            if key not in seen and msg.get(
-                    "text", "").strip():  # Only include non-empty messages
-                seen.add(key)
-                deduplicated.append(msg)
-
-        return deduplicated
-
-    async def _trigger_observation(self, message: ProcessedMessage,
-                                   response: str, gathered_info: Dict[str,
-                                                                      Any]):
-        """
-        Trigger Observer Agent to learn from the conversation (async).
-        
-        Args:
-            message: Original message
-            response: Generated response
-            gathered_info: Information used to generate response
-        """
-        try:
-            # Don't wait for observation to complete
-            observation_data = {
-                "message": message.dict(),
-                "response": response,
-                "gathered_info": gathered_info,
-                "timestamp": datetime.now().isoformat()
-            }
-
-            # Store for Observer Agent to process later
-            await self.memory_service.store_temp_data(
-                f"observation:{message.message_ts}",
-                observation_data,
-                ttl=3600  # 1 hour
-            )
-
-            # Trigger Observer Agent (fire and forget)
-            await self.observer_agent.observe_conversation(observation_data)
-
-        except Exception as e:
-            logger.error(f"Error triggering observation: {e}")
-
-    async def _execute_tool_action(
-            self, tool_name: str, action: Dict[str, Any],
-            message: ProcessedMessage) -> Dict[str, Any]:
-        """
-        Execute a tool action with simple error handling.
-        Relies on tenacity-based network retries in individual tools.
-        Logical errors are surfaced to the user for clear feedback.
-        
-        Args:
-            tool_name: Name of the tool (atlassian, vector_search, perplexity, etc.)
-            action: The action to execute  
-            message: Original processed message for context
-            
-        Returns:
-            Result from execution or clear error message for user
-        """
-        action_type = action.get("mcp_tool") or action.get(
-            "type", "unknown_action")
-
-        try:
-            if self.progress_tracker:
-                await emit_reasoning(self.progress_tracker, "executing_action",
-                                     f"executing {tool_name} {action_type}")
-
-            # Execute the action using the appropriate tool
-            result = await self._execute_single_tool_action(tool_name, action)
-
-            # Check if action succeeded
-            if result and not result.get("error"):
-                return result
-            else:
-                # Tool execution failed - surface the error clearly to the user
-                error_msg = result.get(
-                    "error",
-                    "Unknown error") if result else "No result returned"
-
-                # Provide user-friendly error message
-                user_friendly_error = self._format_user_friendly_error(
-                    tool_name, action_type, error_msg)
-
-                if self.progress_tracker:
-                    await emit_warning(
-                        self.progress_tracker, "action_failed",
-                        f"{tool_name} search encountered an issue")
-
-                return {"error": user_friendly_error, "user_facing": True}
-
-        except Exception as e:
-            logger.error(f"{tool_name} action {action_type} failed: {str(e)}")
-            user_friendly_error = self._format_user_friendly_error(
-                tool_name, action_type, str(e))
-            return {"error": user_friendly_error, "user_facing": True}
-
-    async def _execute_mcp_action_direct(
-            self, action: Dict[str, Any]) -> Dict[str, Any]:
-        """
-        Direct MCP execution bypassing complex retry logic.
-        Uses the proven working pattern for all Atlassian MCP commands.
-        """
-        mcp_tool = action.get("mcp_tool")
-        arguments = action.get("arguments", {})
-
-        if not mcp_tool:
-            return {"error": "No mcp_tool specified in action"}
-
-        try:
-            # Direct call to Atlassian tool using working pattern
-            import time
-            start_time = time.time()
-            result = await self.atlassian_guru.execute_task(
-                f"Execute {mcp_tool} with arguments: {arguments}")
-            duration_ms = (time.time() - start_time) * 1000
-
-            # Log completed MCP operation to LangSmith
-            if self.trace_manager:
-                try:
-                    await self.trace_manager.log_mcp_tool_operation(
-                        mcp_tool,
-                        arguments,
-                        result if result else None,
-                        duration_ms,
-                        error=None if result and result.get("success") else
-                        result.get("error", "No result from MCP")
-                        if result else "No result from MCP")
-                except Exception as e:
-                    logger.warning(f"Failed to log completed MCP trace: {e}")
-
-            # Log MCP call to production logger
-            try:
-                from services.production_logger import production_logger
-                current_trace_id = getattr(self, '_current_trace_id', None)
-                if current_trace_id:
-                    production_logger.log_mcp_call(current_trace_id, mcp_tool,
-                                                   arguments, result,
-                                                   duration_ms)
-            except Exception:
-                pass  # Don't let logging errors break execution
-
-            # Return result in expected format
-            if result and result.get("success"):
-                return {
-                    "success": True,
-                    "result": result.get("result", []),
-                    "tool": mcp_tool,
-                    "arguments": arguments
-                }
-            else:
-                return {
-                    "error":
-                    result.get("error", "MCP execution failed")
-                    if result else "No result from MCP",
-                    "success":
-                    False
-                }
-
-        except Exception as e:
-            logger.error(f"Direct MCP execution failed: {e}")
-
-            # Log failed MCP operation to LangSmith
-            if self.trace_manager:
-                try:
-                    await self.trace_manager.log_mcp_tool_operation(
-                        mcp_tool, arguments, None, 0, error=str(e))
-                except Exception:
-                    pass
-
-            return {
-                "error": f"MCP execution error: {str(e)}",
-                "success": False
-            }
-
-    async def _execute_mcp_action_with_retry(
-            self, action: Dict[str, Any]) -> Dict[str, Any]:
-        """
-        Execute MCP action with intelligent retry for connection/handshake issues.
-        Handles deployment environment instability gracefully.
-        """
-        max_retries = 3
-        base_delay = 1.0  # Start with 1 second delay
-
-        for attempt in range(max_retries):
-            try:
-                result = await self._execute_mcp_action_direct(action)
-
-                # Check if we got a connection-related error that should be retried
-                if result and result.get("error"):
-                    error_type = result.get("error")
-
-                    # Retry on connection timeouts and handshake failures
-                    if (error_type
-                            in ["connection_timeout", "mcp_handshake_failed"]
-                            and result.get("retry_suggested")
-                            and attempt < max_retries - 1):
-
-                        # Calculate exponential backoff delay
-                        delay = base_delay * (2**attempt)
-
-                        if self.progress_tracker:
-                            await emit_retry(
-                                self.progress_tracker, "mcp_retry",
-                                f"retrying MCP connection in {delay:.1f}s (attempt {attempt + 2}/{max_retries})"
-                            )
-
-                        # Wait before retry
-                        await asyncio.sleep(delay)
-                        continue
-
-                # Return result (success or non-retryable error)
-                return result
-
-            except Exception as e:
-                logger.error(f"MCP retry attempt {attempt + 1} failed: {e}")
-
-                # If this was the last attempt, return the error
-                if attempt == max_retries - 1:
-                    return {
-                        "error":
-                        f"MCP execution failed after {max_retries} attempts: {str(e)}",
-                        "success": False
-                    }
-
-                # Otherwise, wait and retry
-                delay = base_delay * (2**attempt)
-                if self.progress_tracker:
-                    await emit_retry(
-                        self.progress_tracker, "mcp_retry",
-                        f"retrying after error in {delay:.1f}s (attempt {attempt + 2}/{max_retries})"
-                    )
-                await asyncio.sleep(delay)
-
-        # This should never be reached, but just in case
-        return {"error": "Maximum retries exceeded", "success": False}
-
-    async def _execute_single_tool_action(
-            self, tool_name: str, action: Dict[str, Any]) -> Dict[str, Any]:
-        """Execute a single tool action without retry logic"""
-
-        if tool_name == "atlassian":
-            # Use the new AtlassianToolbelt for all Atlassian operations
-            # Extract the task description from the action
-            task_description = None
-
-            # Extract task description - can be natural language or structured action
-            task_description = action.get("task")
-
-            if not task_description:
-                # Fallback: build from legacy structured format
-                mcp_tool = action.get("mcp_tool")
-                arguments = action.get("arguments", {})
-                action_type = action.get("type")
-
-                if mcp_tool == "get_jira_issues" or action_type == "search_jira_issues":
-                    jql = arguments.get("jql") or action.get("query", "")
-                    task_description = f"Search for Jira issues using query: {jql}"
-                elif mcp_tool == "get_confluence_pages" or action_type == "search_confluence_pages":
-                    query = arguments.get("query") or action.get("query", "")
-                    task_description = f"Search for Confluence documentation about: {query}"
-                elif mcp_tool == "create_jira_issue" or action_type == "create_jira_issue":
-                    summary = arguments.get("summary") or action.get(
-                        "summary", "")
-                    task_description = f"Create a new Jira issue: {summary}"
-                elif action_type == "get_jira_issue":
-                    issue_key = action.get("issue_key", "")
-                    task_description = f"Get details for Jira issue: {issue_key}"
-                elif action_type == "get_confluence_page":
-                    page_id = action.get("page_id", "")
-                    task_description = f"Get Confluence page details: {page_id}"
-                else:
-                    # Generic fallback
-                    task_description = f"Execute Atlassian task: {mcp_tool or action_type or 'unknown task'}"
-
-            # Use the AtlassianToolbelt to execute the task
-            logger.info(f"Delegating to AtlassianToolbelt: {task_description}")
-            result = await self.atlassian_guru.execute_task(task_description)
-
-            # Convert AtlassianToolbelt result format to orchestrator format
-            if result.get("status") == "success":
-                return {
-                    "success":
-                    True,
-                    "result":
-                    result.get("data"),
-                    "message":
-                    result.get("message"),
-                    "execution_method":
-                    result.get("execution_method", "atlassian_guru")
-                }
-            else:
-                return {
-                    "error": result.get("message",
-                                        "Atlassian operation failed"),
-                    "success": False
-                }
-
-        elif tool_name == "vector_search":
-            query = action.get("query", "")
-            top_k = action.get("top_k", 5)
-
-            # Execute vector search
-            results = await self.vector_tool.search(query=query,
-                                                    top_k=top_k,
-                                                    filters=action.get(
-                                                        "filters", {}))
-
-            # Log vector search to LangSmith
-            if self.trace_manager and results:
-                try:
-                    await self.trace_manager.log_vector_search(
-                        query, results, search_type="semantic_similarity")
-                except Exception as e:
-                    logger.warning(f"Failed to log vector search trace: {e}")
-
-            # Vector search returns a list, but we need to wrap it as a dict for consistency
-            return {
-                "results": results,
-                "success": True
-            } if results else {
-                "results": [],
-                "success": True
-            }
-
-        elif tool_name == "perplexity_search":
-            return await self.perplexity_tool.search(
-                query=action.get("query", ""),
-                max_tokens=action.get("max_tokens", 1000),
-                temperature=action.get("temperature", 0.2))
-
-        elif tool_name == "outlook_meeting":
-            # Handle different Outlook meeting actions
-            action_type = action.get("type", "unknown")
-            if action_type == "check_availability":
-                return await self.outlook_tool.check_availability(
-                    email_addresses=action.get("emails", []),
-                    start_time=action.get("start_time"),
-                    end_time=action.get("end_time"),
-                    timezone=action.get("timezone", "UTC"))
-            elif action_type == "schedule_meeting":
-                return await self.outlook_tool.schedule_meeting(
-                    subject=action.get("subject", "Meeting"),
-                    attendee_emails=action.get("attendees", []),
-                    start_time=action.get("start_time"),
-                    end_time=action.get("end_time"),
-                    body=action.get("body", ""),
-                    location=action.get("location", ""),
-                    timezone=action.get("timezone", "UTC"),
-                    is_online_meeting=action.get("is_online", True))
-            # Add other meeting actions...
-            else:
-                return {
-                    "error": f"Unknown Outlook meeting action: {action_type}"
-                }
-
-        else:
-            return {"error": f"Unknown tool: {tool_name}"}
-
-    def _format_user_friendly_error(self, tool_name: str, action_type: str,
-                                    error_msg: str) -> str:
-        """
-        Convert technical error messages into user-friendly format.
-        
-        Args:
-            tool_name: Name of the tool that failed
-            action_type: Type of action that failed
-            error_msg: Technical error message
-            
-        Returns:
-            User-friendly error message
-        """
-        # Convert common technical errors to user-friendly messages
-        error_lower = error_msg.lower()
-
-        if "syntax" in error_lower or "malformed" in error_lower:
-            if tool_name == "atlassian":
-                return "I couldn't process that search because the query format wasn't recognized. Could you try phrasing it differently?"
-            elif tool_name == "vector_search":
-                return "I had trouble understanding your search query. Could you try using different keywords?"
-            else:
-                return "I couldn't process your request because the query format wasn't recognized. Could you try rephrasing it?"
-
-        elif "permission" in error_lower or "forbidden" in error_lower or "unauthorized" in error_lower:
-            if tool_name == "atlassian":
-                return "I don't have permission to access that information in Jira or Confluence. Please check with your administrator."
-            else:
-                return "I don't have permission to access that information. Please check with your administrator."
-
-        elif "not found" in error_lower or "404" in error_msg:
-            if tool_name == "atlassian":
-                return "I couldn't find any matching results in Jira or Confluence. Try searching with different keywords."
-            else:
-                return "I couldn't find any matching results. Try searching with different keywords."
-
-        elif "timeout" in error_lower or "connection" in error_lower:
-            return "The search is taking longer than expected. Please try again in a moment."
-
-        else:
-            # Generic fallback that encourages user to try differently
-            if tool_name == "atlassian":
-                return "I encountered an issue searching Jira and Confluence. Could you try rephrasing your request?"
-            elif tool_name == "vector_search":
-                return "I had trouble searching our knowledge base. Could you try using different keywords?"
-            else:
-                return "I encountered an issue processing your request. Could you try rephrasing it?"
-
-    async def _summarize_search_results(
-            self, vector_results: List[Dict[str, Any]]) -> str:
-        """
-        Summarize vector search results into a clean, formatted summary for client agent.
-        Orchestrator does the heavy lifting of data processing.
-        """
-        if not vector_results:
-            return ""
-
-        summary_parts = []
-        summary_parts.append(
-            f"Found {len(vector_results)} relevant documents:")
-
-        for i, result in enumerate(vector_results[:3], 1):  # Top 3 results
-            content = result.get("content", "")[:150]  # Truncate content
-            source = result.get("source", "Unknown source")
-            score = result.get("score", 0.0)
-            summary_parts.append(
-                f"{i}. {content}... (from {source}, relevance: {score:.2f})")
-
-        return "\n".join(summary_parts)
-
-    async def _summarize_web_results(
-            self, perplexity_results: List[Dict[str, Any]]) -> str:
-        """
-        Summarize web search results into a clean, formatted summary for client agent.
-        """
-        if not perplexity_results:
-            return ""
-
-        summary_parts = []
-        summary_parts.append(f"Found {len(perplexity_results)} web sources:")
-
-        for i, result in enumerate(perplexity_results[:2], 1):  # Top 2 results
-            content = result.get("content", "")[:150]  # Truncate content
-            sources = result.get("sources", [])
-            source_text = f" (sources: {len(sources)} citations)" if sources else ""
-            summary_parts.append(f"{i}. {content}...{source_text}")
-
-        return "\n".join(summary_parts)
-
-    async def _summarize_meeting_results(
-            self, meeting_results: List[Dict[str, Any]]) -> str:
-        """
-        Summarize meeting actions into a clean, formatted summary for client agent.
-        """
-        if not meeting_results:
-            return ""
-
-        summary_parts = []
-        for result in meeting_results:
-            action_type = result.get("action_type", "unknown")
-            success = result.get("success", False)
-
-            if success:
-                if action_type == "schedule_meeting":
-                    summary_parts.append("✓ Meeting scheduled successfully")
-                elif action_type == "find_meeting_times":
-                    suggestions = result.get("meeting_data", {}).get(
-                        "meeting_time_suggestions", {}).get("suggestions", [])
-                    summary_parts.append(
-                        f"✓ Found {len(suggestions)} available meeting times")
-                elif action_type == "get_calendar":
-                    events = result.get("meeting_data",
-                                        {}).get("calendar_events",
-                                                {}).get("events", [])
-                    summary_parts.append(
-                        f"✓ Retrieved {len(events)} calendar events")
-            else:
-                summary_parts.append(
-                    f"✗ {action_type.replace('_', ' ').title()} failed")
-
-        return "\n".join(summary_parts)
-
-    async def _summarize_atlassian_results(
-            self, atlassian_results: List[Dict[str, Any]]) -> str:
-        """
-        Summarize Atlassian actions into a clean, formatted summary with clickable links.
-        """
-        if not atlassian_results:
-            return ""
-
-        summary_parts = []
-        for result in atlassian_results:
-            action_type = result.get("action_type") or result.get(
-                "mcp_tool", "unknown")
-            success = result.get("success", False)
-
-            if success:
-                result_data = result.get("result", [])
-
-                if action_type in ["jira_search", "search_jira_issues"]:
-                    if isinstance(result_data, list):
-                        summary_parts.append(
-                            f"✓ Found {len(result_data)} Jira issues:")
-                        for issue in result_data[:3]:  # Top 3 issues
-                            key = issue.get("key", "")
-                            summary = issue.get("summary", "")[:60]
-                            if key:
-                                url = f"https://uipath.atlassian.net/browse/{key}"
-                                summary_parts.append(
-                                    f"  • <{url}|{key}>: {summary}...")
-
-                elif action_type in [
-                        "confluence_search", "search_confluence_pages"
-                ]:
-                    if isinstance(result_data, list):
-                        summary_parts.append(
-                            f"✓ Found {len(result_data)} Confluence pages:")
-                        for page in result_data[:3]:  # Top 3 pages
-                            title = page.get("title", "")[:60]
-                            url = page.get("url", "")
-                            if url:
-                                summary_parts.append(f"  • <{url}|{title}>...")
-
-                elif action_type in ["jira_create", "create_jira_issue"]:
-                    if isinstance(result_data, dict):
-                        key = result_data.get("key", "")
-                        if key:
-                            url = f"https://uipath.atlassian.net/browse/{key}"
-                            summary_parts.append(
-                                f"✓ Created Jira issue: <{url}|{key}>")
-            else:
-                summary_parts.append(
-                    f"✗ {action_type.replace('_', ' ').title()} failed")
-
-        return "\n".join(summary_parts)
-
-    async def _construct_hybrid_history(self, conversation_key: str,
-                                        current_query: str) -> Dict[str, Any]:
-        """
-        Construct hybrid memory system with rolling long-term summary and precise token-managed live history.
-        Uses tiktoken for exact token counting and intelligent truncation with smooth summarization transitions.
-        
-        Args:
-            conversation_key: Unique conversation identifier
-            current_query: Current user query
-            
-        Returns:
-            Dictionary containing summarized_history and live_history with precise token counts
-        """
-        MAX_LIVE_MESSAGES = 10
-        MAX_LIVE_TOKENS = 2000  # Exact token limit for live history
-        PRESERVE_RECENT = 2  # Always preserve the 2 most recent exchanges
-
-        try:
-            # Get recent messages from sliding window
-            recent_messages = await self.memory_service.get_recent_messages(
-                conversation_key, limit=MAX_LIVE_MESSAGES)
-
-            # Get or initialize long-term summary
-            summary_key = f"{conversation_key}:long_term_summary"
-            long_term_summary = await self.memory_service.get_conversation_context(
-                summary_key) or {
-                    "summary": "",
-                    "message_count": 0
-                }
-
-            # Use precise token management to determine which messages to keep vs summarize
-            if recent_messages:
-                # Get precise token-managed breakdown
-                messages_to_keep, messages_to_summarize, token_stats = self.token_manager.build_token_managed_history(
-                    recent_messages, MAX_LIVE_TOKENS, PRESERVE_RECENT)
-
-                # If we have messages that need summarization, queue abstractive summarization
-                if messages_to_summarize and len(messages_to_summarize) >= 2:
-                    # Convert TokenizedMessage objects back to raw message format for summarization
-                    raw_messages_to_summarize = [
-                        msg.original_message for msg in messages_to_summarize
-                    ]
-
-                    # Queue abstractive summarization task for smooth transition
-                    await self._queue_abstractive_summarization(
-                        conversation_key, summary_key,
-                        raw_messages_to_summarize,
-                        long_term_summary.get("summary", ""))
-
-                    # For immediate context, create basic summary as fallback
-                    for msg in messages_to_summarize:
-                        if long_term_summary["summary"]:
-                            long_term_summary[
-                                "summary"] += f"\n{msg.speaker}: {msg.text[:100]}..."
-                        else:
-                            long_term_summary[
-                                "summary"] = f"{msg.speaker}: {msg.text[:100]}..."
-
-                    long_term_summary["message_count"] += len(
-                        messages_to_summarize)
-
-                # Format live history from tokenized messages
-                live_history_text = self.token_manager.format_messages_for_context(
-                    messages_to_keep)
-                precise_token_count = token_stats["total_tokens"]
-
-                # Calculate efficiency gains compared to old character-based system
-                old_char_estimate = sum(
-                    len(f"{msg.speaker}: {msg.text}") // 4
-                    for msg in messages_to_keep)
-                efficiency_stats = self.token_manager.get_token_efficiency_stats(
-                    old_char_estimate, precise_token_count)
-
-                hybrid_history = {
-                    "summarized_history": long_term_summary["summary"],
-                    "summarized_message_count":
-                    long_term_summary["message_count"],
-                    "live_history": live_history_text,
-                    "live_message_count": token_stats["kept_messages"],
-                    "precise_tokens": precise_token_count,  # Exact token count
-                    "estimated_tokens":
-                    precise_token_count,  # For backward compatibility
-                    "token_efficiency":
-                    efficiency_stats,  # Performance comparison
-                    "summarized_message_candidates": len(messages_to_summarize)
-                }
-
-                logger.info(
-                    f"Constructed precise hybrid history: {long_term_summary['message_count']} summarized, "
-                    f"{token_stats['kept_messages']} live messages, {precise_token_count} exact tokens "
-                    f"(vs {old_char_estimate} char estimate, {efficiency_stats['accuracy_percentage']}% accuracy)"
-                )
-
-            else:
-                # No recent messages, just use current query
-                query_tokens = self.token_manager.count_tokens(
-                    f"User: {current_query}")
-
-                hybrid_history = {
-                    "summarized_history": long_term_summary["summary"],
-                    "summarized_message_count":
-                    long_term_summary["message_count"],
-                    "live_history": f"User: {current_query}",
-                    "live_message_count": 1,
-                    "precise_tokens": query_tokens,
-                    "estimated_tokens": query_tokens,
-                    "token_efficiency": {
-                        "accuracy_percentage": 100,
-                        "is_more_efficient": True
-                    },
-                    "summarized_message_candidates": 0
-                }
-
-            return hybrid_history
-
-        except Exception as e:
-            logger.error(f"Error constructing hybrid history: {e}")
-            # Fallback to simple recent messages with character-based estimation
-            fallback_tokens = self.token_manager.count_tokens(
-                f"User: {current_query}")
-
-            return {
-                "summarized_history": "",
-                "summarized_message_count": 0,
-                "live_history": f"User: {current_query}",
-                "live_message_count": 1,
-                "precise_tokens": fallback_tokens,
-                "estimated_tokens": fallback_tokens,
-                "token_efficiency": {
-                    "accuracy_percentage": 100,
-                    "fallback": True
-                },
-                "summarized_message_candidates": 0
-            }
-
-    async def _summarize_conversation_history(
-            self, recent_messages: List[Dict[str, Any]]) -> str:
-        """
-        Legacy method for backwards compatibility. 
-        New implementations should use _construct_hybrid_history instead.
-        """
-        if not recent_messages or len(recent_messages) < 3:
-            return ""
-
-        # Extract just the last few exchanges for context
-        user_messages = []
-        bot_messages = []
-
-        for msg in recent_messages[-6:]:  # Last 6 messages
-            user_name = msg.get("user_name", "")
-            text = msg.get("text", "")[:100]  # Truncate
-
-            if user_name not in ["bot", "autopilot"] and text:
-                user_messages.append(text)
-            elif text:
-                bot_messages.append(text)
-
-        if not user_messages and not bot_messages:
-            return ""
-
-        summary = f"Recent conversation: {len(user_messages)} user messages, {len(bot_messages)} bot responses"
-        if user_messages:
-            summary += f". Last user said: \"{user_messages[-1]}...\""
-
-        return summary
-
-    async def _queue_abstractive_summarization(
-            self, conversation_key: str, summary_key: str,
-            messages_to_archive: List[Dict[str, Any]], existing_summary: str):
-        """
-        Queue abstractive summarization task for background processing.
-        
-        Args:
-            conversation_key: Unique conversation identifier
-            summary_key: Redis key for the summary storage
-            messages_to_archive: Messages to be summarized
-            existing_summary: Current summary to build upon
-        """
-        try:
-            # Import Celery task (avoid circular imports)
-            from workers.conversation_summarizer import summarize_conversation_chunk, update_conversation_summary
-
-            # Create summarization task chain:
-            # 1. Generate abstractive summary
-            # 2. Update conversation summary in Redis
-
-            logger.info(
-                f"Queuing abstractive summarization for {conversation_key} with {len(messages_to_archive)} messages"
-            )
-
-            # Queue the summarization task
-            summarization_result = summarize_conversation_chunk.delay(
-                conversation_key=conversation_key,
-                messages_to_summarize=messages_to_archive,
-                existing_summary=existing_summary)
-
-            # The task will handle updating the summary in Redis when complete
-            # We don't await here since it's a background task
-
-            logger.info(
-                f"Abstractive summarization task queued: {summarization_result.id}"
-            )
-
-        except Exception as e:
-            logger.error(f"Failed to queue abstractive summarization: {e}")
-            # Continue with simple archiving as fallback
-
-    async def _search_relevant_entities(
-            self, query_text: str, conversation_key: str) -> Dict[str, Any]:
-        """
-        Search for entities relevant to the current query.
-        This provides structured memory recall for facts mentioned earlier.
-        
-        Args:
-            query_text: Current user query
-            conversation_key: Conversation identifier
-            
-        Returns:
-            Dictionary with relevant entities and their details
-        """
-        try:
-            # Extract keywords from the query for entity search
-            query_keywords = self._extract_query_keywords(query_text)
-
-            if not query_keywords:
-                return {"entities": [], "search_performed": False}
-
-            # Search for matching entities
-            matching_entities = await self.entity_store.search_entities(
-                query_keywords=query_keywords,
-                conversation_key=conversation_key,
-                limit=10)
-
-            # Format entities for context injection
-            formatted_entities = []
-            entity_summary = {}
-
-            for entity in matching_entities:
-                formatted_entity = {
-                    "key": entity.key,
-                    "type": entity.type,
-                    "value": entity.value,
-                    "context": entity.context,
-                    "relevance_score": entity.relevance_score,
-                    "mentioned_at": entity.mentioned_at
-                }
-                formatted_entities.append(formatted_entity)
-
-                # Count entities by type for summary
-                entity_summary[entity.type] = entity_summary.get(
-                    entity.type, 0) + 1
-
-            logger.info(
-                f"Found {len(formatted_entities)} relevant entities for query: {query_keywords}"
-            )
-
-            return {
-                "entities": formatted_entities,
-                "entity_summary": entity_summary,
-                "search_keywords": query_keywords,
-                "search_performed": True,
-                "total_found": len(formatted_entities)
-            }
-
-        except Exception as e:
-            logger.error(f"Error searching relevant entities: {e}")
-            return {"entities": [], "search_performed": False, "error": str(e)}
-
-    def _extract_query_keywords(self, query_text: str) -> List[str]:
-        """
-        Extract relevant keywords from query text for entity search.
-        
-        Args:
-            query_text: User query to analyze
-            
-        Returns:
-            List of keywords to search for
-        """
-        import re
-
-        # Normalize text
-        text_lower = query_text.lower()
-
-        # Extract potential keywords
-        keywords = []
-
-        # Look for JIRA ticket patterns
-        jira_matches = re.findall(r'\b([A-Z]+-\d+)\b', query_text,
-                                  re.IGNORECASE)
-        keywords.extend(jira_matches)
-
-        # Look for project names (capitalized words)
-        project_matches = re.findall(r'\b([A-Z][a-z]+(?:\s+[A-Z][a-z]*)*)\b',
-                                     query_text)
-        keywords.extend([match for match in project_matches if len(match) > 2])
-
-        # Look for mentions of specific entities
-        entity_keywords = [
-            "ticket", "issue", "project", "deadline", "document", "template",
-            "report", "meeting", "user", "owner", "assigned", "status"
-        ]
-
-        for keyword in entity_keywords:
-            if keyword in text_lower:
-                keywords.append(keyword)
-
-        # Extract quoted terms
-        quoted_matches = re.findall(r'"([^"]+)"', query_text)
-        keywords.extend(quoted_matches)
-
-        # Extract important nouns (simple approach)
-        words = re.findall(r'\b[A-Za-z]{3,}\b', query_text)
-        important_words = [
-            word for word in words if word.lower() not in {
-                'the', 'and', 'for', 'are', 'was', 'were', 'been', 'have',
-                'has', 'had', 'will', 'would', 'could', 'should', 'can',
-                'what', 'when', 'where', 'why', 'how', 'who', 'which', 'this',
-                'that', 'with'
-            }
-        ]
-        keywords.extend(important_words[:5])  # Limit to 5 most relevant words
-
-        # Remove duplicates and empty strings
-        keywords = list(set([k.strip() for k in keywords if k.strip()]))
-
-        return keywords[:10]  # Limit to 10 keywords for performance
-
-    async def _queue_entity_extraction(self, message: ProcessedMessage,
-                                       bot_response: str):
-        """
-        Queue background entity extraction from the conversation exchange.
-        
-        Args:
-            message: Original user message
-            bot_response: Generated bot response
-        """
-        try:
-            # Import Celery task (avoid circular imports)
-            from workers.entity_extractor import extract_entities_from_conversation
-
-            # Construct conversation key
-            conversation_key = f"conv:{message.channel_id}:{message.thread_ts or message.message_ts}"
-
-            # Queue entity extraction task
-            extraction_task = extract_entities_from_conversation.delay(
-                conversation_key=conversation_key,
-                user_query=message.text,
-                bot_response=bot_response,
-                user_name=message.user_name,
-                additional_context={
+                    "channel_id": message.channel_id,
                     "channel_name": message.channel_name,
                     "is_dm": message.is_dm,
-                    "user_title": message.user_title,
-                    "user_department": message.user_department,
-                    "timestamp": datetime.now().isoformat()
-                })
-
-            logger.info(
-                f"Entity extraction task queued: {extraction_task.id} for conversation: {conversation_key}"
-            )
-
+                    "thread_ts": message.thread_ts,
+                    "message_ts": message.message_ts
+                },
+                "conversation_memory": hybrid_history,
+                "relevant_entities": relevant_entities,
+                "orchestrator_analysis": {
+                    "execution_plan": execution_plan.get("analysis", ""),
+                    "intent_analysis": execution_plan.get("intent", ""),
+                    "tools_planned": execution_plan.get("tools_needed", []),
+                    "search_results": [],  # Will be populated below
+                    "reasoning": execution_plan.get("context", {})
+                },
+                "orchestrator_findings": {
+                    "search_summary": self._create_legacy_search_summary(gathered_info),
+                    "key_insights": self._extract_legacy_key_insights(gathered_info),
+                    "source_references": self._extract_legacy_source_references(gathered_info),
+                    "confidence_assessment": self._assess_legacy_confidence(gathered_info),
+                    "execution_metadata": {
+                        "tools_executed": gathered_info.get("execution_summary", {}).get("total_tools_executed", 0),
+                        "successful_tools": gathered_info.get("execution_summary", {}).get("successful_tools", 0),
+                        "framework_version": "legacy_compatibility"
+                    }
+                }
+            }
+            
+            # Add search results to orchestrator analysis for client agent formatting
+            all_results = []
+            all_results.extend(gathered_info.get("vector_results", []))
+            all_results.extend(gathered_info.get("perplexity_results", []))
+            all_results.extend(gathered_info.get("atlassian_results", []))
+            
+            state_stack["orchestrator_analysis"]["search_results"] = all_results
+            
+            logger.info("LEGACY: Successfully built comprehensive state stack")
+            return state_stack
+            
         except Exception as e:
-            logger.error(f"Failed to queue entity extraction: {e}")
-            # Don't raise - this is a background optimization, not critical
+            logger.error(f"LEGACY: Error in _build_state_stack compatibility method: {e}")
+            # Return minimal fallback state stack
+            return {
+                "query": message.text,
+                "user": {"first_name": message.user_first_name or "User"},
+                "context": {"channel_name": message.channel_name or "unknown"},
+                "conversation_memory": {"live_history": f"User: {message.text}"},
+                "orchestrator_findings": {"search_summary": "Error building state stack", "error": str(e)}
+            }
+
+    def _create_legacy_search_summary(self, gathered_info: Dict[str, Any]) -> str:
+        """LEGACY: Create search summary in legacy format"""
+        summary_parts = []
+        
+        vector_results = gathered_info.get("vector_results", [])
+        if vector_results:
+            total_docs = sum(len(r.get("results", [])) for r in vector_results)
+            summary_parts.append(f"Found {total_docs} documents in knowledge base")
+        
+        perplexity_results = gathered_info.get("perplexity_results", [])
+        if perplexity_results:
+            successful_searches = len([r for r in perplexity_results if r.get("success")])
+            summary_parts.append(f"Completed {successful_searches} web searches")
+        
+        atlassian_results = gathered_info.get("atlassian_results", [])
+        if atlassian_results:
+            successful_searches = len([r for r in atlassian_results if r.get("success")])
+            summary_parts.append(f"Retrieved {successful_searches} project resources")
+        
+        return "; ".join(summary_parts) if summary_parts else "No search results available"
+
+    def _extract_legacy_key_insights(self, gathered_info: Dict[str, Any]) -> List[str]:
+        """LEGACY: Extract key insights in legacy format"""
+        insights = []
+        
+        # Extract insights from vector results
+        for result in gathered_info.get("vector_results", []):
+            if result.get("success") and result.get("results"):
+                insights.append(f"Knowledge base contains {len(result['results'])} relevant documents")
+        
+        # Extract insights from web results
+        for result in gathered_info.get("perplexity_results", []):
+            if result.get("success") and result.get("result", {}).get("content"):
+                insights.append("Current web information available on this topic")
+        
+        # Extract insights from project results
+        for result in gathered_info.get("atlassian_results", []):
+            if result.get("success"):
+                insights.append("Project documentation and resources found")
+        
+        return insights[:5]  # Limit to 5 insights
+
+    def _extract_legacy_source_references(self, gathered_info: Dict[str, Any]) -> List[Dict[str, str]]:
+        """LEGACY: Extract source references in legacy format"""
+        sources = []
+        
+        # Extract from perplexity results (web sources)
+        for result in gathered_info.get("perplexity_results", []):
+            if result.get("success") and result.get("result", {}).get("citations"):
+                for citation in result["result"]["citations"][:3]:
+                    if citation.get("url"):
+                        sources.append({
+                            "title": citation.get("title", "Web Source"),
+                            "url": citation["url"],
+                            "type": "web"
+                        })
+        
+        # Extract from Atlassian results (project sources)
+        for result in gathered_info.get("atlassian_results", []):
+            if result.get("success") and result.get("result", {}).get("data"):
+                # This would need to be adapted based on actual Atlassian result structure
+                sources.append({
+                    "title": "Project Resource",
+                    "url": "#project-source",
+                    "type": "project"
+                })
+        
+        return sources[:5]  # Limit to 5 sources
+
+    def _assess_legacy_confidence(self, gathered_info: Dict[str, Any]) -> str:
+        """LEGACY: Assess confidence in legacy format"""
+        execution_summary = gathered_info.get("execution_summary", {})
+        total_tools = execution_summary.get("total_tools_executed", 0)
+        successful_tools = execution_summary.get("successful_tools", 0)
+        
+        if total_tools == 0:
+            return "low"
+        
+        success_rate = successful_tools / total_tools
+        if success_rate >= 0.8:
+            return "high"
+        elif success_rate >= 0.5:
+            return "medium"
+        else:
+            return "low"
