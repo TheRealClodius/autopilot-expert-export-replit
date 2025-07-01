@@ -78,7 +78,7 @@ class NotionService:
             # Define required schema
             required_properties = {
                 "Run ID": {"title": {}},
-                "Timestamp": {"date": {}},
+                "Start Time": {"date": {}},
                 "Status": {
                     "select": {
                         "options": [
@@ -135,31 +135,28 @@ class NotionService:
             timestamp = datetime.now(timezone.utc)
             run_id = f"EMB-{timestamp.strftime('%Y%m%d-%H%M%S')}"
             
-            # Prepare page properties
+            # Prepare page properties using the correct field names
             properties = {
-                "Run ID": {
-                    "title": [{"text": {"content": run_id}}]
+                "Name": {
+                    "title": [{"text": {"content": f"Embedding Run {run_id}"}}]
                 },
-                "Timestamp": {
+                "Run ID": {
+                    "rich_text": [{"text": {"content": run_id}}]
+                },
+                "Start Time": {
                     "date": {"start": timestamp.isoformat()}
                 },
-                "Status": {
-                    "select": {"name": run_data.get("status", "Unknown")}
+                "Run Status": {
+                    "status": {"name": run_data.get("status", "Not started")}
                 },
                 "Channels Checked": {
                     "number": run_data.get("channels_checked", 0)
                 },
-                "New Messages Found": {
-                    "number": run_data.get("new_messages_found", 0)
-                },
                 "Messages Embedded": {
-                    "number": run_data.get("messages_embedded", 0)
+                    "number": run_data.get("total_messages_embedded", 0)
                 },
-                "Duration (seconds)": {
+                "Duration": {
                     "number": run_data.get("duration_seconds", 0)
-                },
-                "Trigger Type": {
-                    "select": {"name": run_data.get("trigger_type", "Unknown")}
                 }
             }
             
@@ -266,7 +263,7 @@ class NotionService:
         try:
             response = self.client.databases.query(
                 database_id=self.database_id,
-                sorts=[{"property": "Timestamp", "direction": "descending"}],
+                sorts=[{"property": "Start Time", "direction": "descending"}],
                 page_size=limit
             )
             
@@ -277,14 +274,11 @@ class NotionService:
                 run_info = {
                     "page_id": page["id"],
                     "run_id": self._extract_text_property(properties.get("Run ID")),
-                    "timestamp": self._extract_date_property(properties.get("Timestamp")),
-                    "status": self._extract_select_property(properties.get("Status")),
+                    "timestamp": self._extract_date_property(properties.get("Start Time")),
+                    "status": self._extract_select_property(properties.get("Run Status")),
                     "channels_checked": self._extract_number_property(properties.get("Channels Checked")),
-                    "new_messages_found": self._extract_number_property(properties.get("New Messages Found")),
                     "messages_embedded": self._extract_number_property(properties.get("Messages Embedded")),
-                    "duration_seconds": self._extract_number_property(properties.get("Duration (seconds)")),
-                    "trigger_type": self._extract_select_property(properties.get("Trigger Type")),
-                    "errors": self._extract_text_property(properties.get("Errors"))
+                    "duration_seconds": self._extract_number_property(properties.get("Duration"))
                 }
                 runs.append(run_info)
             
