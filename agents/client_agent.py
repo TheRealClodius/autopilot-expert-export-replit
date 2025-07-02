@@ -138,28 +138,19 @@ class ClientAgent:
             # Build personality adaptation prompt
             personality_prompt = self._build_personality_prompt(base_response, key_findings, context_analysis, message_context)
             
-            # Simplify prompts to avoid Gemini Flash empty responses
-            # Extract context variables for simplified approach
-            user = message_context.get("user", {})
-            context = message_context.get("context", {})
-            confidence_tone = context_analysis.get("confidence_tone", "thoughtful")
+            # Get dynamic system prompt based on context
+            system_prompt = self._get_contextual_system_prompt(context_analysis)
             
-            # Use a much simpler system prompt to avoid overloading Flash
-            simple_system_prompt = "You are a helpful AI assistant with expertise in UiPath Autopilot. Be concise, friendly, and professional. Adapt your tone to the user and context."
+            logger.info(f"Client Agent calling Gemini Flash with system: {len(system_prompt)} chars, user: {len(personality_prompt)} chars")
             
-            # Create a simpler user prompt that won't overwhelm Flash
-            simple_user_prompt = f"Please enhance this response with your personality:\n\n{base_response}\n\nUser context: {user.get('first_name', 'User')} is asking in {'a direct message' if context.get('is_dm') else 'a public channel'}. Be {confidence_tone} in your tone."
-            
-            logger.info(f"Using simplified prompts - System: {len(simple_system_prompt)} chars, User: {len(simple_user_prompt)} chars")
-            
-            # Generate personality-enhanced response with simplified prompts
+            # Generate personality-enhanced response with higher token limit
             enhanced_response = await asyncio.wait_for(
                 self.gemini_client.generate_response(
-                    simple_system_prompt,
-                    simple_user_prompt,
+                    system_prompt,
+                    personality_prompt,
                     model=self.gemini_client.flash_model,
-                    max_tokens=800,  # Reduced from 1200
-                    temperature=0.8  # Reduced from 1.0
+                    max_tokens=2000,  # Increased from 1200 to handle complex personality prompts
+                    temperature=1.0  # Higher temperature for more personality
                 ),
                 timeout=12.0
             )
