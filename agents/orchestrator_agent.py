@@ -395,8 +395,7 @@ Let your intelligence flow freely before structuring your response."""
                     "You are an expert at extracting structured plans from reasoning text.",
                     extraction_prompt,
                     response_format="json",
-                    model=self.gemini_client.flash_model,  # Use Flash for quick extraction
-                    temperature=0.3  # Lower temperature for focused decision extraction
+                    model=self.gemini_client.flash_model  # Use Flash for quick extraction
                 ),
                 timeout=8.0  # Reduced from 10.0 for faster response
             )
@@ -1173,10 +1172,9 @@ Let your intelligence flow freely before structuring your response."""
                     self.gemini_client.generate_response(
                         "You are an expert at synthesizing information from multiple sources into clear, helpful responses.",
                         synthesis_prompt,
-                        model=self.gemini_client.pro_model,  # Use Flash for synthesis
+                        model=self.gemini_client.flash_model,  # Use Flash for synthesis
                         max_tokens=5000,
-                        temperature=0.3,  # Lower temperature for focused synthesis
-                        include_reasoning=True  # Enable thinking mode
+                        temperature=0.3  # Lower temperature for focused synthesis
                     ),
                     timeout=12.0  # Reduced from 15.0 for faster response
                 )
@@ -1196,8 +1194,7 @@ Let your intelligence flow freely before structuring your response."""
                                 synthesis_prompt,
                                 model=self.gemini_client.flash_model,  # Fallback to Flash
                                 max_tokens=5000,
-                                temperature=0.3,  # Lower temperature for focused synthesis
-                                include_reasoning=True  # Enable thinking mode
+                                temperature=0.3  # Lower temperature for focused synthesis
                             ),
                             timeout=12.0
                         )
