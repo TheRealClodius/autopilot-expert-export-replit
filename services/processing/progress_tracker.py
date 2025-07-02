@@ -217,7 +217,7 @@ class ConversationalProgressManager:
     def add_progress_section(self, section: str):
         """Add a new section to the cumulative progress message"""
         # Format section in italics for Slack
-        italic_section = f"*{section}*"
+        italic_section = f"_{section}_"
         self.message_sections.append(italic_section)
     
     def get_cumulative_message(self) -> str:
@@ -314,7 +314,8 @@ class ProgressTracker:
             # Pure narrative message - add as new section
             self.conversational_manager.add_progress_section(f"💭 {details}")
             cumulative_message = self.conversational_manager.get_cumulative_message()
-            await self._update_slack_message(cumulative_message)
+            italic_message = f"_{cumulative_message}_"
+            await self._update_slack_message(italic_message)
         
         elif event_type == ProgressEventType.DISCOVERY:
             # Discovery with excitement - add as new section
