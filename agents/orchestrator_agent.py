@@ -489,8 +489,8 @@ class OrchestratorAgent:
                 "trace_id": None  # Could be enhanced with proper trace ID
             }
             
-            # Initialize enhanced client agent
-            enhanced_client = ClientAgent()
+            # Use existing client agent instance instead of creating new one
+            enhanced_client = self.client_agent
             
             # Generate sophisticated response using new interface
             enhanced_result = await enhanced_client.generate_response(clean_output, user_context)
