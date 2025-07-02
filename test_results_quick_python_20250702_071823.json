@@ -1,0 +1,47 @@
+{
+  "evaluation_timestamp": "2025-07-02T07:18:23.628163",
+  "total_tests": 2,
+  "evaluation_time": 0.8134617805480957,
+  "overall_metrics": {
+    "success_rate": 0.0,
+    "overall_score": 0.0,
+    "avg_response_time": 0.4066040515899658,
+    "max_response_time": 0.8116061687469482,
+    "min_response_time": 0.0016019344329833984,
+    "total_errors": 2
+  },
+  "individual_results": [
+    {
+      "test_id": "greeting_test",
+      "test_name": "Basic Greeting Response",
+      "success": false,
+      "score": 0.0,
+      "response_time": 0.8116061687469482,
+      "response_preview": "",
+      "errors": [
+        "Test execution failed: Missing required environment variables: SLACK_BOT_TOKEN, GEMINI_API_KEY"
+      ],
+      "detailed_analysis": {
+        "exception": "Missing required environment variables: SLACK_BOT_TOKEN, GEMINI_API_KEY"
+      }
+    },
+    {
+      "test_id": "team_discussion_search",
+      "test_name": "Team Discussion Search Query",
+      "success": false,
+      "score": 0.0,
+      "response_time": 0.0016019344329833984,
+      "response_preview": "",
+      "errors": [
+        "Test execution failed: Missing required environment variables: SLACK_BOT_TOKEN, GEMINI_API_KEY"
+      ],
+      "detailed_analysis": {
+        "exception": "Missing required environment variables: SLACK_BOT_TOKEN, GEMINI_API_KEY"
+      }
+    }
+  ],
+  "recommendations": [
+    "High failure rate detected - review error handling and timeout management",
+    "Many low-quality responses - review prompt engineering and response generation"
+  ]
+}

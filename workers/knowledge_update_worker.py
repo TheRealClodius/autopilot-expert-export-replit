@@ -12,7 +12,7 @@ from celery import Celery
 from celery.schedules import crontab
 
 from config import settings
-from services.external_apis.slack_connector import SlackConnector
+from services.external_apis.enhanced_slack_connector import EnhancedSlackConnector
 from services.processing.data_processor import DataProcessor
 from services.data.embedding_service import EmbeddingService
 from services.core.memory_service import MemoryService
@@ -107,7 +107,7 @@ async def _perform_daily_ingestion() -> Dict[str, Any]:
     """
     try:
         # Initialize services
-        slack_connector = SlackConnector()
+        slack_connector = EnhancedSlackConnector()
         data_processor = DataProcessor()
         embedding_service = EmbeddingService()
         memory_service = MemoryService()
@@ -197,7 +197,7 @@ async def _perform_manual_ingestion() -> Dict[str, Any]:
     """
     try:
         # Initialize services
-        slack_connector = SlackConnector()
+        slack_connector = EnhancedSlackConnector()
         data_processor = DataProcessor()
         embedding_service = EmbeddingService()
         memory_service = MemoryService()

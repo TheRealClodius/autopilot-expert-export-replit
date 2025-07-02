@@ -1,16 +1,17 @@
 """
 Slack Gateway Agent - Handles incoming Slack messages and outgoing responses.
 Acts as the interface between Slack and the internal agent system.
+Uses EnhancedSlackConnector for shared WebClient and caching.
 """
 
 import logging
 from typing import Optional, Dict, Any, List, Callable, Awaitable
-from slack_sdk import WebClient
 from slack_sdk.errors import SlackApiError
 
 from config import settings
 from models.schemas import SlackEvent, ProcessedMessage
 from services.core.trace_manager import trace_manager
+from services.external_apis.enhanced_slack_connector import EnhancedSlackConnector
 
 logger = logging.getLogger(__name__)
 
@@ -18,10 +19,13 @@ class SlackGateway:
     """
     Gateway for all Slack interactions.
     Processes incoming messages and sends responses back to Slack.
+    Uses shared EnhancedSlackConnector for WebClient and caching.
     """
     
     def __init__(self):
-        self.client = WebClient(token=settings.SLACK_BOT_TOKEN)
+        # Use shared EnhancedSlackConnector for client and caching
+        self.slack_connector = EnhancedSlackConnector()
+        self.client = self.slack_connector.client
         self.bot_user_id = settings.SLACK_BOT_USER_ID
         
         # If bot user ID is not configured, try to get it from Slack API
@@ -98,11 +102,11 @@ class SlackGateway:
             # Clean the message text while preserving user mentions with names
             clean_text = await self._clean_message_text(text)
             
-            # Get user information
-            user_info = await self._get_user_info(user_id)
+            # Get user information (using shared cached connector)
+            user_info = await self.slack_connector._get_cached_user_info(user_id)
             
-            # Get channel information
-            channel_info = await self._get_channel_info(channel_id)
+            # Get channel information (using shared cached connector)
+            channel_info = await self.slack_connector._get_cached_channel_info(channel_id)
             
             # Extract user profile information
             profile = user_info.get("profile", {})
@@ -467,7 +471,7 @@ class SlackGateway:
         async def replace_user_mention(match):
             user_id = match.group(1)
             try:
-                user_info = await self._get_user_info(user_id)
+                user_info = await self.slack_connector._get_cached_user_info(user_id)
                 # Get display name or real name, fallback to first name or username
                 profile = user_info.get("profile", {})
                 name = (profile.get("display_name") or 
@@ -502,24 +506,4 @@ class SlackGateway:
         
         return text.strip()
     
-    async def _get_user_info(self, user_id: str) -> Dict[str, Any]:
-        """Get user information from Slack"""
-        try:
-            response = self.client.users_info(user=user_id)
-            if response["ok"]:
-                return response["user"]
-            return {"name": "Unknown"}
-        except Exception as e:
-            logger.error(f"Error getting user info for {user_id}: {e}")
-            return {"name": "Unknown"}
-    
-    async def _get_channel_info(self, channel_id: str) -> Dict[str, Any]:
-        """Get channel information from Slack"""
-        try:
-            response = self.client.conversations_info(channel=channel_id)
-            if response["ok"]:
-                return response["channel"]
-            return {"name": "Unknown"}
-        except Exception as e:
-            logger.error(f"Error getting channel info for {channel_id}: {e}")
-            return {"name": "Unknown"}
+

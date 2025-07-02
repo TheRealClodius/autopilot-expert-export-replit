@@ -21,7 +21,7 @@ class DeepSeekClient:
     def __init__(self, api_key: str = None):
         self.api_key = api_key or os.getenv('DEEPSEEK_API_KEY')
         self.base_url = "https://api.deepseek.com/v1"
-        self.model = "deepseek-chat"
+        self.model = "deepseek-reasoner"
         
         if not self.api_key:
             raise ValueError("DeepSeek API key is required. Set DEEPSEEK_API_KEY environment variable.")

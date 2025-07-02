@@ -15,7 +15,7 @@ from slack_sdk.errors import SlackApiError
 
 from config import settings
 from services.data.embedding_service import EmbeddingService
-from services.external_apis.slack_connector import SlackConnector
+from services.external_apis.enhanced_slack_connector import EnhancedSlackConnector
 from services.processing.data_processor import DataProcessor
 from services.external_apis.notion_service import NotionService
 from models.schemas import ProcessedMessage
@@ -123,7 +123,7 @@ class HourlyEmbeddingTask(Task):
         """Process and embed new messages found in channel."""
         try:
             # Initialize services
-            slack_connector = SlackConnector()
+            slack_connector = EnhancedSlackConnector()
             data_processor = DataProcessor()
             embedding_service = EmbeddingService()
             

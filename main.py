@@ -10,7 +10,7 @@ import time
 from contextlib import asynccontextmanager
 from datetime import datetime
 from typing import Optional
-from fastapi import FastAPI, HTTPException, Request, BackgroundTasks
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse, PlainTextResponse
 import uvicorn
 import os
@@ -146,7 +146,7 @@ async def webhook_test(request: Request):
 
 
 @app.post("/slack/events")
-async def slack_events(request: Request, background_tasks: BackgroundTasks):
+async def slack_events(request: Request):
     """
     Handle incoming Slack events including messages from channels, threads, and DMs.
     5-Step Timing Framework Implementation:
@@ -243,28 +243,29 @@ async def slack_events(request: Request, background_tasks: BackgroundTasks):
             cache_check_time = time.time() - cache_check_start
             logger.info(f"⏱️  WEBHOOK CACHE: Cache check completed in {cache_check_time:.3f}s")
             
-            # ⏱️ STEP 3D: About to queue background task
-            task_queue_time = time.time()
-            total_step3_time = task_queue_time - webhook_received_time
+            # ⏱️ STEP 3D: About to create direct async task
+            task_start_time = time.time()
+            total_step3_time = task_start_time - webhook_received_time
             user_message_ts = event_data.event.get('ts', '')
             user_text = event_data.event.get('text', '')[:50]
             
-            logger.info(f"🚀 STEP 3D: Queueing background task at {task_queue_time:.6f}")
+            logger.info(f"🚀 STEP 3D: Creating direct async task at {task_start_time:.6f}")
             logger.info(f"📊 STEP 3 TOTAL: Framework overhead = {total_step3_time:.6f}s for '{user_text}'")
             
             # Store all timing data for Steps 4-5 analysis
             event_data.event['webhook_received_time'] = webhook_received_time
-            event_data.event['task_queue_time'] = task_queue_time
+            event_data.event['task_start_time'] = task_start_time
             event_data.event['slack_timestamp'] = slack_timestamp
             event_data.event['trace_id'] = trace_id
             
-            # Process the message in background (Steps 4-5 will be measured there)
-            background_tasks.add_task(process_slack_message, event_data)
+            # Process the message directly (Steps 4-5 will be measured there)
+            # Using asyncio.create_task() for concurrent processing without background task overhead
+            asyncio.create_task(process_slack_message(event_data))
             
-            # TIMING MEASUREMENT: Background Task Queued
-            task_queued_time = time.time()
-            queue_duration = task_queued_time - task_queue_time
-            logger.info(f"⏱️  WEBHOOK TIMING: Background task queued at {task_queued_time:.3f} (queueing took: {queue_duration:.3f}s)")
+            # TIMING MEASUREMENT: Direct Task Created
+            task_created_time = time.time()
+            task_creation_duration = task_created_time - task_start_time
+            logger.info(f"⏱️  WEBHOOK TIMING: Direct async task created at {task_created_time:.3f} (creation took: {task_creation_duration:.6f}s)")
             
             return {"status": "accepted"}
         
@@ -287,16 +288,16 @@ async def process_slack_message(event_data: SlackEvent):
         user_message_ts = event_data.event.get('ts', '')
         user_message_text = event_data.event.get('text', '')[:50]
         webhook_received_time = event_data.event.get('webhook_received_time', step4_start)
-        task_queue_time = event_data.event.get('task_queue_time', step4_start)
+        task_start_time = event_data.event.get('task_start_time', step4_start)
         slack_timestamp = event_data.event.get('slack_timestamp')
         trace_id = event_data.event.get('trace_id', 'unknown')
         
-        logger.info(f"⚡ STEP 4 START: Background processing begins at {step4_start:.6f} for '{user_message_text}'")
+        logger.info(f"⚡ STEP 4 START: Direct async processing begins at {step4_start:.6f} for '{user_message_text}'")
         
-        # Calculate cumulative delays from Steps 2-3
+        # Calculate cumulative delays from Steps 2-3 (no background task overhead)
         if webhook_received_time != step4_start:
-            step3_to_step4_delay = step4_start - task_queue_time
-            logger.info(f"📊 STEP 3→4 DELAY: Background task queue delay = {step3_to_step4_delay:.6f}s")
+            step3_to_step4_delay = step4_start - task_start_time
+            logger.info(f"📊 STEP 3→4 DELAY: Direct async processing delay = {step3_to_step4_delay:.6f}s")
         
         # Step 2 analysis: Slack edge → webhook delay
         if slack_timestamp:
@@ -370,8 +371,8 @@ async def process_slack_message(event_data: SlackEvent):
                     logger.info(f"🎯 TOTAL USER→ANALYZING DELAY: {total_user_to_analyzing:.6f}s")
                     logger.info(f"📊 COMPLETE BREAKDOWN:")
                     logger.info(f"    Step 2 (Slack→Webhook): {webhook_received_time - slack_time:.6f}s")
-                    logger.info(f"    Step 3 (Framework): {task_queue_time - webhook_received_time:.6f}s")
-                    logger.info(f"    Step 3→4 (Queue): {step4_start - task_queue_time:.6f}s")
+                    logger.info(f"    Step 3 (Framework): {task_start_time - webhook_received_time:.6f}s")
+                    logger.info(f"    Step 3→4 (Direct): {step4_start - task_start_time:.6f}s")
                     logger.info(f"    Step 4 (Your code): {total_step4_duration:.6f}s")
                     logger.info(f"    Step 5 (Slack API): {step5_api_duration:.6f}s")
                     logger.info(f"    🎯 TOTAL: {total_user_to_analyzing:.6f}s")
@@ -499,7 +500,7 @@ async def trigger_manual_ingestion():
     """Admin endpoint to manually trigger data ingestion (bypasses Celery)"""
     try:
         # Direct ingestion without Celery dependency
-        from services.external_apis.slack_connector import SlackConnector
+        from services.external_apis.enhanced_slack_connector import EnhancedSlackConnector
         from services.processing.data_processor import DataProcessor
         from datetime import datetime, timedelta
         
@@ -513,7 +514,7 @@ async def trigger_manual_ingestion():
         logger.info(f"Found {len(channels)} channels to monitor: {channels}")
         
         # Initialize connector
-        slack_connector = SlackConnector()
+        slack_connector = EnhancedSlackConnector()
         data_processor = DataProcessor()
         
         # First, try to get list of accessible channels (if we have permissions)
@@ -1199,7 +1200,7 @@ async def ingest_channel_conversations(
         sample_size: Maximum number of messages to process for testing (default: 50)
     """
     try:
-        from services.external_apis.slack_connector import SlackConnector
+        from services.external_apis.enhanced_slack_connector import EnhancedSlackConnector
         from services.processing.data_processor import DataProcessor
         from services.data.embedding_service import EmbeddingService
         from datetime import datetime, timedelta
@@ -1207,7 +1208,7 @@ async def ingest_channel_conversations(
         logger.info(f"Starting channel ingestion for {channel_id}")
         
         # Initialize services
-        slack_connector = SlackConnector()
+        slack_connector = EnhancedSlackConnector()
         data_processor = DataProcessor()
         embedding_service = EmbeddingService()
         
@@ -1296,7 +1297,7 @@ async def purge_and_reingest_channel(
     """
     try:
         from services.data.embedding_service import EmbeddingService
-        from services.external_apis.slack_connector import SlackConnector
+        from services.external_apis.enhanced_slack_connector import EnhancedSlackConnector
         from services.processing.data_processor import DataProcessor
         from datetime import datetime, timedelta
         
@@ -1304,7 +1305,7 @@ async def purge_and_reingest_channel(
         
         # Initialize services
         embedding_service = EmbeddingService()
-        slack_connector = SlackConnector()
+        slack_connector = EnhancedSlackConnector()
         data_processor = DataProcessor()
         
         if not embedding_service.pinecone_available:
@@ -1697,9 +1698,9 @@ async def test_conversation_memory():
 async def channel_diagnostic():
     """Admin endpoint to diagnose channel access and permissions"""
     try:
-        from services.external_apis.slack_connector import SlackConnector
+        from services.external_apis.enhanced_slack_connector import EnhancedSlackConnector
         
-        slack_connector = SlackConnector()
+        slack_connector = EnhancedSlackConnector()
         channels = settings.get_monitored_channels()
         
         if not channels:
@@ -1762,9 +1763,9 @@ async def channel_diagnostic():
 async def list_workspace_channels():
     """Admin endpoint to list all accessible channels in the workspace"""
     try:
-        from services.external_apis.slack_connector import SlackConnector
+        from services.external_apis.enhanced_slack_connector import EnhancedSlackConnector
         
-        slack_connector = SlackConnector()
+        slack_connector = EnhancedSlackConnector()
         
         # Get all conversations the bot can see
         all_channels = []
