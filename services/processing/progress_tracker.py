@@ -352,7 +352,7 @@ class ProgressTracker:
             
             # Use the enhanced message with reasoning context and italic formatting
             display_message = self.reasoning_manager.get_current_display_message(details)
-            italic_message = f"*{display_message}*"
+            italic_message = f"_{display_message}_"
             
             # Only update if enough time has passed or force update
             if self.reasoning_manager.should_update_message(force_update):
@@ -360,14 +360,14 @@ class ProgressTracker:
         
         elif event_type in [ProgressEventType.FLUID_THINKING, ProgressEventType.REASONING]:
             self.is_in_reasoning_mode = True
-            italic_message = f"*{details}*"
+            italic_message = f"_{details}_"
             await self._update_slack_message(italic_message)
         
         else:
             # Standard progress events with italic formatting
             self.is_in_reasoning_mode = False
             formatted_message = self._format_progress_message(event_type, action, details)
-            italic_message = f"*{formatted_message}*"
+            italic_message = f"_{formatted_message}_"
             await self._update_slack_message(italic_message)
     
     def _format_conversational_message(self, event_type: ProgressEventType, action: str, details: str) -> str:
