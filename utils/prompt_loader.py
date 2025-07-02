@@ -23,7 +23,18 @@ class PromptLoader:
     """Loads and manages system prompts from YAML configuration file with intelligent caching."""
     
     def __init__(self, prompts_file: str = "configs/prompts.yaml"):
-        self.prompts_file = Path(prompts_file)
+        # Resolve path relative to project root, not current working directory
+        if not os.path.isabs(prompts_file):
+            # Find project root by looking for main.py
+            current_dir = Path(__file__).parent
+            project_root = current_dir
+            while project_root.parent != project_root:
+                if (project_root / "main.py").exists():
+                    break
+                project_root = project_root.parent
+            self.prompts_file = project_root / prompts_file
+        else:
+            self.prompts_file = Path(prompts_file)
         self._prompts = {}
         self._cache = {}
         self._file_mtime: Optional[float] = None
