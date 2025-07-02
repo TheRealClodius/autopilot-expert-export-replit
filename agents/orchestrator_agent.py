@@ -234,7 +234,7 @@ class OrchestratorAgent:
                         reasoning_callback=reasoning_callback,
                         model=self.gemini_client.pro_model,
                         max_tokens=20000,
-                        temperature=0.8  # Higher temperature for more creative reasoning
+                        temperature=0.3  # Lower temperature for focused reasoning
                     ),
                     timeout=15.0  # Reduced from 25.0 to prevent frequent timeouts
                 )
@@ -395,7 +395,8 @@ Let your intelligence flow freely before structuring your response."""
                     "You are an expert at extracting structured plans from reasoning text.",
                     extraction_prompt,
                     response_format="json",
-                    model=self.gemini_client.flash_model  # Use Flash for quick extraction
+                    model=self.gemini_client.flash_model,  # Use Flash for quick extraction
+                    temperature=0.3  # Lower temperature for focused decision extraction
                 ),
                 timeout=8.0  # Reduced from 10.0 for faster response
             )
@@ -1172,9 +1173,10 @@ Let your intelligence flow freely before structuring your response."""
                     self.gemini_client.generate_response(
                         "You are an expert at synthesizing information from multiple sources into clear, helpful responses.",
                         synthesis_prompt,
-                        model=self.gemini_client.pro_model,  # Use Pro for synthesis quality
+                        model=self.gemini_client.pro_model,  # Use Flash for synthesis
                         max_tokens=5000,
-                        temperature=0.7
+                        temperature=0.3,  # Lower temperature for focused synthesis
+                        include_reasoning=True  # Enable thinking mode
                     ),
                     timeout=12.0  # Reduced from 15.0 for faster response
                 )
@@ -1194,7 +1196,8 @@ Let your intelligence flow freely before structuring your response."""
                                 synthesis_prompt,
                                 model=self.gemini_client.flash_model,  # Fallback to Flash
                                 max_tokens=5000,
-                                temperature=0.7
+                                temperature=0.3,  # Lower temperature for focused synthesis
+                                include_reasoning=True  # Enable thinking mode
                             ),
                             timeout=12.0
                         )
