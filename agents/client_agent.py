@@ -141,6 +141,13 @@ class ClientAgent:
             # Get dynamic system prompt based on context
             system_prompt = self._get_contextual_system_prompt(context_analysis)
             
+            # Debug logging to see what's being sent to Gemini Flash
+            logger.info(f"Client Agent sending to Gemini Flash:")
+            logger.info(f"System prompt length: {len(system_prompt)}")
+            logger.info(f"User prompt length: {len(personality_prompt)}")
+            logger.info(f"System prompt first 200 chars: {system_prompt[:200]}")
+            logger.info(f"User prompt first 200 chars: {personality_prompt[:200]}")
+            
             # Generate personality-enhanced response
             enhanced_response = await asyncio.wait_for(
                 self.gemini_client.generate_response(
@@ -152,6 +159,9 @@ class ClientAgent:
                 ),
                 timeout=12.0
             )
+            
+            logger.info(f"Gemini Flash response length: {len(enhanced_response) if enhanced_response else 0}")
+            logger.info(f"Gemini Flash response preview: {enhanced_response[:100] if enhanced_response else 'EMPTY'}")
             
             if enhanced_response and not self._contains_inappropriate_content(enhanced_response):
                 return self._post_process_personality_response(enhanced_response, context_analysis)
