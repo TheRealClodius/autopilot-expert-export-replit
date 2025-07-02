@@ -100,6 +100,8 @@ orchestrator_prompt: >
   
   **CRITICAL FORMATTING RULE:**
   - NEVER use double underscores (__) in any output - always use single underscores (_) for Slack italics
+  - NEVER use any underscore formatting (_, __) in reasoning snippets or progress messages
+  - Keep reasoning content plain text without any markdown formatting
   - If you need emphasis, use single asterisks (*) for bold, never double (**)
   - All Slack formatting must use single character delimiters only
 

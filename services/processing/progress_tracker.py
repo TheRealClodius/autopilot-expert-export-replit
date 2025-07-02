@@ -477,6 +477,29 @@ class ProgressTracker:
         italic_message = f"_{message}_"
         await self._update_slack_message(italic_message)
     
+    def _strip_underscore_formatting(self, text: str) -> str:
+        """Strip any existing underscore formatting from text to prevent double formatting"""
+        import re
+        
+        # Remove all underscore formatting patterns:
+        # 1. Remove __text__
+        text = re.sub(r'__([^_]+)__', r'\1', text)
+        
+        # 2. Remove __text_
+        text = re.sub(r'__([^_]+)_', r'\1', text)
+        
+        # 3. Remove _text__
+        text = re.sub(r'_([^_]+)__', r'\1', text)
+        
+        # 4. Remove _text_
+        text = re.sub(r'_([^_]+)_', r'\1', text)
+        
+        # 5. Remove any remaining double underscores at start/end
+        text = re.sub(r'^__', '', text)
+        text = re.sub(r'__$', '', text)
+        
+        return text
+
     def _sanitize_slack_formatting(self, message: str) -> str:
         """Sanitize message to ensure proper Slack formatting (single underscores only)"""
         import re
