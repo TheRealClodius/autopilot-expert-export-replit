@@ -397,7 +397,7 @@ class ClientAgent:
                     "You enhance follow-up suggestions with personality while keeping them helpful and specific.",
                     enhancement_prompt,
                     model=self.gemini_client.flash_model,
-                    max_tokens=1000,  # Increased for complete suggestion generation
+                    max_tokens=2000,  # Further increased to prevent truncation of enhanced suggestions
                     temperature=0.9
                 ),
                 timeout=8.0
