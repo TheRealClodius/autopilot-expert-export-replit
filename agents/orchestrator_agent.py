@@ -959,12 +959,21 @@ Let your intelligence flow freely before structuring your response."""
                         # Create preview from perplexity result
                         citations = search_result.get("citations", [])
                         for citation in citations[:3]:  # Top 3 sources
-                            preview_results.append({
-                                "title": citation.get("title", "Web Source"),
-                                "source": citation.get("source", ""),
-                                "url": citation.get("url", ""),
-                                "snippet": citation.get("snippet", "")[:100] + "..." if citation.get("snippet") else ""
-                            })
+                            if isinstance(citation, dict):
+                                preview_results.append({
+                                    "title": citation.get("title", "Web Source"),
+                                    "source": citation.get("source", ""),
+                                    "url": citation.get("url", ""),
+                                    "snippet": citation.get("snippet", "")[:100] + "..." if citation.get("snippet") else ""
+                                })
+                            else:
+                                # Handle case where citation is not a dict
+                                preview_results.append({
+                                    "title": "Web Source",
+                                    "source": str(citation) if citation else "",
+                                    "url": "",
+                                    "snippet": ""
+                                })
                     
                     # Show results with conversational progress
                     if self.progress_tracker and preview_results:
@@ -1244,13 +1253,13 @@ Let your intelligence flow freely before structuring your response."""
                 response_parts.append("I searched through multiple sources for relevant information.")
             
             # Add a helpful closing
-            response_parts.append("I'm experiencing high demand right now, but the information I found should help answer your question. Feel free to ask for more specific details about any aspect.")
+            response_parts.append("The information I found should help answer your question. Feel free to ask for more specific details about any aspect.")
             
             return " ".join(response_parts)
             
         except Exception as e:
             logger.error(f"Error creating basic synthesis response: {e}")
-            return "I found relevant information but am experiencing high demand. Please try rephrasing your question and I'll help you right away."
+            return "I found relevant information but had trouble summarizing it. Please try rephrasing your question and I'll help you right away."
 
     def _summarize_vector_results_new(self, vector_results: List[Dict]) -> str:
         """NEW: Summarize vector search results"""
@@ -1277,8 +1286,12 @@ Let your intelligence flow freely before structuring your response."""
         for result in web_results:
             if result.get("success") and result.get("result"):
                 web_result = result["result"]
-                content = web_result.get("content", "")[:150] + "..."
-                citations = len(web_result.get("citations", []))
+                if isinstance(web_result, dict):
+                    content = web_result.get("content", "")[:150] + "..."
+                    citations = len(web_result.get("citations", []))
+                else:
+                    content = str(web_result)[:150] + "..."
+                    citations = 0
                 summary_parts.append(f"Web search for '{result['query']}': {content} ({citations} sources)")
         
         return "\n".join(summary_parts)
