@@ -5584,6 +5584,83 @@ async def run_smart_embedding_now():
             "message": "Failed to run smart embedding system"
         }
 
+@app.get("/admin/test-formatting-fix")
+async def test_formatting_fix():
+    """Test the fix for double underscore formatting issue"""
+    import time
+    import asyncio
+    from datetime import datetime
+    
+    try:
+        from services.processing.progress_tracker import ProgressTracker, emit_thinking, emit_searching, emit_processing, emit_generating, emit_error, emit_warning, emit_retry, emit_reasoning, emit_considering, emit_analyzing
+        
+        # Create a list to capture progress updates
+        progress_updates = []
+        
+        async def mock_progress_updater(message: str):
+            progress_updates.append({
+                "timestamp": datetime.now().isoformat(),
+                "message": message
+            })
+        
+        # Initialize progress tracker with mock updater
+        progress_tracker = ProgressTracker(update_callback=mock_progress_updater)
+        
+        # Test the exact problematic patterns mentioned in the issue
+        test_cases = [
+            "__:thinking_face: how to approach: Please summarise what we last talked about during ..._",
+            "__💭 Understanding what you're really asking..._",
+            "__🎯 Considering the best approach..._", 
+            "_Normal formatting should remain unchanged_",
+            "No underscores here",
+            "Mixed __double_start and _single_end patterns"
+        ]
+        
+        # Test sanitization function directly
+        sanitized_results = []
+        for test_case in test_cases:
+            sanitized = progress_tracker._sanitize_slack_formatting(test_case)
+            sanitized_results.append({
+                "original": test_case,
+                "sanitized": sanitized,
+                "fixed": test_case != sanitized
+            })
+        
+        # Test through actual progress tracker flow
+        await emit_considering(progress_tracker, "requirements", "__:thinking_face: how to approach: understanding your test request")
+        await asyncio.sleep(0.1)
+        
+        await emit_analyzing(progress_tracker, "complexity", "__💭 planning how to help you")
+        await asyncio.sleep(0.1)
+        
+        await emit_reasoning(progress_tracker, "stream_of_consciousness", "__🎯 Thinking through your request...")
+        await asyncio.sleep(0.1)
+        
+        return {
+            "success": True,
+            "timestamp": datetime.now().isoformat(),
+            "test_summary": {
+                "direct_sanitization_tests": len(sanitized_results),
+                "progress_tracker_tests": len(progress_updates),
+                "total_tests": len(sanitized_results) + len(progress_updates)
+            },
+            "sanitization_results": sanitized_results,
+            "progress_updates": progress_updates,
+            "fix_validation": {
+                "double_underscores_fixed": sum(1 for r in sanitized_results if r["fixed"]),
+                "all_updates_properly_formatted": all("__" not in update["message"] for update in progress_updates),
+                "fix_working": sum(1 for r in sanitized_results if r["fixed"]) > 0
+            }
+        }
+        
+    except Exception as e:
+        logger.error(f"Error testing formatting fix: {e}")
+        return {
+            "success": False,
+            "error": str(e),
+            "timestamp": datetime.now().isoformat()
+        }
+
 # Server startup configuration for Cloud Run deployment
 if __name__ == "__main__":
     # Force Redis environment variables to empty to prevent connection attempts

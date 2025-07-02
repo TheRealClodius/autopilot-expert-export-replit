@@ -441,7 +441,9 @@ class ProgressTracker:
         emoji = emoji_map.get(event_type, "⚡")
         
         if details:
-            return f"{emoji} {details}"
+            # Strip any existing underscore formatting from details before adding our own
+            clean_details = self._strip_underscore_formatting(details)
+            return f"{emoji} {clean_details}"
         else:
             return f"{emoji} {action.replace('_', ' ').title()}..."
     
@@ -477,17 +479,24 @@ class ProgressTracker:
     
     def _sanitize_slack_formatting(self, message: str) -> str:
         """Sanitize message to ensure proper Slack formatting (single underscores only)"""
-        # Fix double underscores at start of words/phrases that should be single underscores
-        # Pattern: __text_ should become _text_
         import re
         
-        # Replace patterns like __word_ with _word_
+        # Fix the most common problematic patterns:
+        # 1. __text_ should become _text_ (double start, single end)
         message = re.sub(r'__([^_]+)_(?!_)', r'_\1_', message)
         
-        # Replace any remaining double underscores with single underscores
-        # But preserve cases where double underscores are intentional (like in markdown)
-        # Only fix formatting that breaks Slack italics
+        # 2. __text__ should become _text_ (double start, double end)
+        message = re.sub(r'__([^_]+)__', r'_\1_', message)
+        
+        # 3. Fix cases where we have _text__ (single start, double end)
+        message = re.sub(r'_([^_]+)__(?!_)', r'_\1_', message)
+        
+        # 4. Replace any remaining double underscores that appear to be formatting
+        # This handles cases like __word at start of phrases
         message = re.sub(r'__([^_\s]+)', r'_\1', message)
+        
+        # 5. Clean up any trailing double underscores
+        message = re.sub(r'([^_])__$', r'\1_', message)
         
         return message
 
