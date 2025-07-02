@@ -688,6 +688,9 @@ Let your intelligence flow freely before structuring your response."""
             
             # Generate sophisticated response using new interface
             enhanced_result = await enhanced_client.generate_response(clean_output, user_context)
+            logger.info(f"Enhanced client agent returned: {enhanced_result is not None}")
+            if enhanced_result:
+                logger.info(f"Enhanced result keys: {list(enhanced_result.keys())}")
             
             if enhanced_result:
                 # Convert enhanced response to legacy format for Slack Gateway compatibility
@@ -952,7 +955,7 @@ Let your intelligence flow freely before structuring your response."""
                     
                     # Convert result for preview display
                     preview_results = []
-                    if search_result and search_result.get("content"):
+                    if search_result and isinstance(search_result, dict) and search_result.get("content"):
                         # Create preview from perplexity result
                         citations = search_result.get("citations", [])
                         for citation in citations[:3]:  # Top 3 sources
@@ -968,7 +971,7 @@ Let your intelligence flow freely before structuring your response."""
                         await emit_search_with_results(self.progress_tracker, "perplexity_search", query, preview_results)
                         
                         # Add insight about web findings
-                        if search_result and search_result.get("content"):
+                        if search_result and isinstance(search_result, dict) and search_result.get("content"):
                             content_length = len(search_result["content"])
                             await emit_discovery(self.progress_tracker, 
                                                f"Found current information ({content_length} chars) from {len(preview_results)} sources!")
@@ -977,9 +980,9 @@ Let your intelligence flow freely before structuring your response."""
                         "tool_type": "perplexity_search",
                         "query": query,
                         "result": search_result,
-                        "success": bool(search_result and search_result.get("content"))
+                        "success": bool(search_result and isinstance(search_result, dict) and search_result.get("content"))
                     })
-                    self._update_execution_step_new(f"execute_perplexity_search", "completed", {"has_content": bool(search_result and search_result.get("content"))})
+                    self._update_execution_step_new(f"execute_perplexity_search", "completed", {"has_content": bool(search_result and isinstance(search_result, dict) and search_result.get("content"))})
                     
                 except Exception as e:
                     logger.error(f"Perplexity search error: {e}")
