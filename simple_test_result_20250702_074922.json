@@ -1,0 +1,38 @@
+{
+  "test_type": "framework_verification",
+  "timestamp": "20250702_074922",
+  "scenario": {
+    "id": "framework_test",
+    "name": "Framework Verification",
+    "query": "Hello, can you help me test the system?",
+    "user_context": {
+      "first_name": "TestUser",
+      "title": "Engineer",
+      "department": "Engineering"
+    },
+    "channel_context": {
+      "is_dm": true,
+      "channel_name": "test"
+    },
+    "expectations": {
+      "max_response_time": 30.0,
+      "min_response_length": 20,
+      "should_be_friendly": true
+    }
+  },
+  "response": {
+    "text": "Hello TestUser! I'm here to help you test the system. I can assist with project documentation, team discussions, current technology trends, and more. What would you like to explore?",
+    "suggestions": [
+      "Tell me about your capabilities",
+      "Search team discussions",
+      "Find project documentation"
+    ],
+    "confidence_level": "high",
+    "source_links": []
+  },
+  "metrics": {
+    "response_time": 0.5011630058288574,
+    "score": 100.0,
+    "success": true
+  }
+}

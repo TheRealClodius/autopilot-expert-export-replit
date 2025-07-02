@@ -510,17 +510,35 @@ Let your intelligence flow freely before structuring your response."""
 
     async def _step5_synthesize_output_new(self, all_results: List[Dict], plan: Dict, message: ProcessedMessage) -> Dict[str, Any]:
         """
-        NEW: STEP 5: Synthesize all results into clean output format for client agent.
+        NEW: STEP 5: Synthesize all results into clean output format for client agent with conversational progress.
         """
+        from services.processing.progress_tracker import emit_synthesis_progress, emit_narration, emit_discovery
+        
         try:
-            # Mark synthesis step as in progress
+            # Mark synthesis step as in progress with conversational message
             self._add_execution_step_new("synthesize_results", "Synthesizing all findings into final response", "in_progress")
+            
+            if self.progress_tracker:
+                await emit_synthesis_progress(self.progress_tracker, 
+                                            "Analyzing all the information I found to give you the best answer...")
             
             # Extract and categorize results by tool type
             vector_results = [r for r in all_results if r.get("tool_type") == "vector_search"]
             web_results = [r for r in all_results if r.get("tool_type") == "perplexity_search"]
             atlassian_results = [r for r in all_results if r.get("tool_type") == "atlassian_search"]
             meeting_results = [r for r in all_results if r.get("tool_type") == "outlook_meeting"]
+            
+            # Conversational progress about what we're synthesizing
+            if self.progress_tracker:
+                synthesis_sources = []
+                if vector_results: synthesis_sources.append(f"{len(vector_results)} team discussions")
+                if web_results: synthesis_sources.append(f"{len(web_results)} web sources")
+                if atlassian_results: synthesis_sources.append(f"{len(atlassian_results)} project resources")
+                if meeting_results: synthesis_sources.append(f"{len(meeting_results)} meeting actions")
+                
+                if synthesis_sources:
+                    await emit_narration(self.progress_tracker, 
+                                       f"Combining insights from {', '.join(synthesis_sources)}...")
             
             # Build comprehensive context for synthesis
             synthesis_context = {
@@ -546,7 +564,11 @@ Let your intelligence flow freely before structuring your response."""
                 }
             }
             
-            # Use LLM to synthesize clean final response
+            # Use LLM to synthesize clean final response with progress
+            if self.progress_tracker:
+                await emit_narration(self.progress_tracker, 
+                                   "Creating a comprehensive response that directly answers your question...")
+            
             synthesized_response = await self._llm_synthesize_final_response_new(synthesis_context)
             
             # Extract key findings
@@ -561,8 +583,13 @@ Let your intelligence flow freely before structuring your response."""
             # Generate follow-up suggestions
             suggested_followups = self._generate_followup_suggestions_new(synthesis_context)
             
-            # Mark synthesis as completed
+            # Mark synthesis as completed with conversational message
             self._update_execution_step_new("synthesize_results", "completed", {"response_length": len(synthesized_response)})
+            
+            if self.progress_tracker:
+                response_quality = "comprehensive" if len(synthesized_response) > 500 else "focused"
+                await emit_discovery(self.progress_tracker, 
+                                   f"Perfect! I've prepared a {response_quality} answer with {len(key_findings)} key insights and {len(source_links)} sources.")
             
             clean_output = {
                 "synthesized_response": synthesized_response,
@@ -836,20 +863,45 @@ Let your intelligence flow freely before structuring your response."""
         }
 
     async def _execute_planned_tools_new(self, plan: Dict[str, Any], message: ProcessedMessage) -> List[Dict[str, Any]]:
-        """NEW: Execute all planned tools and return results"""
+        """NEW: Execute all planned tools with conversational progress and result previews"""
+        from services.processing.progress_tracker import emit_search_with_results, emit_analysis_insight, emit_discovery, emit_narration
+        
         results = []
         tools_needed = plan.get("tools_needed", [])
         
-        # Execute vector search
+        # Execute vector search with rich progress
         if "vector_search" in tools_needed:
             vector_queries = plan.get("vector_queries", [])
             for query in vector_queries:
                 self._update_execution_step_new(f"execute_vector_search", "in_progress")
+                
                 try:
+                    # Conversational progress message
                     if self.progress_tracker:
-                        await emit_searching(self.progress_tracker, "vector_search", query[:40] + "...")
+                        await emit_narration(self.progress_tracker, 
+                                           f"Let me check what the team has been discussing about '{query}'...")
                     
                     search_results = await self.vector_tool.search(query=query, top_k=5)
+                    
+                    # Convert results for preview display
+                    preview_results = []
+                    for result in search_results:
+                        preview_results.append({
+                            "content": result.get("content", ""),
+                            "user_name": result.get("user_name", "Team member"),
+                            "timestamp": result.get("timestamp", ""),
+                            "score": result.get("score", 0)
+                        })
+                    
+                    # Show results with conversational progress
+                    if self.progress_tracker and preview_results:
+                        await emit_search_with_results(self.progress_tracker, "vector_search", query, preview_results)
+                        
+                        # Add insight about findings
+                        if len(preview_results) > 0:
+                            await emit_discovery(self.progress_tracker, 
+                                               f"Found {len(preview_results)} relevant team discussions!")
+                    
                     results.append({
                         "tool_type": "vector_search",
                         "query": query,
@@ -857,21 +909,52 @@ Let your intelligence flow freely before structuring your response."""
                         "success": len(search_results) > 0
                     })
                     self._update_execution_step_new(f"execute_vector_search", "completed", {"results_count": len(search_results)})
+                    
                 except Exception as e:
                     logger.error(f"Vector search error: {e}")
+                    if self.progress_tracker:
+                        await emit_narration(self.progress_tracker, 
+                                           f"Had trouble accessing team discussions - trying alternative sources...")
                     results.append({"tool_type": "vector_search", "query": query, "error": str(e), "success": False})
                     self._update_execution_step_new(f"execute_vector_search", "failed", {"error": str(e)})
 
-        # Execute perplexity search  
+        # Execute perplexity search with rich progress
         if "perplexity_search" in tools_needed:
             perplexity_queries = plan.get("perplexity_queries", [])
             for query in perplexity_queries:
                 self._update_execution_step_new(f"execute_perplexity_search", "in_progress")
+                
                 try:
+                    # Conversational progress message
                     if self.progress_tracker:
-                        await emit_searching(self.progress_tracker, "perplexity_search", query[:40] + "...")
+                        await emit_narration(self.progress_tracker, 
+                                           f"Now let me get the latest information from the web about '{query}'...")
                     
                     search_result = await self.perplexity_tool.search(query=query, max_tokens=1000)
+                    
+                    # Convert result for preview display
+                    preview_results = []
+                    if search_result and search_result.get("content"):
+                        # Create preview from perplexity result
+                        citations = search_result.get("citations", [])
+                        for citation in citations[:3]:  # Top 3 sources
+                            preview_results.append({
+                                "title": citation.get("title", "Web Source"),
+                                "source": citation.get("source", ""),
+                                "url": citation.get("url", ""),
+                                "snippet": citation.get("snippet", "")[:100] + "..." if citation.get("snippet") else ""
+                            })
+                    
+                    # Show results with conversational progress
+                    if self.progress_tracker and preview_results:
+                        await emit_search_with_results(self.progress_tracker, "perplexity_search", query, preview_results)
+                        
+                        # Add insight about web findings
+                        if search_result and search_result.get("content"):
+                            content_length = len(search_result["content"])
+                            await emit_discovery(self.progress_tracker, 
+                                               f"Found current information ({content_length} chars) from {len(preview_results)} sources!")
+                    
                     results.append({
                         "tool_type": "perplexity_search",
                         "query": query,
@@ -879,22 +962,54 @@ Let your intelligence flow freely before structuring your response."""
                         "success": bool(search_result and search_result.get("content"))
                     })
                     self._update_execution_step_new(f"execute_perplexity_search", "completed", {"has_content": bool(search_result and search_result.get("content"))})
+                    
                 except Exception as e:
                     logger.error(f"Perplexity search error: {e}")
+                    if self.progress_tracker:
+                        await emit_narration(self.progress_tracker, 
+                                           f"Web search encountered an issue - focusing on internal knowledge...")
                     results.append({"tool_type": "perplexity_search", "query": query, "error": str(e), "success": False})
                     self._update_execution_step_new(f"execute_perplexity_search", "failed", {"error": str(e)})
 
-        # Execute Atlassian search
+        # Execute Atlassian search with rich progress
         if "atlassian_search" in tools_needed:
             atlassian_actions = plan.get("atlassian_actions", [])
             for action in atlassian_actions:
                 self._update_execution_step_new(f"execute_atlassian_search", "in_progress")
+                
                 try:
-                    if self.progress_tracker:
-                        await emit_processing(self.progress_tracker, "atlassian_search", "project information")
-                    
                     task = action.get("task", "General Atlassian search")
+                    
+                    # Conversational progress message
+                    if self.progress_tracker:
+                        await emit_narration(self.progress_tracker, 
+                                           f"Let me check our project documentation and tickets...")
+                    
                     result = await self.atlassian_guru.execute_task(task)
+                    
+                    # Convert result for preview display
+                    preview_results = []
+                    if result and result.get("status") == "success" and result.get("data"):
+                        data = result["data"]
+                        if isinstance(data, list):
+                            for item in data[:3]:  # Top 3 items
+                                if isinstance(item, dict):
+                                    preview_results.append({
+                                        "title": item.get("title", "Project Item"),
+                                        "type": item.get("type", "document"),
+                                        "url": item.get("url", ""),
+                                        "summary": item.get("summary", "")[:80] + "..." if item.get("summary") else ""
+                                    })
+                    
+                    # Show results with conversational progress
+                    if self.progress_tracker and preview_results:
+                        await emit_search_with_results(self.progress_tracker, "atlassian_search", task, preview_results)
+                        
+                        # Add insight about project findings
+                        if result and result.get("status") == "success":
+                            await emit_discovery(self.progress_tracker, 
+                                               f"Found {len(preview_results)} relevant project resources!")
+                    
                     results.append({
                         "tool_type": "atlassian_search",
                         "task": task,
@@ -902,10 +1017,28 @@ Let your intelligence flow freely before structuring your response."""
                         "success": result and result.get("status") == "success"
                     })
                     self._update_execution_step_new(f"execute_atlassian_search", "completed", {"status": result.get("status") if result else "no_result"})
+                    
                 except Exception as e:
                     logger.error(f"Atlassian search error: {e}")
+                    if self.progress_tracker:
+                        await emit_narration(self.progress_tracker, 
+                                           f"Project search encountered an issue - using available information...")
                     results.append({"tool_type": "atlassian_search", "task": action.get("task", ""), "error": str(e), "success": False})
                     self._update_execution_step_new(f"execute_atlassian_search", "failed", {"error": str(e)})
+
+        # Summary of all findings
+        if self.progress_tracker and results:
+            successful_results = [r for r in results if r.get("success", False)]
+            total_tools = len(results)
+            successful_tools = len(successful_results)
+            
+            if successful_tools > 0:
+                await emit_analysis_insight(self.progress_tracker, 
+                                          f"Great! I gathered information from {successful_tools}/{total_tools} sources. Let me analyze what I found...",
+                                          [f"✓ {r['tool_type'].replace('_', ' ').title()}: {'Success' if r.get('success') else 'Failed'}" for r in results])
+            else:
+                await emit_narration(self.progress_tracker, 
+                                   "I encountered some challenges gathering information, but let me work with what I can access...")
 
         return results
 
