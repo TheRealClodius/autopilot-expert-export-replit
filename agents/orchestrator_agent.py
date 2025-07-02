@@ -274,37 +274,37 @@ class OrchestratorAgent:
     def _create_reasoning_callback_new(self, reasoning_stages: List[str]) -> callable:
         """
         NEW: Create callback for updating Slack message with reasoning progress.
+        Shows clean conversational progress instead of raw LLM reasoning.
         """
         stage_index = 0
         accumulated_reasoning = ""
+        last_update_time = 0
         
         async def reasoning_callback(chunk_text: str, chunk_metadata: dict):
-            nonlocal stage_index, accumulated_reasoning
+            nonlocal stage_index, accumulated_reasoning, last_update_time
             
             try:
                 accumulated_reasoning += chunk_text
+                current_time = time.time()
                 
-                # Update message with current reasoning stage and a snippet of thinking
+                # Throttle updates to prevent spam (minimum 2 seconds between updates)
+                if current_time - last_update_time < 2.0:
+                    return
+                
                 if self.progress_tracker:
-                    # Cycle through reasoning stages based on content
-                    if any(keyword in chunk_text.lower() for keyword in ["approach", "strategy", "plan"]):
-                        stage_index = min(stage_index + 1, len(reasoning_stages) - 1)
+                    # Advance stage based on content keywords
+                    stage_keywords = ["approach", "strategy", "plan", "execute", "synthesis", "observe"]
+                    for keyword in stage_keywords:
+                        if keyword in chunk_text.lower() and stage_index < len(reasoning_stages) - 1:
+                            stage_index = min(stage_index + 1, len(reasoning_stages) - 1)
+                            break
                     
-                    # Extract meaningful snippet from recent reasoning
-                    recent_reasoning = accumulated_reasoning[-200:].strip()
-                    if recent_reasoning and not recent_reasoning.startswith('```'):
-                        # Clean up reasoning snippet for display
-                        snippet = recent_reasoning.split('\n')[-1][:80] + "..." if len(recent_reasoning) > 80 else recent_reasoning
-                        
-                        # Create message with current stage and reasoning snippet
-                        stage_message = reasoning_stages[stage_index] if stage_index < len(reasoning_stages) else "💡 Finalizing approach..."
-                        
-                        if len(snippet.strip()) > 10:  # Only show if we have meaningful content
-                            display_message = f"{stage_message}\n\n_\"{snippet}\"_"
-                        else:
-                            display_message = stage_message
-                        
-                        await emit_reasoning(self.progress_tracker, "live_reasoning", display_message)
+                    # Use clean stage message only (no raw reasoning snippets)
+                    stage_message = reasoning_stages[stage_index] if stage_index < len(reasoning_stages) else "💡 Finalizing approach..."
+                    
+                    # Send clean progress message without raw reasoning content
+                    await emit_reasoning(self.progress_tracker, "live_reasoning", stage_message)
+                    last_update_time = current_time
                     
             except Exception as callback_error:
                 # Don't let callback errors interrupt reasoning
