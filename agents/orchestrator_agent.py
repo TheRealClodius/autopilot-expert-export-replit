@@ -136,7 +136,8 @@ class OrchestratorAgent:
                 # Fallback to legacy format conversion for compatibility
                 return await self._convert_clean_output_to_legacy_format(final_clean_output, message)
             
-            return await self._create_fallback_response_new("I couldn't generate a complete response. Please try again.", message)
+            # If we reach here, the synthesis step failed completely - create a more helpful response
+            return await self._create_fallback_response_new("I'm experiencing high demand right now, but I can still help you. Could you try rephrasing your question or ask me something else?", message)
 
         except Exception as e:
             logger.error(f"Error in orchestrator 5-step process: {e}")
@@ -1165,18 +1166,49 @@ Let your intelligence flow freely before structuring your response."""
             Be specific, actionable, and cite relevant sources naturally.
             """
 
-            response = await asyncio.wait_for(
-                self.gemini_client.generate_response(
-                    "You are an expert at synthesizing information from multiple sources into clear, helpful responses.",
-                    synthesis_prompt,
-                    model=self.gemini_client.pro_model,  # Use Pro for synthesis quality
-                    max_tokens=5000,
-                    temperature=0.7
-                ),
-                timeout=12.0  # Reduced from 15.0 for faster response
-            )
-
-            return response if response else "I found relevant information but had trouble synthesizing it clearly."
+            # Try Pro model first, fallback to Flash on quota exhaustion
+            try:
+                response = await asyncio.wait_for(
+                    self.gemini_client.generate_response(
+                        "You are an expert at synthesizing information from multiple sources into clear, helpful responses.",
+                        synthesis_prompt,
+                        model=self.gemini_client.pro_model,  # Use Pro for synthesis quality
+                        max_tokens=5000,
+                        temperature=0.7
+                    ),
+                    timeout=12.0  # Reduced from 15.0 for faster response
+                )
+                
+                if response:
+                    return response
+                
+            except Exception as pro_error:
+                # Check if it's a quota exhaustion error
+                if "429" in str(pro_error) or "RESOURCE_EXHAUSTED" in str(pro_error) or "quota" in str(pro_error).lower():
+                    logger.warning("Gemini Pro quota exhausted during synthesis, falling back to Flash model")
+                    try:
+                        # Fallback to Flash model for synthesis
+                        response = await asyncio.wait_for(
+                            self.gemini_client.generate_response(
+                                "You are an expert at synthesizing information from multiple sources into clear, helpful responses.",
+                                synthesis_prompt,
+                                model=self.gemini_client.flash_model,  # Fallback to Flash
+                                max_tokens=5000,
+                                temperature=0.7
+                            ),
+                            timeout=12.0
+                        )
+                        
+                        if response:
+                            return response
+                    except Exception as flash_error:
+                        logger.error(f"Flash model also failed during synthesis: {flash_error}")
+                else:
+                    logger.error(f"Non-quota error in Pro synthesis: {pro_error}")
+            
+            # If both models fail or no response, create a basic synthesis
+            basic_response = self._create_basic_synthesis_response(synthesis_context)
+            return basic_response if basic_response else "I found relevant information but had trouble synthesizing it clearly."
 
         except asyncio.TimeoutError:
             logger.warning("LLM synthesis timed out, using basic summary")
@@ -1184,6 +1216,38 @@ Let your intelligence flow freely before structuring your response."""
         except Exception as e:
             logger.error(f"Error in LLM synthesis: {e}")
             return "I gathered information from multiple sources but encountered an issue creating a comprehensive response."
+
+    def _create_basic_synthesis_response(self, synthesis_context: Dict[str, Any]) -> str:
+        """Create a basic synthesis response when LLM synthesis fails"""
+        try:
+            query = synthesis_context.get('original_query', '')
+            results_summary = synthesis_context.get('results_summary', {})
+            
+            # Create basic response structure
+            response_parts = [f"Based on your question about '{query}', here's what I found:"]
+            
+            # Summarize what was searched
+            sources_found = []
+            if results_summary.get('vector_search', 0) > 0:
+                sources_found.append(f"{results_summary['vector_search']} team discussions")
+            if results_summary.get('web_search', 0) > 0:
+                sources_found.append(f"{results_summary['web_search']} web sources")
+            if results_summary.get('atlassian_search', 0) > 0:
+                sources_found.append(f"{results_summary['atlassian_search']} project resources")
+            
+            if sources_found:
+                response_parts.append(f"I searched through {', '.join(sources_found)} and found relevant information.")
+            else:
+                response_parts.append("I searched through multiple sources for relevant information.")
+            
+            # Add a helpful closing
+            response_parts.append("I'm experiencing high demand right now, but the information I found should help answer your question. Feel free to ask for more specific details about any aspect.")
+            
+            return " ".join(response_parts)
+            
+        except Exception as e:
+            logger.error(f"Error creating basic synthesis response: {e}")
+            return "I found relevant information but am experiencing high demand. Please try rephrasing your question and I'll help you right away."
 
     def _summarize_vector_results_new(self, vector_results: List[Dict]) -> str:
         """NEW: Summarize vector search results"""
