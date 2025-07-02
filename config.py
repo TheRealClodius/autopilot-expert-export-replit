@@ -21,8 +21,8 @@ class Settings(BaseSettings):
     
     # Gemini Configuration
     GEMINI_API_KEY: str = os.getenv("GEMINI_API_KEY", "")
-    GEMINI_PRO_MODEL: str = "gemini-2.5-pro"
-    GEMINI_FLASH_MODEL: str = "gemini-2.5-flash"
+    GEMINI_PRO_MODEL: str = "gemini-2.5-flash"  # Downgraded from pro to flash
+    GEMINI_FLASH_MODEL: str = "gemini-2.5-flash-lite-preview-06-17"  # Downgraded to flash-lite
     
     # Pinecone Configuration
     PINECONE_API_KEY: str = os.getenv("PINECONE_API_KEY", "")
