@@ -269,7 +269,24 @@ class OrchestratorAgent:
 
         except Exception as e:
             logger.error(f"Error in fluid reasoning with display: {e}")
-            return None
+            
+            # Check if this is a quota exhaustion error
+            if "429" in str(e) or "RESOURCE_EXHAUSTED" in str(e) or "quota" in str(e).lower():
+                logger.warning("Gemini Pro quota exhausted, creating fallback plan")
+                # Create a fallback plan that allows processing to continue
+                return {
+                    "reasoning": "I'm experiencing high demand right now, but I can still help you. Let me check what information I can find.",
+                    "reasoning_steps": ["Analyzing your request", "Checking available resources", "Preparing response"],
+                    "plan": self._create_fallback_plan_new(context)
+                }
+            
+            # For other errors, also create a fallback rather than stopping
+            logger.warning("Creating fallback plan after error")
+            return {
+                "reasoning": "I encountered an issue during analysis, but let me try a different approach to help you.",
+                "reasoning_steps": ["Analyzing request", "Using alternative approach"],
+                "plan": self._create_fallback_plan_new(context)
+            }
 
     def _create_reasoning_callback_new(self, reasoning_stages: List[str]) -> callable:
         """
