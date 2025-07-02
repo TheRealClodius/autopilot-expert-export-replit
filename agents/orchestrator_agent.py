@@ -232,7 +232,7 @@ class OrchestratorAgent:
                         user_prompt=user_prompt,
                         reasoning_callback=reasoning_callback,
                         model=self.gemini_client.pro_model,
-                        max_tokens=2500,
+                        max_tokens=20000,
                         temperature=0.8  # Higher temperature for more creative reasoning
                     ),
                     timeout=15.0  # Reduced from 25.0 to prevent frequent timeouts
@@ -930,7 +930,7 @@ Let your intelligence flow freely before structuring your response."""
                         await emit_narration(self.progress_tracker, 
                                            f"Now let me get the latest information from the web about '{query}'...")
                     
-                    search_result = await self.perplexity_tool.search(query=query, max_tokens=1000)
+                    search_result = await self.perplexity_tool.search(query=query, max_tokens=2000)
                     
                     # Convert result for preview display
                     preview_results = []
@@ -1081,7 +1081,7 @@ Let your intelligence flow freely before structuring your response."""
                     get_orchestrator_evaluation_prompt(),
                     observation_prompt,
                     model=self.gemini_client.flash_model,  # Use Flash for quick observation
-                    max_tokens=500,
+                    max_tokens=5000,
                     temperature=0.3
                 ),
                 timeout=10.0
@@ -1153,7 +1153,7 @@ Let your intelligence flow freely before structuring your response."""
                     "You are an expert at synthesizing information from multiple sources into clear, helpful responses.",
                     synthesis_prompt,
                     model=self.gemini_client.pro_model,  # Use Pro for synthesis quality
-                    max_tokens=1500,
+                    max_tokens=5000,
                     temperature=0.7
                 ),
                 timeout=12.0  # Reduced from 15.0 for faster response
