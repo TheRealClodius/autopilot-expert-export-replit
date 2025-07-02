@@ -138,30 +138,33 @@ class ClientAgent:
             # Build personality adaptation prompt
             personality_prompt = self._build_personality_prompt(base_response, key_findings, context_analysis, message_context)
             
-            # Get dynamic system prompt based on context
-            system_prompt = self._get_contextual_system_prompt(context_analysis)
+            # Simplify prompts to avoid Gemini Flash empty responses
+            # Extract context variables for simplified approach
+            user = message_context.get("user", {})
+            context = message_context.get("context", {})
+            confidence_tone = context_analysis.get("confidence_tone", "thoughtful")
             
-            # Debug logging to see what's being sent to Gemini Flash
-            logger.info(f"Client Agent sending to Gemini Flash:")
-            logger.info(f"System prompt length: {len(system_prompt)}")
-            logger.info(f"User prompt length: {len(personality_prompt)}")
-            logger.info(f"System prompt first 200 chars: {system_prompt[:200]}")
-            logger.info(f"User prompt first 200 chars: {personality_prompt[:200]}")
+            # Use a much simpler system prompt to avoid overloading Flash
+            simple_system_prompt = "You are a helpful AI assistant with expertise in UiPath Autopilot. Be concise, friendly, and professional. Adapt your tone to the user and context."
             
-            # Generate personality-enhanced response
+            # Create a simpler user prompt that won't overwhelm Flash
+            simple_user_prompt = f"Please enhance this response with your personality:\n\n{base_response}\n\nUser context: {user.get('first_name', 'User')} is asking in {'a direct message' if context.get('is_dm') else 'a public channel'}. Be {confidence_tone} in your tone."
+            
+            logger.info(f"Using simplified prompts - System: {len(simple_system_prompt)} chars, User: {len(simple_user_prompt)} chars")
+            
+            # Generate personality-enhanced response with simplified prompts
             enhanced_response = await asyncio.wait_for(
                 self.gemini_client.generate_response(
-                    system_prompt,
-                    personality_prompt,
+                    simple_system_prompt,
+                    simple_user_prompt,
                     model=self.gemini_client.flash_model,
-                    max_tokens=1200,
-                    temperature=1.0  # Higher temperature for more personality
+                    max_tokens=800,  # Reduced from 1200
+                    temperature=0.8  # Reduced from 1.0
                 ),
                 timeout=12.0
             )
             
-            logger.info(f"Gemini Flash response length: {len(enhanced_response) if enhanced_response else 0}")
-            logger.info(f"Gemini Flash response preview: {enhanced_response[:100] if enhanced_response else 'EMPTY'}")
+            logger.info(f"Gemini Flash response: {'SUCCESS' if enhanced_response else 'EMPTY'} ({len(enhanced_response) if enhanced_response else 0} chars)")
             
             if enhanced_response and not self._contains_inappropriate_content(enhanced_response):
                 return self._post_process_personality_response(enhanced_response, context_analysis)
