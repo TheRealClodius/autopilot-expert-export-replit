@@ -475,15 +475,33 @@ class ProgressTracker:
         italic_message = f"_{message}_"
         await self._update_slack_message(italic_message)
     
+    def _sanitize_slack_formatting(self, message: str) -> str:
+        """Sanitize message to ensure proper Slack formatting (single underscores only)"""
+        # Fix double underscores at start of words/phrases that should be single underscores
+        # Pattern: __text_ should become _text_
+        import re
+        
+        # Replace patterns like __word_ with _word_
+        message = re.sub(r'__([^_]+)_(?!_)', r'_\1_', message)
+        
+        # Replace any remaining double underscores with single underscores
+        # But preserve cases where double underscores are intentional (like in markdown)
+        # Only fix formatting that breaks Slack italics
+        message = re.sub(r'__([^_\s]+)', r'_\1', message)
+        
+        return message
+
     async def _update_slack_message(self, message: str):
         """Update Slack message via callback"""
         if self.update_callback and message != self.current_message:
             try:
-                self.current_message = message
+                # Sanitize formatting before sending
+                sanitized_message = self._sanitize_slack_formatting(message)
+                self.current_message = sanitized_message
                 if asyncio.iscoroutinefunction(self.update_callback):
-                    await self.update_callback(message)
+                    await self.update_callback(sanitized_message)
                 else:
-                    self.update_callback(message)
+                    self.update_callback(sanitized_message)
             except Exception as e:
                 logger.warning(f"Failed to update Slack message: {e}")
     

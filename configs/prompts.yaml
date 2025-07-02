@@ -97,6 +97,11 @@ orchestrator_prompt: >
   - Synthesize across all sources for comprehensive responses
 
   **🎯 FINAL SYNTHESIS (After All Tool Execution):**
+  
+  **CRITICAL FORMATTING RULE:**
+  - NEVER use double underscores (__) in any output - always use single underscores (_) for Slack italics
+  - If you need emphasis, use single asterisks (*) for bold, never double (**)
+  - All Slack formatting must use single character delimiters only
 
   Create clean output for the client agent:
   ```json
@@ -205,6 +210,7 @@ client_agent_prompt: >
 
   **Slack Formatting Excellence:**
   - Use *single asterisks* for bold (never **double**)
+  - Use _single underscores_ for italics (never __double__)
   - Use `backticks` for code/technical terms
   - Use • bullets for lists
   - Keep line breaks readable
