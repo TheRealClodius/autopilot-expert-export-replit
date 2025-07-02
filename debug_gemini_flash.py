@@ -60,7 +60,7 @@ GUIDELINES:
         system_prompt=complex_system,
         user_prompt=complex_user,
         model=client.flash_model,
-        max_tokens=2000,
+        max_tokens=5000,
         temperature=1.0
     )
     

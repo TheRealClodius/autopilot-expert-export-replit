@@ -143,13 +143,13 @@ class ClientAgent:
             
             logger.info(f"Client Agent calling Gemini Flash with system: {len(system_prompt)} chars, user: {len(personality_prompt)} chars")
             
-            # Generate personality-enhanced response with higher token limit
+            # Generate personality-enhanced response with high token limit
             enhanced_response = await asyncio.wait_for(
                 self.gemini_client.generate_response(
                     system_prompt,
                     personality_prompt,
                     model=self.gemini_client.flash_model,
-                    max_tokens=2000,  # Increased from 1200 to handle complex personality prompts
+                    max_tokens=5000,  # High limit to ensure complex personality prompts complete
                     temperature=1.0  # Higher temperature for more personality
                 ),
                 timeout=12.0
@@ -397,7 +397,7 @@ class ClientAgent:
                     "You enhance follow-up suggestions with personality while keeping them helpful and specific.",
                     enhancement_prompt,
                     model=self.gemini_client.flash_model,
-                    max_tokens=300,
+                    max_tokens=1000,  # Increased for complete suggestion generation
                     temperature=0.9
                 ),
                 timeout=8.0

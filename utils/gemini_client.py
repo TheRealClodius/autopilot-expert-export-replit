@@ -76,24 +76,6 @@ class GeminiClient:
             
             self._last_request_time = time.time()
             
-            # Debug the response object to understand why it's empty
-            logger.info(f"🔍 Gemini response object: {type(response)}")
-            if response:
-                logger.info(f"🔍 Response text exists: {hasattr(response, 'text')}")
-                if hasattr(response, 'text'):
-                    logger.info(f"🔍 Response text value: {response.text is not None}")
-                    logger.info(f"🔍 Response text length: {len(response.text) if response.text else 0}")
-                
-                if hasattr(response, 'candidates'):
-                    logger.info(f"🔍 Candidates exist: {len(response.candidates) if response.candidates else 0}")
-                    if response.candidates:
-                        candidate = response.candidates[0]
-                        logger.info(f"🔍 First candidate: {type(candidate)}")
-                        if hasattr(candidate, 'finish_reason'):
-                            logger.info(f"🔍 Finish reason: {candidate.finish_reason}")
-                        if hasattr(candidate, 'safety_ratings'):
-                            logger.info(f"🔍 Safety ratings: {candidate.safety_ratings}")
-            
             if response and response.text:
                 logger.debug(f"Generated response with {model_name}")
                 
