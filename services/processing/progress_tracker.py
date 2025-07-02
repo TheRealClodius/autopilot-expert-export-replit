@@ -196,7 +196,7 @@ class ToolResultPreview:
                 return text[:max_length] + "..."
 
 class ConversationalProgressManager:
-    """Manages conversational progress narrative"""
+    """Manages conversational progress narrative with cumulative message building"""
     
     def __init__(self):
         self.current_phase = "starting"
@@ -204,6 +204,7 @@ class ConversationalProgressManager:
         self.last_update_time = 0
         self.min_update_interval = 0.5  # Reduced for more responsive updates
         self.tool_previews = ToolResultPreview()
+        self.message_sections = []  # Track cumulative sections
     
     def should_update_message(self, force: bool = False) -> bool:
         """Determine if message should be updated based on timing and content"""
@@ -213,13 +214,27 @@ class ConversationalProgressManager:
             return True
         return False
     
+    def add_progress_section(self, section: str):
+        """Add a new section to the cumulative progress message"""
+        # Format section in italics for Slack
+        italic_section = f"*{section}*"
+        self.message_sections.append(italic_section)
+    
+    def get_cumulative_message(self) -> str:
+        """Get the full cumulative progress message"""
+        if not self.message_sections:
+            return ""
+        
+        # Join all sections with double line breaks for readability
+        return "\n\n".join(self.message_sections)
+    
     def create_conversational_message(self, narration: str, context: str = "", 
                                     findings: List[str] = None, next_step: str = "") -> str:
-        """Create rich conversational progress message"""
+        """Create rich conversational progress message and add to cumulative sections"""
         message_parts = []
         
         # Main narration
-        message_parts.append(f"💭 {narration}")
+        message_parts.append(f"{narration}")
         
         # Context or current action
         if context:
@@ -236,7 +251,11 @@ class ConversationalProgressManager:
             message_parts.append("")
             message_parts.append(f"🎯 Next: {next_step}")
         
-        return "\n".join(message_parts)
+        # Create the section and add it
+        section_content = "\n".join(message_parts)
+        self.add_progress_section(section_content)
+        
+        return self.get_cumulative_message()
     
     def add_tool_results(self, tool_name: str, results: List[Dict[str, Any]]):
         """Add tool results for preview generation"""
@@ -261,7 +280,7 @@ class ProgressTracker:
         
     async def emit_progress(self, event_type: ProgressEventType, action: str, details: str = "", 
                           reasoning_snippet: str = None, force_update: bool = False):
-        """Enhanced progress emission with conversational support"""
+        """Enhanced progress emission with conversational support and italic formatting"""
         timestamp = datetime.now().isoformat()
         
         # Create event record
@@ -285,60 +304,74 @@ class ProgressTracker:
     
     async def _handle_conversational_progress(self, event_type: ProgressEventType, action: str, 
                                            details: str, reasoning_snippet: str, force_update: bool):
-        """Handle progress display in conversational mode"""
+        """Handle progress display in conversational mode with italic formatting"""
         
         # Only update if enough time has passed or force update
         if not self.conversational_manager.should_update_message(force_update):
             return
         
         if event_type == ProgressEventType.NARRATING:
-            # Pure narrative message
-            await self._update_slack_message(f"💭 {details}")
+            # Pure narrative message - add as new section
+            self.conversational_manager.add_progress_section(f"💭 {details}")
+            cumulative_message = self.conversational_manager.get_cumulative_message()
+            await self._update_slack_message(cumulative_message)
         
         elif event_type == ProgressEventType.DISCOVERY:
-            # Discovery with excitement
-            await self._update_slack_message(f"✨ {details}")
+            # Discovery with excitement - add as new section
+            self.conversational_manager.add_progress_section(f"✨ {details}")
+            cumulative_message = self.conversational_manager.get_cumulative_message()
+            await self._update_slack_message(cumulative_message)
         
         elif event_type == ProgressEventType.INSIGHT:
-            # Insight with analysis
-            await self._update_slack_message(f"🎯 {details}")
+            # Insight with analysis - add as new section
+            self.conversational_manager.add_progress_section(f"🎯 {details}")
+            cumulative_message = self.conversational_manager.get_cumulative_message()
+            await self._update_slack_message(cumulative_message)
         
         elif event_type == ProgressEventType.TRANSITION:
-            # Transition to next phase
-            await self._update_slack_message(f"🔄 {details}")
+            # Transition to next phase - add as new section
+            self.conversational_manager.add_progress_section(f"🔄 {details}")
+            cumulative_message = self.conversational_manager.get_cumulative_message()
+            await self._update_slack_message(cumulative_message)
         
         else:
-            # Standard events with conversational framing
+            # Standard events with conversational framing - add as new section
             formatted_message = self._format_conversational_message(event_type, action, details)
-            await self._update_slack_message(formatted_message)
+            self.conversational_manager.add_progress_section(formatted_message)
+            cumulative_message = self.conversational_manager.get_cumulative_message()
+            await self._update_slack_message(cumulative_message)
     
     async def _handle_legacy_progress(self, event_type: ProgressEventType, action: str, 
                                     details: str, reasoning_snippet: str, force_update: bool):
-        """Handle progress display in legacy mode"""
+        """Handle progress display in legacy mode with italic formatting"""
         # Handle reasoning-specific display logic
         if event_type == ProgressEventType.LIVE_REASONING:
             self.is_in_reasoning_mode = True
             if reasoning_snippet:
                 self.reasoning_manager.add_reasoning_snippet(reasoning_snippet, action)
             
-            # Use the enhanced message with reasoning context
+            # Use the enhanced message with reasoning context and italic formatting
             display_message = self.reasoning_manager.get_current_display_message(details)
+            italic_message = f"*{display_message}*"
             
             # Only update if enough time has passed or force update
             if self.reasoning_manager.should_update_message(force_update):
-                await self._update_slack_message(display_message)
+                await self._update_slack_message(italic_message)
         
         elif event_type in [ProgressEventType.FLUID_THINKING, ProgressEventType.REASONING]:
             self.is_in_reasoning_mode = True
-            await self._update_slack_message(details)
+            italic_message = f"*{details}*"
+            await self._update_slack_message(italic_message)
         
         else:
-            # Standard progress events
+            # Standard progress events with italic formatting
             self.is_in_reasoning_mode = False
-            await self._update_slack_message(self._format_progress_message(event_type, action, details))
+            formatted_message = self._format_progress_message(event_type, action, details)
+            italic_message = f"*{formatted_message}*"
+            await self._update_slack_message(italic_message)
     
     def _format_conversational_message(self, event_type: ProgressEventType, action: str, details: str) -> str:
-        """Format progress message in conversational style"""
+        """Format progress message in conversational style (without italics - handled by caller)"""
         
         if event_type == ProgressEventType.SEARCHING:
             if "vector_search" in action:
@@ -383,7 +416,7 @@ class ProgressTracker:
             return f"{emoji} {details}"
     
     def _format_progress_message(self, event_type: ProgressEventType, action: str, details: str) -> str:
-        """Format progress message based on event type (legacy)"""
+        """Format progress message based on event type (legacy, without italics - handled by caller)"""
         emoji_map = {
             ProgressEventType.ANALYZING: "🔍",
             ProgressEventType.REASONING: "💭",
@@ -410,7 +443,7 @@ class ProgressTracker:
     async def emit_conversational_progress(self, narration: str, context: str = "", 
                                          tool_results: Dict[str, List[Dict]] = None, 
                                          next_step: str = ""):
-        """Emit rich conversational progress with tool result previews"""
+        """Emit rich conversational progress with tool result previews and cumulative building"""
         findings = []
         
         # Generate tool result previews
@@ -429,7 +462,7 @@ class ProgressTracker:
                         findings.append(f"   {tool_display_name}")
                         findings.append(preview)
         
-        # Create rich message
+        # Create rich message and add to cumulative sections
         message = self.conversational_manager.create_conversational_message(
             narration, context, findings, next_step
         )
