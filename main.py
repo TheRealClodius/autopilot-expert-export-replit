@@ -1835,11 +1835,11 @@ async def list_workspace_channels():
 async def test_progress_events():
     """Admin endpoint to test progress event generation (lightweight version)"""
     import time
+    import asyncio
     from datetime import datetime
     
     try:
         from services.processing.progress_tracker import ProgressTracker, emit_thinking, emit_searching, emit_processing, emit_generating, emit_error, emit_warning, emit_retry, emit_reasoning, emit_considering, emit_analyzing
-        import asyncio
         
         # Create a list to capture progress updates
         progress_updates = []
