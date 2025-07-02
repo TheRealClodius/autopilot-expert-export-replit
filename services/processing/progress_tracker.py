@@ -321,26 +321,30 @@ class ProgressTracker:
             # Discovery with excitement - add as new section
             self.conversational_manager.add_progress_section(f"✨ {details}")
             cumulative_message = self.conversational_manager.get_cumulative_message()
-            await self._update_slack_message(cumulative_message)
+            italic_message = f"_{cumulative_message}_"
+            await self._update_slack_message(italic_message)
         
         elif event_type == ProgressEventType.INSIGHT:
             # Insight with analysis - add as new section
             self.conversational_manager.add_progress_section(f"🎯 {details}")
             cumulative_message = self.conversational_manager.get_cumulative_message()
-            await self._update_slack_message(cumulative_message)
+            italic_message = f"_{cumulative_message}_"
+            await self._update_slack_message(italic_message)
         
         elif event_type == ProgressEventType.TRANSITION:
             # Transition to next phase - add as new section
             self.conversational_manager.add_progress_section(f"🔄 {details}")
             cumulative_message = self.conversational_manager.get_cumulative_message()
-            await self._update_slack_message(cumulative_message)
+            italic_message = f"_{cumulative_message}_"
+            await self._update_slack_message(italic_message)
         
         else:
             # Standard events with conversational framing - add as new section
             formatted_message = self._format_conversational_message(event_type, action, details)
             self.conversational_manager.add_progress_section(formatted_message)
             cumulative_message = self.conversational_manager.get_cumulative_message()
-            await self._update_slack_message(cumulative_message)
+            italic_message = f"_{cumulative_message}_"
+            await self._update_slack_message(italic_message)
     
     async def _handle_legacy_progress(self, event_type: ProgressEventType, action: str, 
                                     details: str, reasoning_snippet: str, force_update: bool):
@@ -468,7 +472,8 @@ class ProgressTracker:
             narration, context, findings, next_step
         )
         
-        await self._update_slack_message(message)
+        italic_message = f"_{message}_"
+        await self._update_slack_message(italic_message)
     
     async def _update_slack_message(self, message: str):
         """Update Slack message via callback"""
